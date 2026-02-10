@@ -7,14 +7,12 @@ import { clerkMiddleware } from "@clerk/nextjs/server";
  *
  * The actual authorization logic (verified @stetson.edu check)
  * is handled per-route by requireStetsonAuth() in src/lib/auth.ts.
+ *
+ * Matcher is scoped to /api routes only — frontend pages are not
+ * intercepted, so users can freely load the app and sign in.
  */
 export const proxy = clerkMiddleware();
 
 export const config = {
-    matcher: [
-        // Match all API routes
-        "/api/(.*)",
-        // Skip Next.js internals and static files
-        "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
-    ],
+    matcher: ["/api/(.*)"],
 };
