@@ -1,5 +1,80 @@
 # Code Explanation
 
+## PR: Frontend Auth Flow & Route Protection (codex/frontend-auth-gating-mvp1)
+
+### Overview
+This PR adds frontend-only protection for app pages using Clerk in the Next.js App Router.
+It enforces that protected pages are accessible only to users who are:
+- signed in
+- using a verified email
+- using a verified `@stetson.edu` email
+
+If a signed-in user is blocked (unverified or non-stetson), they are redirected to a dedicated `Access Restricted` UX page with clear next actions.
+
+---
+
+### Files Changed
+
+#### `src/app/page.tsx` -> moved to `src/app/(protected)/page.tsx`
+- The root homepage is now placed inside a protected route group.
+- This preserves route URL (`/`) while making it subject to the protected layout guard.
+- The page content itself was not functionally changed; only route organization changed for gating.
+
+#### `src/app/(protected)/layout.tsx`
+- Adds centralized frontend route protection for everything in the `(protected)` group.
+- **`const user = await currentUser();`**
+  - Reads Clerk session on the server for the current request.
+- **`if (!user) redirect("/sign-in");`**
+  - Ensures signed-out users are redirected to Clerk sign-in before protected content renders.
+- **`const access = evaluateFrontendAccess(user);`**
+  - Runs frontend authorization logic (verified + stetson email check).
+- **`if (!access.allowed) redirect("/access-restricted?...")`**
+  - Redirects unauthorized signed-in users to the blocked-user UX with a reason code in query params.
+- **`return <>{children}</>;`**
+  - Renders protected content only when both auth and authorization pass.
+
+#### `src/lib/frontend-auth.ts`
+- New frontend authorization utility used by protected layouts/pages.
+- **`RestrictionReason`**
+  - Enumerates explicit blocked states: missing email, unverified email, non-stetson domain.
+- **`evaluateFrontendAccess(user)`**
+  - Core decision function:
+    1. Rejects missing user/email list.
+    2. Requires at least one verified email.
+    3. Requires at least one verified email ending with `@stetson.edu`.
+    4. Returns success with normalized verified stetson email.
+- **`getRestrictionCopy(reason)`**
+  - Maps block reasons to user-facing text for the restricted page.
+
+#### `src/app/access-restricted/page.tsx`
+- Implements the blocked-user UX page required for frontend authorization failures.
+- **`useSearchParams()` + reason parsing**
+  - Reads reason code passed by protected layout and validates it to known values.
+- **Requirement message block**
+  - Explains that a verified `@stetson.edu` email is required.
+- **Action buttons**
+  - `Sign out` (Clerk `SignOutButton`)
+  - `Switch account` (link to `/sign-in`)
+  - `Verify email` (link to `/user-profile`)
+- This page is intentionally minimal and consistent with existing app styling.
+
+#### `src/app/user-profile/[[...user-profile]]/page.tsx`
+- Adds a Clerk-hosted profile route so blocked users have a direct place to manage/verify email.
+- **`<SignedIn><UserProfile ... /></SignedIn>`**
+  - Shows profile only for authenticated users.
+- **`<SignedOut><RedirectToSignIn /></SignedOut>`**
+  - Prevents anonymous access and sends signed-out users to sign-in.
+
+---
+
+### Scope Confirmation
+- Implemented: frontend auth flow and route protection.
+- Implemented: Clerk-based gating for protected pages.
+- Implemented: blocked-user access UX with required actions.
+- Not implemented: backend guard changes, `/api/*` behavior changes, business logic/model changes.
+
+---
+
 ## PR: Backend Authentication & Authorization (feat/backend-auth)
 
 ### Overview
