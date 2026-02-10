@@ -1,14 +1,14 @@
 import { clerkMiddleware } from "@clerk/nextjs/server";
 
 /**
- * Clerk middleware for session management.
+ * Clerk proxy for session management (formerly middleware.ts).
  * This makes Clerk auth state available to all matched routes
  * via currentUser() and auth() helpers.
  *
  * The actual authorization logic (verified @stetson.edu check)
  * is handled per-route by requireStetsonAuth() in src/lib/auth.ts.
  */
-export default clerkMiddleware();
+export const proxy = clerkMiddleware();
 
 export const config = {
     matcher: [
