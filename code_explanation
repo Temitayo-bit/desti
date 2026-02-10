@@ -48,8 +48,8 @@ If a signed-in user is blocked (unverified or non-stetson), they are redirected 
 
 #### `src/app/access-restricted/page.tsx`
 - Implements the blocked-user UX page required for frontend authorization failures.
-- **`useSearchParams()` + reason parsing**
-  - Reads reason code passed by protected layout and validates it to known values.
+- **Server `searchParams` parsing + reason validation**
+  - Reads reason code passed by protected layout via page `searchParams` and validates it to known values.
 - **Requirement message block**
   - Explains that a verified `@stetson.edu` email is required.
 - **Action buttons**

@@ -1,16 +1,23 @@
-"use client";
-
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { SignOutButton, SignedIn, SignedOut } from "@clerk/nextjs";
 import {
     getRestrictionCopy,
     type RestrictionReason,
 } from "@/lib/frontend-auth";
 
-export default function AccessRestrictedPage() {
-    const searchParams = useSearchParams();
-    const rawReason = searchParams.get("reason");
+interface AccessRestrictedPageProps {
+    searchParams: Promise<{
+        reason?: string | string[];
+    }>;
+}
+
+export default async function AccessRestrictedPage({
+    searchParams,
+}: AccessRestrictedPageProps) {
+    const params = await searchParams;
+    const rawReason = Array.isArray(params.reason)
+        ? params.reason[0]
+        : params.reason;
     const isKnownReason =
         rawReason === "missing_email" ||
         rawReason === "email_not_verified" ||
