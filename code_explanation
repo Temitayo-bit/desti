@@ -1,0 +1,90 @@
+# Code Explanation
+
+## PR: Backend Authentication & Authorization (feat/backend-auth)
+
+### Overview
+This PR implements backend authentication and authorization enforcement for MVP 1.
+All protected API routes require a valid Clerk session AND a verified @stetson.edu email.
+
+---
+
+### Files Changed
+
+#### `.env.local` / `.env.example`
+- **`.env.local`**: Contains the actual environment variable values (gitignored).
+- **`.env.example`**: Committed reference showing all required environment variables.
+- Variables:
+  - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` — Clerk publishable key (used client-side)
+  - `CLERK_SECRET_KEY` — Clerk secret key (used server-side)
+  - `NEXT_PUBLIC_CLERK_SIGN_IN_URL` / `NEXT_PUBLIC_CLERK_SIGN_UP_URL` — Clerk redirect URLs
+  - `DATABASE_URL` — PostgreSQL connection string for Prisma
+
+#### `prisma/schema.prisma`
+- Defines the PostgreSQL datasource and Prisma client generator.
+- **`User` model**: Local user record linked to Clerk.
+  - `id` — UUID primary key (auto-generated).
+  - `clerkUserId` — Unique string mapped from Clerk's user ID (`clerk_user_id` column). Ensures one local record per Clerk user.
+  - `email` — The user's verified @stetson.edu email address.
+  - `createdAt` / `updatedAt` — Timestamps for record creation and last update.
+  - `@@map("users")` — Maps the model to a `users` table in PostgreSQL.
+
+#### `prisma.config.ts`
+- Auto-generated Prisma config. Loads `DATABASE_URL` from environment via `dotenv/config`.
+- Points to `prisma/schema.prisma` and `prisma/migrations` directory.
+
+#### `src/lib/prisma.ts`
+- **Singleton Prisma client**.
+- Uses `globalThis` caching to prevent multiple PrismaClient instances during Next.js dev hot-reloads.
+- `globalForPrisma.prisma` stores the client globally; in production, a fresh instance is created per cold start.
+
+#### `src/lib/auth.ts`
+- **`requireStetsonAuth()`** — The core auth guard function.
+- **Step 1**: Calls `currentUser()` from `@clerk/nextjs/server` to get the Clerk session user.
+  - If `null` → returns `NextResponse` with **401** and `"Authentication required."` message.
+- **Step 2**: Iterates `user.emailAddresses` looking for an email where:
+  - `verification.status === "verified"` — Email must be verified through Clerk.
+  - `emailAddress.toLowerCase().endsWith("@stetson.edu")` — Must be a Stetson University email (case-insensitive).
+  - If no matching email → returns `NextResponse` with **403** and `"Access restricted to verified @stetson.edu email addresses."` message.
+- **Step 3**: Returns `AuthedUser` object with `clerkUserId` and `primaryStetsonEmail`.
+- **Type `AuthResult`**: Discriminated union — either `{ user: AuthedUser }` or `{ error: NextResponse }`. Enables clean pattern matching in route handlers.
+
+#### `src/middleware.ts`
+- Exports `clerkMiddleware()` from `@clerk/nextjs/server`.
+- **Purpose**: Makes Clerk auth state (session, user) available to all matched routes. Without this, `currentUser()` would return `null` for every request.
+- **`config.matcher`**: Applies to all `/api/(.*)` routes and non-static pages. Skips Next.js internals (`_next`) and static assets (images, fonts, etc.).
+- **Note**: This middleware does NOT enforce authorization — it only provides session data. Authorization is enforced per-route by `requireStetsonAuth()`.
+
+#### `src/app/layout.tsx`
+- Wraps the entire app with `<ClerkProvider>` — required for Clerk to manage sessions.
+- Updates metadata title/description to "Desti".
+- **Note**: This is the only frontend file touched, and it's the minimal change needed for Clerk to function. No frontend route protection or UI logic is added.
+
+#### `src/app/api/me/route.ts`
+- **`GET /api/me`** — Returns the current user's profile.
+- **Line-by-line**:
+  1. Calls `requireStetsonAuth()` — if it returns an error, that error response is returned immediately (401 or 403).
+  2. Calls `prisma.user.findUnique({ where: { clerkUserId } })` to check if a local user already exists.
+  3. Calls `prisma.user.upsert()` with:
+     - `where: { clerkUserId }` — Matches on the unique Clerk ID.
+     - `create: { clerkUserId, email }` — Creates the user if missing.
+     - `update: { email }` — Keeps the email in sync if user already exists.
+  4. Sets `created = !existingUser` — `true` if this was the first call for this user.
+  5. Returns JSON with `clerkUserId`, `primaryVerifiedEmail`, `created`, and `localUser` (safe fields only: id, clerkUserId, email, createdAt, updatedAt).
+- **Idempotency**: `upsert` ensures no duplicate users are created even under concurrent requests.
+
+#### `src/app/api/health/route.ts`
+- **`GET /api/health`** — Public health-check endpoint. No authentication required.
+- Returns `{ status: "ok", timestamp: "..." }`.
+- Useful for uptime monitoring, load balancer health checks, and deployment verification.
+
+#### `.gitignore`
+- Updated to allow `.env.example` to be committed while still excluding `.env`, `.env.local`, and `*.local` env files.
+
+---
+
+### API Responses Summary
+
+| Endpoint | Auth Required | 401 When | 403 When | 200 Response |
+|-----------|--------------|----------|----------|-------------|
+| `GET /api/health` | No | — | — | `{ status, timestamp }` |
+| `GET /api/me` | Yes | No Clerk session | No verified @stetson.edu email | `{ clerkUserId, primaryVerifiedEmail, created, localUser }` |
