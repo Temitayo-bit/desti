@@ -1,5 +1,20 @@
 # Code Explanation
 
+## Patch: Next.js Middleware File Discovery (codex/frontend-auth-gating-mvp1)
+
+### Overview
+This patch adds a `middleware.ts` entrypoint so Next.js can discover and apply the Clerk matcher configuration from `src/proxy.ts`.
+
+### Files Changed
+
+#### `src/middleware.ts`
+- Re-exports `proxy` from `src/proxy.ts` as `middleware`, and re-exports `config`.
+- Line responsibility:
+  - `proxy as middleware`: provides the handler under the filename/export Next.js expects.
+  - `config`: ensures the matcher rules from `src/proxy.ts` are applied by Next.js.
+
+---
+
 ## Patch: Clerk Middleware Coverage Fix (codex/frontend-auth-gating-mvp1)
 
 ### Overview
