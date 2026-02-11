@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { SignOutButton, SignedIn, SignedOut } from "@clerk/nextjs";
+import { SignOutButton, UserButton } from "@clerk/nextjs";
+import { auth } from "@clerk/nextjs/server";
 import {
     getRestrictionCopy,
     type RestrictionReason,
@@ -14,6 +15,9 @@ interface AccessRestrictedPageProps {
 export default async function AccessRestrictedPage({
     searchParams,
 }: AccessRestrictedPageProps) {
+    const { userId, sessionId } = await auth();
+    const isSignedIn = Boolean(userId);
+
     const params = await searchParams;
     const rawReason = Array.isArray(params.reason)
         ? params.reason[0]
@@ -40,8 +44,11 @@ export default async function AccessRestrictedPage({
                 </p>
 
                 <div className="mt-6 flex flex-wrap gap-3">
-                    <SignedIn>
-                        <SignOutButton redirectUrl="/sign-in">
+                    {isSignedIn ? (
+                        <SignOutButton
+                            redirectUrl="/sign-in"
+                            sessionId={sessionId ?? undefined}
+                        >
                             <button
                                 type="button"
                                 className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-100"
@@ -49,23 +56,27 @@ export default async function AccessRestrictedPage({
                                 Sign out
                             </button>
                         </SignOutButton>
-                    </SignedIn>
-
-                    <SignedOut>
+                    ) : (
                         <Link
                             href="/sign-in"
                             className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-100"
                         >
                             Sign in
                         </Link>
-                    </SignedOut>
+                    )}
 
-                    <Link
-                        href="/sign-in"
-                        className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-100"
-                    >
-                        Switch account
-                    </Link>
+                    {isSignedIn ? (
+                        <div className="rounded-md border border-zinc-300 px-3 py-1 text-sm font-medium text-zinc-800">
+                            <UserButton afterSignOutUrl="/sign-in" />
+                        </div>
+                    ) : (
+                        <Link
+                            href="/sign-in"
+                            className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-100"
+                        >
+                            Switch account
+                        </Link>
+                    )}
                     <Link
                         href="/user-profile"
                         className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-100"

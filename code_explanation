@@ -53,8 +53,10 @@ If a signed-in user is blocked (unverified or non-stetson), they are redirected 
 - **Requirement message block**
   - Explains that a verified `@stetson.edu` email is required.
 - **Action buttons**
-  - `Sign out` (Clerk `SignOutButton`)
-  - `Switch account` (link to `/sign-in`)
+  - `Sign out` (Clerk `SignOutButton`, scoped to current session when signed in)
+  - `Switch account` is conditional:
+    - Signed in: Clerk `UserButton` for account/session switching
+    - Signed out: link to `/sign-in`
   - `Verify email` (link to `/user-profile`)
 - This page is intentionally minimal and consistent with existing app styling.
 
