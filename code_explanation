@@ -1,5 +1,23 @@
 # Code Explanation
 
+## Patch: Clerk Middleware Coverage Fix (codex/frontend-auth-gating-mvp1)
+
+### Overview
+This patch fixes a production server error by ensuring Clerk middleware runs on frontend page requests (not only API routes).
+Without this, server-side calls like `auth()` and `currentUser()` on pages can fail at runtime in Vercel.
+
+### Files Changed
+
+#### `src/proxy.ts`
+- Updated `config.matcher` from API-only to page+API coverage.
+- New matcher behavior:
+  - Includes app/page routes.
+  - Includes `/api` and `/trpc` routes.
+  - Excludes `_next` internals and static assets.
+- This keeps Clerk session context available for frontend route gating and restricted-access pages.
+
+---
+
 ## PR: Frontend Auth Flow & Route Protection (codex/frontend-auth-gating-mvp1)
 
 ### Overview
