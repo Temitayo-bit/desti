@@ -1,17 +1,17 @@
 # Code Explanation
 
-## Patch: Next.js Middleware File Discovery (codex/frontend-auth-gating-mvp1)
+## Patch: Next.js Proxy-Only Middleware Fix (codex/frontend-auth-gating-mvp1)
 
 ### Overview
-This patch adds a `middleware.ts` entrypoint so Next.js can discover and apply the Clerk matcher configuration from `src/proxy.ts`.
+This patch resolves a Next.js build failure caused by having both `src/proxy.ts` and `src/middleware.ts`.
+In Next.js 16, this project must use `src/proxy.ts` only for middleware/proxy behavior.
 
 ### Files Changed
 
-#### `src/middleware.ts`
-- Re-exports `proxy` from `src/proxy.ts` as `middleware`, and re-exports `config`.
-- Line responsibility:
-  - `proxy as middleware`: provides the handler under the filename/export Next.js expects.
-  - `config`: ensures the matcher rules from `src/proxy.ts` are applied by Next.js.
+#### `src/middleware.ts` (removed)
+- Deleted the shim file to avoid dual-detection conflict:
+  - `Both middleware file ... and proxy file ... are detected. Please use ... proxy.ts only.`
+- `src/proxy.ts` remains the single source for Clerk middleware handler and matcher config.
 
 ---
 
