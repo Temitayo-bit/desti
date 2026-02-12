@@ -198,3 +198,87 @@ All protected API routes require a valid Clerk session AND a verified @stetson.e
 |-----------|--------------|----------|----------|-------------|
 | `GET /api/health` | No | — | — | `{ status, timestamp }` |
 | `GET /api/me` | Yes | No Clerk session | No verified @stetson.edu email | `{ clerkUserId, primaryVerifiedEmail, created, localUser }` |
+
+---
+
+## 2026-02-12 — Ride Creation (POST /api/rides)
+
+### Overview
+This PR implements the ride creation endpoint for MVP 1. Drivers with verified @stetson.edu emails can create rides. The endpoint enforces comprehensive validation, uses idempotency keys to prevent duplicate rides under retries/concurrency, and derives server-side fields (driverUserId, seatsAvailable, status) from auth context and business rules.
+
+---
+
+### Files Changed
+
+#### `prisma/schema.prisma`
+- **`DistanceCategory` enum** — Defines `SHORT`, `MEDIUM`, `LONG` values. Used by the `Ride` model to categorize trip distance.
+- **`RideStatus` enum** — Defines `ACTIVE` for MVP 1. Room to add `CANCELLED`, `COMPLETED` later.
+- **`Ride` model** — Mapped to `rides` table. Contains:
+  - `id` — UUID primary key (auto-generated).
+  - `driverUserId` — Clerk user ID of the driver. FK to `User.clerkUserId`.
+  - `originText` / `destinationText` — Trimmed text strings for origin and destination (3–200 chars).
+  - `earliestDepartAt` / `latestDepartAt` — Departure time window (validated: latest > earliest, window ≤ 48h, earliest ≥ now − 10min).
+  - `distanceCategory` — Enum value (`SHORT` | `MEDIUM` | `LONG`).
+  - `priceCents` — Integer price in cents (≥ 0).
+  - `seatsTotal` / `seatsAvailable` — Integer seats (1–8). `seatsAvailable` initialized to `seatsTotal` on create.
+  - `status` — Defaults to `ACTIVE`.
+  - `createdAt` / `updatedAt` — Auto-managed timestamps.
+  - `driver` relation — Links to User via `driverUserId` → `User.clerkUserId`.
+  - `idempotencyKeys` relation — Back-relation to `IdempotencyKey`.
+- **`IdempotencyKey` model** — Mapped to `idempotency_keys` table. Contains:
+  - `id` — UUID primary key.
+  - `driverUserId` — Clerk user ID.
+  - `idempotencyKey` — Client-provided idempotency key string.
+  - `rideId` — FK to the `Ride` created with this key.
+  - `createdAt` — Timestamp.
+  - `@@unique([driverUserId, idempotencyKey])` — Composite unique constraint. **This is the concurrency safety mechanism** — prevents two rides from being created for the same driver + key, even under concurrent requests.
+- **`User` model** — Added `rides Ride[] @relation("DriverRides")` back-relation.
+
+#### `prisma/migrations/20260212190911_add_ride_and_idempotency_models/migration.sql`
+- Auto-generated Prisma migration that:
+  - Creates `DistanceCategory` and `RideStatus` enums in PostgreSQL.
+  - Creates the `rides` table with all columns and FK to `users.clerk_user_id`.
+  - Creates the `idempotency_keys` table with FK to `rides.id`.
+  - Adds unique index on `(driver_user_id, idempotency_key)`.
+
+#### `src/app/api/rides/route.ts`
+- **`POST` handler** — The main endpoint implementation. Flow:
+  1. **Auth guard** (`requireStetsonAuth()`) — Rejects unauthenticated (401) or non-stetson (403) users. Derives `driverUserId` from `auth.user.clerkUserId`. Client-supplied `driverUserId` is explicitly deleted from the body.
+  2. **Idempotency-Key header** — Read from `request.headers.get("Idempotency-Key")`. If missing or empty after trim → 400.
+  3. **Body parsing** — `request.json()` wrapped in try/catch for invalid JSON → 400.
+  4. **`validateRideBody(body)`** — Returns `{ errors, parsed }`. If errors exist → 400 with `{ error, message, details }` where `details` is an array of `{ field, message }` objects.
+  5. **Idempotency check** — `prisma.idempotencyKey.findUnique()` with composite key `(driverUserId, idempotencyKey)`. If found → return the associated ride with **200** (replay).
+  6. **User upsert** — `prisma.user.upsert()` ensures a local User record exists before creating the ride. Required because `rides.driver_user_id` has a FK to `users.clerk_user_id`. Idempotent — creates on first call, syncs email on subsequent calls.
+  7. **Ride creation** — `prisma.ride.create()` with derived fields: `seatsAvailable = seatsTotal`, `status = "ACTIVE"`.
+  8. **Idempotency mapping creation** — `prisma.idempotencyKey.create()` inside try/catch. If P2002 unique constraint violation (race condition) → fetch existing mapping and return ride with **200**.
+  9. **201 response** — Return created ride JSON.
+  10. **500 catch-all** — Logs unexpected errors, returns generic error response.
+- **`validateRideBody(body)`** — Validation function. Returns field-level error array:
+  - `originText` / `destinationText` — Must be strings, trimmed, 3–200 chars.
+  - `earliestDepartAt` / `latestDepartAt` — Must parse as valid Date objects.
+  - Cross-field: `latestDepartAt > earliestDepartAt`, window ≤ 48h.
+  - `earliestDepartAt ≥ now − 10 minutes` (clock skew grace).
+  - `distanceCategory` — Must be in `DistanceCategory` enum set.
+  - `priceCents` — Integer ≥ 0.
+  - `seatsTotal` — Integer 1–8.
+- **`isPrismaUniqueConstraintError(err)`** — Type guard checking for Prisma error code `P2002`. Used in the idempotency conflict handler.
+
+#### `src/__tests__/ride-create.test.ts`
+- **Test file** — 7 unit tests using Vitest with mocked auth and Prisma:
+  1. `returns 201 with created ride on successful create` — Verifies status, ride ID, driverUserId, seatsAvailable, and status in response.
+  2. `returns 400 when Idempotency-Key header is missing` — Request has no Idempotency-Key header.
+  3. `returns 400 when earliestDepartAt is after latestDepartAt` — earliest 5h from now, latest 1h from now.
+  4. `returns 400 when departure window exceeds 48 hours` — 49h gap between earliest and latest.
+  5. `returns 400 when seatsTotal is outside 1-8 range` — seatsTotal = 10.
+  6. `returns 400 when priceCents is negative` — priceCents = -100.
+  7. `returns 200 with existing ride on idempotency replay` — Mock returns existing mapping, verifies same ride ID returned and no new ride created.
+- **Mock setup** — Uses `vi.hoisted()` to declare mock objects before `vi.mock()` factory functions (which are hoisted). Mocks: `requireStetsonAuth`, `prisma`, and `DistanceCategory` enum.
+- **Helpers** — `validBody()` builds a valid request body, `makeRequest()` builds a Request object, `successAuth()` returns mock auth, `fakeRide()` returns a mock Ride object.
+
+#### `vitest.config.ts`
+- Vitest configuration file. Sets test environment to `node` and configures `@/` path alias to resolve to `./src/` (matches `tsconfig.json` paths).
+
+#### `package.json`
+- Added `"test": "vitest run"` script.
+- Added `vitest` as a devDependency.
+

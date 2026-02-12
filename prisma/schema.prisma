@@ -22,5 +22,55 @@ model User {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
+  rides Ride[] @relation("DriverRides")
+
   @@map("users")
+}
+
+/// Distance category for a ride.
+enum DistanceCategory {
+  SHORT
+  MEDIUM
+  LONG
+}
+
+/// Current status of a ride.
+enum RideStatus {
+  ACTIVE
+}
+
+/// A ride offered by a driver.
+model Ride {
+  id               String           @id @default(uuid())
+  driverUserId     String           @map("driver_user_id")
+  originText       String           @map("origin_text")
+  destinationText  String           @map("destination_text")
+  earliestDepartAt DateTime         @map("earliest_depart_at")
+  latestDepartAt   DateTime         @map("latest_depart_at")
+  distanceCategory DistanceCategory @map("distance_category")
+  priceCents       Int              @map("price_cents")
+  seatsTotal       Int              @map("seats_total")
+  seatsAvailable   Int              @map("seats_available")
+  status           RideStatus       @default(ACTIVE)
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+
+  driver User @relation("DriverRides", fields: [driverUserId], references: [clerkUserId])
+  idempotencyKeys IdempotencyKey[]
+
+  @@map("rides")
+}
+
+/// Idempotency key mapping for ride creation.
+model IdempotencyKey {
+  id             String   @id @default(uuid())
+  driverUserId   String   @map("driver_user_id")
+  idempotencyKey String   @map("idempotency_key")
+  rideId         String   @map("ride_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  ride Ride @relation(fields: [rideId], references: [id])
+
+  @@unique([driverUserId, idempotencyKey])
+  @@map("idempotency_keys")
 }
