@@ -2,9 +2,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── Mock setup ───────────────────────────────────────────────────────────────
 // vi.hoisted() ensures these are available when vi.mock factories execute (hoisted)
-const { mockRequireStetsonAuth, mockPrisma } = vi.hoisted(() => ({
-    mockRequireStetsonAuth: vi.fn(),
-    mockPrisma: {
+const { mockRequireStetsonAuth, mockPrisma } = vi.hoisted(() => {
+    const prismaClient = {
         user: {
             upsert: vi.fn().mockResolvedValue({}),
         },
@@ -15,8 +14,14 @@ const { mockRequireStetsonAuth, mockPrisma } = vi.hoisted(() => ({
         ride: {
             create: vi.fn(),
         },
-    },
-}));
+        // $transaction executes the callback with the mock client itself as `tx`
+        $transaction: vi.fn(async (cb: (tx: typeof prismaClient) => Promise<unknown>) => cb(prismaClient)),
+    };
+    return {
+        mockRequireStetsonAuth: vi.fn(),
+        mockPrisma: prismaClient,
+    };
+});
 
 vi.mock("@/lib/auth", () => ({
     requireStetsonAuth: (...args: unknown[]) => mockRequireStetsonAuth(...args),
@@ -116,7 +121,7 @@ describe("POST /api/rides", () => {
         mockPrisma.idempotencyKey.findUnique.mockResolvedValue(null);
     });
 
-    // 1) Successful create → 201
+    // 1) Successful create → 201 (ride + idempotency key created atomically via $transaction)
     it("returns 201 with created ride on successful create", async () => {
         const ride = fakeRide();
         mockPrisma.ride.create.mockResolvedValue(ride);
@@ -131,6 +136,8 @@ describe("POST /api/rides", () => {
         expect(json.driverUserId).toBe("user_test123");
         expect(json.seatsAvailable).toBe(4);
         expect(json.status).toBe("ACTIVE");
+        // Verify $transaction was used for atomicity
+        expect(mockPrisma.$transaction).toHaveBeenCalledOnce();
     });
 
     // 2) Missing Idempotency-Key → 400

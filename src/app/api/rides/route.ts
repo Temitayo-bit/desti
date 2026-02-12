@@ -221,33 +221,40 @@ export async function POST(request: NextRequest) {
             create: { clerkUserId: driverUserId, email: auth.user.primaryStetsonEmail },
         });
 
-        // 6. Create ride with derived fields
-        const ride = await prisma.ride.create({
-            data: {
-                driverUserId,
-                originText: parsed.originText,
-                destinationText: parsed.destinationText,
-                earliestDepartAt: parsed.earliestDepartAt,
-                latestDepartAt: parsed.latestDepartAt,
-                distanceCategory: parsed.distanceCategory,
-                priceCents: parsed.priceCents,
-                seatsTotal: parsed.seatsTotal,
-                seatsAvailable: parsed.seatsTotal, // ← invariant: seatsAvailable == seatsTotal on create
-                status: "ACTIVE",
-            },
-        });
-
-        // 6. Store idempotency mapping — catch unique constraint conflict (P2002)
+        // 6. Create ride + idempotency mapping in a single atomic transaction.
+        //    If the idempotency key insert hits a P2002 (race condition),
+        //    the entire transaction rolls back — preventing orphan rides.
+        let ride;
         try {
-            await prisma.idempotencyKey.create({
-                data: {
-                    driverUserId,
-                    idempotencyKey,
-                    rideId: ride.id,
-                },
+            ride = await prisma.$transaction(async (tx) => {
+                const newRide = await tx.ride.create({
+                    data: {
+                        driverUserId,
+                        originText: parsed.originText,
+                        destinationText: parsed.destinationText,
+                        earliestDepartAt: parsed.earliestDepartAt,
+                        latestDepartAt: parsed.latestDepartAt,
+                        distanceCategory: parsed.distanceCategory,
+                        priceCents: parsed.priceCents,
+                        seatsTotal: parsed.seatsTotal,
+                        seatsAvailable: parsed.seatsTotal, // ← invariant: seatsAvailable == seatsTotal on create
+                        status: "ACTIVE",
+                    },
+                });
+
+                await tx.idempotencyKey.create({
+                    data: {
+                        driverUserId,
+                        idempotencyKey,
+                        rideId: newRide.id,
+                    },
+                });
+
+                return newRide;
             });
         } catch (err: unknown) {
             // Race condition: another concurrent request already stored the key.
+            // The transaction rolled back, so no orphan ride was persisted.
             // Fetch the existing mapping and return that ride instead.
             if (isPrismaUniqueConstraintError(err)) {
                 const existing = await prisma.idempotencyKey.findUnique({
