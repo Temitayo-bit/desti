@@ -169,9 +169,9 @@ export async function POST(request: NextRequest) {
         }
 
         // 3. Parse and validate request body
-        let body: Record<string, unknown>;
+        let rawBody: unknown;
         try {
-            body = await request.json();
+            rawBody = await request.json();
         } catch {
             return NextResponse.json(
                 {
@@ -181,6 +181,19 @@ export async function POST(request: NextRequest) {
                 { status: 400 }
             );
         }
+
+        // Ensure body is a plain object (reject null, arrays, primitives)
+        if (typeof rawBody !== "object" || rawBody === null || Array.isArray(rawBody)) {
+            return NextResponse.json(
+                {
+                    error: "Bad Request",
+                    message: "Request body must be a JSON object.",
+                },
+                { status: 400 }
+            );
+        }
+
+        const body = rawBody as Record<string, unknown>;
 
         // Reject any client attempt to provide driverUserId (ignore it)
         delete body.driverUserId;
