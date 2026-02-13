@@ -7,7 +7,7 @@ import { DistanceCategory } from "@/generated/prisma/client";
 const VALID_DISTANCE_CATEGORIES: ReadonlySet<string> = new Set(
     Object.values(DistanceCategory)
 );
-const MAX_DEPARTURE_WINDOW_MS = 48 * 60 * 60 * 1000; // 48 hours
+const MAX_DESIRED_WINDOW_MS = 48 * 60 * 60 * 1000; // 48 hours
 const CLOCK_SKEW_GRACE_MS = 10 * 60 * 1000; // 10 minutes
 
 // ── Validation helpers ───────────────────────────────────────────────────────
@@ -18,19 +18,18 @@ interface ValidationError {
 }
 
 /**
- * Validates the ride creation request body.
+ * Validates the trip request creation request body.
  * Returns an array of field-level errors (empty = valid).
  */
-function validateRideBody(body: Record<string, unknown>): {
+function validateTripRequestBody(body: Record<string, unknown>): {
     errors: ValidationError[];
     parsed: {
         originText: string;
         destinationText: string;
-        earliestDepartAt: Date;
-        latestDepartAt: Date;
+        earliestDesiredAt: Date;
+        latestDesiredAt: Date;
         distanceCategory: DistanceCategory;
-        priceCents: number;
-        seatsTotal: number;
+        seatsNeeded: number;
     } | null;
 } {
     const errors: ValidationError[] = [];
@@ -55,48 +54,48 @@ function validateRideBody(body: Record<string, unknown>): {
         errors.push({ field: "destinationText", message: "destinationText must be between 3 and 200 characters after trimming." });
     }
 
-    // — earliestDepartAt ——————————————————————————————————————————————————————
-    const earliestRaw = body.earliestDepartAt;
-    let earliestDepartAt: Date | null = null;
+    // — earliestDesiredAt —————————————————————————————————————————————————————
+    const earliestRaw = body.earliestDesiredAt;
+    let earliestDesiredAt: Date | null = null;
     if (typeof earliestRaw !== "string" || !earliestRaw) {
-        errors.push({ field: "earliestDepartAt", message: "earliestDepartAt is required and must be an ISO datetime string." });
+        errors.push({ field: "earliestDesiredAt", message: "earliestDesiredAt is required and must be an ISO datetime string." });
     } else {
-        earliestDepartAt = new Date(earliestRaw);
-        if (isNaN(earliestDepartAt.getTime())) {
-            errors.push({ field: "earliestDepartAt", message: "earliestDepartAt must be a valid ISO datetime." });
-            earliestDepartAt = null;
+        earliestDesiredAt = new Date(earliestRaw);
+        if (isNaN(earliestDesiredAt.getTime())) {
+            errors.push({ field: "earliestDesiredAt", message: "earliestDesiredAt must be a valid ISO datetime." });
+            earliestDesiredAt = null;
         }
     }
 
-    // — latestDepartAt ————————————————————————————————————————————————————————
-    const latestRaw = body.latestDepartAt;
-    let latestDepartAt: Date | null = null;
+    // — latestDesiredAt ———————————————————————————————————————————————————————
+    const latestRaw = body.latestDesiredAt;
+    let latestDesiredAt: Date | null = null;
     if (typeof latestRaw !== "string" || !latestRaw) {
-        errors.push({ field: "latestDepartAt", message: "latestDepartAt is required and must be an ISO datetime string." });
+        errors.push({ field: "latestDesiredAt", message: "latestDesiredAt is required and must be an ISO datetime string." });
     } else {
-        latestDepartAt = new Date(latestRaw);
-        if (isNaN(latestDepartAt.getTime())) {
-            errors.push({ field: "latestDepartAt", message: "latestDepartAt must be a valid ISO datetime." });
-            latestDepartAt = null;
+        latestDesiredAt = new Date(latestRaw);
+        if (isNaN(latestDesiredAt.getTime())) {
+            errors.push({ field: "latestDesiredAt", message: "latestDesiredAt must be a valid ISO datetime." });
+            latestDesiredAt = null;
         }
     }
 
     // — Datetime cross-field validation ———————————————————————————————————————
-    if (earliestDepartAt && latestDepartAt) {
-        if (latestDepartAt.getTime() <= earliestDepartAt.getTime()) {
-            errors.push({ field: "latestDepartAt", message: "latestDepartAt must be strictly after earliestDepartAt." });
+    if (earliestDesiredAt && latestDesiredAt) {
+        if (latestDesiredAt.getTime() <= earliestDesiredAt.getTime()) {
+            errors.push({ field: "latestDesiredAt", message: "latestDesiredAt must be strictly after earliestDesiredAt." });
         } else {
-            const windowMs = latestDepartAt.getTime() - earliestDepartAt.getTime();
-            if (windowMs > MAX_DEPARTURE_WINDOW_MS) {
-                errors.push({ field: "latestDepartAt", message: "Departure window must be 48 hours or less." });
+            const windowMs = latestDesiredAt.getTime() - earliestDesiredAt.getTime();
+            if (windowMs > MAX_DESIRED_WINDOW_MS) {
+                errors.push({ field: "latestDesiredAt", message: "Desired window must be 48 hours or less." });
             }
         }
     }
 
-    if (earliestDepartAt) {
+    if (earliestDesiredAt) {
         const graceThreshold = Date.now() - CLOCK_SKEW_GRACE_MS;
-        if (earliestDepartAt.getTime() < graceThreshold) {
-            errors.push({ field: "earliestDepartAt", message: "earliestDepartAt must not be in the past (10-minute grace allowed)." });
+        if (earliestDesiredAt.getTime() < graceThreshold) {
+            errors.push({ field: "earliestDesiredAt", message: "earliestDesiredAt must not be in the past (10-minute grace allowed)." });
         }
     }
 
@@ -106,16 +105,10 @@ function validateRideBody(body: Record<string, unknown>): {
         errors.push({ field: "distanceCategory", message: "distanceCategory must be one of SHORT, MEDIUM, or LONG." });
     }
 
-    // — priceCents ————————————————————————————————————————————————————————————
-    const priceRaw = body.priceCents;
-    if (typeof priceRaw !== "number" || !Number.isInteger(priceRaw) || priceRaw < 0) {
-        errors.push({ field: "priceCents", message: "priceCents must be a non-negative integer." });
-    }
-
-    // — seatsTotal ————————————————————————————————————————————————————————————
-    const seatsRaw = body.seatsTotal;
+    // — seatsNeeded ———————————————————————————————————————————————————————————
+    const seatsRaw = body.seatsNeeded;
     if (typeof seatsRaw !== "number" || !Number.isInteger(seatsRaw) || seatsRaw < 1 || seatsRaw > 8) {
-        errors.push({ field: "seatsTotal", message: "seatsTotal must be an integer between 1 and 8." });
+        errors.push({ field: "seatsNeeded", message: "seatsNeeded must be an integer between 1 and 8." });
     }
 
     if (errors.length > 0) {
@@ -127,34 +120,33 @@ function validateRideBody(body: Record<string, unknown>): {
         parsed: {
             originText,
             destinationText,
-            earliestDepartAt: earliestDepartAt!,
-            latestDepartAt: latestDepartAt!,
+            earliestDesiredAt: earliestDesiredAt!,
+            latestDesiredAt: latestDesiredAt!,
             distanceCategory: distRaw as DistanceCategory,
-            priceCents: priceRaw as number,
-            seatsTotal: seatsRaw as number,
+            seatsNeeded: seatsRaw as number,
         },
     };
 }
 
-// ── POST /api/rides ──────────────────────────────────────────────────────────
+// ── POST /api/trip-requests ──────────────────────────────────────────────────
 
 /**
- * POST /api/rides
+ * POST /api/trip-requests
  *
- * Creates a new ride. Requires:
+ * Creates a new trip request. Requires:
  * - Valid Clerk session with verified @stetson.edu email
  * - Idempotency-Key header
- * - Valid ride details in the request body
+ * - Valid trip request details in the request body
  *
  * Returns 201 on first create, 200 on idempotent replay.
  */
 export async function POST(request: NextRequest) {
     try {
-        // 1. Auth guard — derive driverUserId from authenticated user
+        // 1. Auth guard — derive riderUserId from authenticated user
         const auth = await requireStetsonAuth();
         if (auth.error) return auth.error;
 
-        const driverUserId = auth.user.clerkUserId;
+        const riderUserId = auth.user.clerkUserId;
 
         // 2. Require Idempotency-Key header
         const idempotencyKey = request.headers.get("Idempotency-Key")?.trim();
@@ -195,10 +187,10 @@ export async function POST(request: NextRequest) {
 
         const body = rawBody as Record<string, unknown>;
 
-        // Reject any client attempt to provide driverUserId (ignore it)
-        delete body.driverUserId;
+        // Reject any client attempt to provide riderUserId (ignore it)
+        delete body.riderUserId;
 
-        const validation = validateRideBody(body);
+        const validation = validateTripRequestBody(body);
         if (validation.errors.length > 0) {
             return NextResponse.json(
                 {
@@ -212,93 +204,91 @@ export async function POST(request: NextRequest) {
 
         const parsed = validation.parsed!;
 
-        // 4. Idempotency check — return existing ride if key was already used
+        // 4. Idempotency check — return existing trip request if key was already used
         const existingMapping = await prisma.idempotencyKey.findUnique({
             where: {
                 userId_idempotencyKey_entityType: {
-                    userId: driverUserId,
+                    userId: riderUserId,
                     idempotencyKey,
-                    entityType: "RIDE",
+                    entityType: "TRIP_REQUEST",
                 },
             },
-            include: { ride: true },
+            include: { tripRequest: true },
         });
 
         if (existingMapping) {
-            return NextResponse.json(existingMapping.ride, { status: 200 });
+            return NextResponse.json(existingMapping.tripRequest, { status: 200 });
         }
 
-        // 5. Ensure local User record exists (FK: rides.driver_user_id → users.clerk_user_id)
+        // 5. Ensure local User record exists (FK: trip_requests.rider_user_id → users.clerk_user_id)
         await prisma.user.upsert({
-            where: { clerkUserId: driverUserId },
+            where: { clerkUserId: riderUserId },
             update: { email: auth.user.primaryStetsonEmail },
-            create: { clerkUserId: driverUserId, email: auth.user.primaryStetsonEmail },
+            create: { clerkUserId: riderUserId, email: auth.user.primaryStetsonEmail },
         });
 
-        // 6. Create ride + idempotency mapping in a single atomic transaction.
+        // 6. Create trip request + idempotency mapping in a single atomic transaction.
         //    If the idempotency key insert hits a P2002 (race condition),
-        //    the entire transaction rolls back — preventing orphan rides.
-        let ride;
+        //    the entire transaction rolls back — preventing orphan trip requests.
+        let tripRequest;
         try {
-            ride = await prisma.$transaction(async (tx) => {
-                const newRide = await tx.ride.create({
+            tripRequest = await prisma.$transaction(async (tx) => {
+                const newTripRequest = await tx.tripRequest.create({
                     data: {
-                        driverUserId,
+                        riderUserId,
                         originText: parsed.originText,
                         destinationText: parsed.destinationText,
-                        earliestDepartAt: parsed.earliestDepartAt,
-                        latestDepartAt: parsed.latestDepartAt,
+                        earliestDesiredAt: parsed.earliestDesiredAt,
+                        latestDesiredAt: parsed.latestDesiredAt,
                         distanceCategory: parsed.distanceCategory,
-                        priceCents: parsed.priceCents,
-                        seatsTotal: parsed.seatsTotal,
-                        seatsAvailable: parsed.seatsTotal, // ← invariant: seatsAvailable == seatsTotal on create
+                        seatsNeeded: parsed.seatsNeeded,
                         status: "ACTIVE",
                     },
                 });
 
                 await tx.idempotencyKey.create({
                     data: {
-                        userId: driverUserId,
+                        userId: riderUserId,
                         idempotencyKey,
-                        entityType: "RIDE",
-                        rideId: newRide.id,
+                        entityType: "TRIP_REQUEST",
+                        tripRequestId: newTripRequest.id,
                     },
                 });
 
-                return newRide;
+                return newTripRequest;
             });
         } catch (err: unknown) {
             // Race condition: another concurrent request already stored the key.
-            // The transaction rolled back, so no orphan ride was persisted.
-            // Fetch the existing mapping and return that ride instead.
+            // The transaction rolled back, so no orphan trip request was persisted.
+            // Fetch the existing mapping and return that trip request instead.
             if (isPrismaUniqueConstraintError(err)) {
                 const existing = await prisma.idempotencyKey.findUnique({
                     where: {
                         userId_idempotencyKey_entityType: {
-                            userId: driverUserId,
+                            userId: riderUserId,
                             idempotencyKey,
-                            entityType: "RIDE",
+                            entityType: "TRIP_REQUEST",
                         },
                     },
-                    include: { ride: true },
+                    include: { tripRequest: true },
                 });
 
                 if (existing) {
-                    return NextResponse.json(existing.ride, { status: 200 });
+                    return NextResponse.json(existing.tripRequest, { status: 200 });
                 }
             }
 
             throw err; // Re-throw unexpected errors
         }
 
-        // 7. Return created ride
-        return NextResponse.json(ride, { status: 201 });
+        // 7. Return created trip request
+        return NextResponse.json(tripRequest, { status: 201 });
     } catch (error) {
-        console.error("[POST /api/rides] Unexpected error:", error);
+        console.error("[POST /api/trip-requests] Unexpected error:", error);
         return NextResponse.json(
             {
                 error: "Internal Server Error",
-                message: "An unexpected error occurred while creating the ride.",
+                message: "An unexpected error occurred while creating the trip request.",
             },
             { status: 500 }
         );

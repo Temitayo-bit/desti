@@ -11,7 +11,7 @@ const { mockRequireStetsonAuth, mockPrisma } = vi.hoisted(() => {
             findUnique: vi.fn(),
             create: vi.fn(),
         },
-        ride: {
+        tripRequest: {
             create: vi.fn(),
         },
         // $transaction executes the callback with the mock client itself as `tx`
@@ -41,11 +41,11 @@ vi.mock("@/generated/prisma/client", () => ({
 }));
 
 // ── Import handler AFTER mocks are set up ────────────────────────────────────
-import { POST } from "@/app/api/rides/route";
+import { POST } from "@/app/api/trip-requests/route";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Build a valid ride creation request body */
+/** Build a valid trip request creation request body */
 function validBody(overrides: Record<string, unknown> = {}) {
     const now = new Date();
     const earliest = new Date(now.getTime() + 60 * 60 * 1000); // +1h
@@ -54,11 +54,10 @@ function validBody(overrides: Record<string, unknown> = {}) {
     return {
         originText: "Stetson University",
         destinationText: "Daytona Beach",
-        earliestDepartAt: earliest.toISOString(),
-        latestDepartAt: latest.toISOString(),
+        earliestDesiredAt: earliest.toISOString(),
+        latestDesiredAt: latest.toISOString(),
         distanceCategory: "MEDIUM",
-        priceCents: 500,
-        seatsTotal: 4,
+        seatsNeeded: 2,
         ...overrides,
     };
 }
@@ -70,11 +69,11 @@ function makeRequest(
 ): Request {
     const allHeaders: Record<string, string> = {
         "Content-Type": "application/json",
-        "Idempotency-Key": "test-key-123",
+        "Idempotency-Key": "test-key-456",
         ...headers,
     };
 
-    return new Request("http://localhost:3000/api/rides", {
+    return new Request("http://localhost:3000/api/trip-requests", {
         method: "POST",
         headers: allHeaders,
         body: JSON.stringify(body),
@@ -85,26 +84,24 @@ function makeRequest(
 function successAuth() {
     return {
         user: {
-            clerkUserId: "user_test123",
-            primaryStetsonEmail: "test@stetson.edu",
+            clerkUserId: "user_rider789",
+            primaryStetsonEmail: "rider@stetson.edu",
         },
     };
 }
 
-/** Fake ride returned from Prisma create */
-function fakeRide(overrides: Record<string, unknown> = {}) {
+/** Fake trip request returned from Prisma create */
+function fakeTripRequest(overrides: Record<string, unknown> = {}) {
     const body = validBody();
     return {
-        id: "ride-uuid-001",
-        driverUserId: "user_test123",
+        id: "trip-req-uuid-001",
+        riderUserId: "user_rider789",
         originText: body.originText,
         destinationText: body.destinationText,
-        earliestDepartAt: new Date(body.earliestDepartAt),
-        latestDepartAt: new Date(body.latestDepartAt),
+        earliestDesiredAt: new Date(body.earliestDesiredAt),
+        latestDesiredAt: new Date(body.latestDesiredAt),
         distanceCategory: "MEDIUM",
-        priceCents: 500,
-        seatsTotal: 4,
-        seatsAvailable: 4,
+        seatsNeeded: 2,
         status: "ACTIVE",
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -114,17 +111,17 @@ function fakeRide(overrides: Record<string, unknown> = {}) {
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
-describe("POST /api/rides", () => {
+describe("POST /api/trip-requests", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mockRequireStetsonAuth.mockResolvedValue(successAuth());
         mockPrisma.idempotencyKey.findUnique.mockResolvedValue(null);
     });
 
-    // 1) Successful create → 201 (ride + idempotency key created atomically via $transaction)
-    it("returns 201 with created ride on successful create", async () => {
-        const ride = fakeRide();
-        mockPrisma.ride.create.mockResolvedValue(ride);
+    // 1) Successful create → 201 (trip request + idempotency key created atomically via $transaction)
+    it("returns 201 with created trip request on successful create", async () => {
+        const tripReq = fakeTripRequest();
+        mockPrisma.tripRequest.create.mockResolvedValue(tripReq);
         mockPrisma.idempotencyKey.create.mockResolvedValue({});
 
         const req = makeRequest(validBody());
@@ -132,9 +129,9 @@ describe("POST /api/rides", () => {
         const json = await res.json();
 
         expect(res.status).toBe(201);
-        expect(json.id).toBe("ride-uuid-001");
-        expect(json.driverUserId).toBe("user_test123");
-        expect(json.seatsAvailable).toBe(4);
+        expect(json.id).toBe("trip-req-uuid-001");
+        expect(json.riderUserId).toBe("user_rider789");
+        expect(json.seatsNeeded).toBe(2);
         expect(json.status).toBe("ACTIVE");
         // Verify $transaction was used for atomicity
         expect(mockPrisma.$transaction).toHaveBeenCalledOnce();
@@ -142,7 +139,7 @@ describe("POST /api/rides", () => {
 
     // 2) Missing Idempotency-Key → 400
     it("returns 400 when Idempotency-Key header is missing", async () => {
-        const reqNoKey = new Request("http://localhost:3000/api/rides", {
+        const reqNoKey = new Request("http://localhost:3000/api/trip-requests", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(validBody()),
@@ -156,11 +153,11 @@ describe("POST /api/rides", () => {
     });
 
     // 3) earliest > latest → 400
-    it("returns 400 when earliestDepartAt is after latestDepartAt", async () => {
+    it("returns 400 when earliestDesiredAt is after latestDesiredAt", async () => {
         const now = new Date();
         const body = validBody({
-            earliestDepartAt: new Date(now.getTime() + 5 * 60 * 60 * 1000).toISOString(),
-            latestDepartAt: new Date(now.getTime() + 1 * 60 * 60 * 1000).toISOString(),
+            earliestDesiredAt: new Date(now.getTime() + 5 * 60 * 60 * 1000).toISOString(),
+            latestDesiredAt: new Date(now.getTime() + 1 * 60 * 60 * 1000).toISOString(),
         });
 
         const req = makeRequest(body);
@@ -170,15 +167,15 @@ describe("POST /api/rides", () => {
         expect(res.status).toBe(400);
         expect(json.error).toBe("Validation Error");
         const fields = json.details.map((d: { field: string }) => d.field);
-        expect(fields).toContain("latestDepartAt");
+        expect(fields).toContain("latestDesiredAt");
     });
 
-    // 4) Departure window > 48h → 400
-    it("returns 400 when departure window exceeds 48 hours", async () => {
+    // 4) Desired window > 48h → 400
+    it("returns 400 when desired window exceeds 48 hours", async () => {
         const now = new Date();
         const body = validBody({
-            earliestDepartAt: new Date(now.getTime() + 1 * 60 * 60 * 1000).toISOString(),
-            latestDepartAt: new Date(now.getTime() + 50 * 60 * 60 * 1000).toISOString(), // 49h gap
+            earliestDesiredAt: new Date(now.getTime() + 1 * 60 * 60 * 1000).toISOString(),
+            latestDesiredAt: new Date(now.getTime() + 50 * 60 * 60 * 1000).toISOString(), // 49h gap
         });
 
         const req = makeRequest(body);
@@ -191,9 +188,9 @@ describe("POST /api/rides", () => {
         expect(messages.some((m: string) => m.includes("48 hours"))).toBe(true);
     });
 
-    // 5) seatsTotal outside 1..8 → 400
-    it("returns 400 when seatsTotal is outside 1-8 range", async () => {
-        const body = validBody({ seatsTotal: 10 });
+    // 5) seatsNeeded outside 1..8 → 400
+    it("returns 400 when seatsNeeded is outside 1-8 range", async () => {
+        const body = validBody({ seatsNeeded: 10 });
 
         const req = makeRequest(body);
         const res = await POST(req as never);
@@ -202,12 +199,12 @@ describe("POST /api/rides", () => {
         expect(res.status).toBe(400);
         expect(json.error).toBe("Validation Error");
         const fields = json.details.map((d: { field: string }) => d.field);
-        expect(fields).toContain("seatsTotal");
+        expect(fields).toContain("seatsNeeded");
     });
 
-    // 6) priceCents negative → 400
-    it("returns 400 when priceCents is negative", async () => {
-        const body = validBody({ priceCents: -100 });
+    // 6) Invalid distanceCategory → 400
+    it("returns 400 when distanceCategory is invalid", async () => {
+        const body = validBody({ distanceCategory: "VERY_FAR" });
 
         const req = makeRequest(body);
         const res = await POST(req as never);
@@ -216,19 +213,19 @@ describe("POST /api/rides", () => {
         expect(res.status).toBe(400);
         expect(json.error).toBe("Validation Error");
         const fields = json.details.map((d: { field: string }) => d.field);
-        expect(fields).toContain("priceCents");
+        expect(fields).toContain("distanceCategory");
     });
 
-    // 7) Idempotency replay → 200 with same ride id
-    it("returns 200 with existing ride on idempotency replay", async () => {
-        const existingRide = fakeRide();
+    // 7) Idempotency replay → 200 with same trip request id
+    it("returns 200 with existing trip request on idempotency replay", async () => {
+        const existingTripReq = fakeTripRequest();
         mockPrisma.idempotencyKey.findUnique.mockResolvedValue({
-            id: "idem-uuid-001",
-            userId: "user_test123",
-            idempotencyKey: "test-key-123",
-            entityType: "RIDE",
-            rideId: existingRide.id,
-            ride: existingRide,
+            id: "idem-uuid-002",
+            userId: "user_rider789",
+            idempotencyKey: "test-key-456",
+            entityType: "TRIP_REQUEST",
+            tripRequestId: existingTripReq.id,
+            tripRequest: existingTripReq,
         });
 
         const req = makeRequest(validBody());
@@ -236,8 +233,8 @@ describe("POST /api/rides", () => {
         const json = await res.json();
 
         expect(res.status).toBe(200);
-        expect(json.id).toBe("ride-uuid-001");
-        // Ensure no new ride was created
-        expect(mockPrisma.ride.create).not.toHaveBeenCalled();
+        expect(json.id).toBe("trip-req-uuid-001");
+        // Ensure no new trip request was created
+        expect(mockPrisma.tripRequest.create).not.toHaveBeenCalled();
     });
 });

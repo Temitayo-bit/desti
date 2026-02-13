@@ -282,3 +282,76 @@ This PR implements the ride creation endpoint for MVP 1. Drivers with verified @
 - Added `"test": "vitest run"` script.
 - Added `vitest` as a devDependency.
 
+
+## Patch: Trip Request Creation Endpoint (feature/trip-request-create-idempotency)
+
+### Overview
+Adds POST /api/trip-requests — a rider-authored trip request endpoint for MVP 1.
+Also generalizes the idempotency_keys table to support both rides and trip requests,
+avoiding a redundant parallel idempotency system.
+
+### Files Changed
+
+#### `prisma/schema.prisma`
+- **TripRequestStatus enum**: ACTIVE, CANCELLED (CANCELLED in schema only; no cancellation endpoint).
+- **IdempotencyEntityType enum**: RIDE, TRIP_REQUEST — discriminator for the shared idempotency table.
+- **TripRequest model**: riderUserId (FK → users.clerk_user_id), originText, destinationText,
+  earliestDesiredAt, latestDesiredAt, distanceCategory, seatsNeeded, status, timestamps.
+  Mapped to `trip_requests` table.
+- **IdempotencyKey model changes**:
+  - `driverUserId` → `userId` (column `user_id`) — now generic for any user.
+  - Added `entityType` — discriminates between RIDE and TRIP_REQUEST entries.
+  - `rideId` → optional (nullable) for trip request entries.
+  - Added optional `tripRequestId` (FK → trip_requests.id).
+  - Unique constraint changed from `(driverUserId, idempotencyKey)` to `(userId, idempotencyKey, entityType)`.
+- **User model**: Added `tripRequests` back-relation.
+
+#### `prisma/migrations/.../migration.sql`
+- Custom migration with data-migration steps:
+  1. Creates enums + trip_requests table.
+  2. Adds `user_id` and `entity_type` as nullable columns.
+  3. Migrates existing rows: copies `driver_user_id` → `user_id`, sets `entity_type` = 'RIDE'.
+  4. Sets new columns to NOT NULL.
+  5. Drops old `driver_user_id` column, makes `ride_id` nullable.
+  6. Creates new unique index and foreign keys.
+
+#### `src/app/api/rides/route.ts` (minimal required update)
+- All IdempotencyKey queries updated: `driverUserId` → `userId`, added `entityType: "RIDE"`.
+- Compound unique key references changed from `driverUserId_idempotencyKey` to `userId_idempotencyKey_entityType`.
+- No changes to ride business logic.
+
+#### `src/app/api/trip-requests/route.ts` (new file)
+Handler follows the same architecture as rides/route.ts:
+1. **Auth guard** — `requireStetsonAuth()`, derives `riderUserId = auth.user.clerkUserId`.
+2. **Idempotency-Key header** — required, trimmed, 400 if missing.
+3. **JSON body parsing** — type guard rejects non-object JSON (null/arrays/primitives).
+4. **Client riderUserId rejected** — `delete body.riderUserId` prevents client override.
+5. **Validation** — `validateTripRequestBody()`:
+   - originText/destinationText: string, trimmed, 3–200 chars.
+   - earliestDesiredAt/latestDesiredAt: valid ISO datetimes.
+   - latestDesiredAt > earliestDesiredAt (strict).
+   - Desired window ≤ 48h.
+   - earliestDesiredAt ≥ now - 10min (clock skew grace).
+   - distanceCategory: SHORT | MEDIUM | LONG.
+   - seatsNeeded: integer 1–8.
+6. **Idempotency check** — `findUnique` with `entityType: "TRIP_REQUEST"`. Returns 200 on replay.
+7. **User upsert** — ensures User record exists for FK satisfaction.
+8. **Atomic transaction** — `prisma.$transaction` creates TripRequest + IdempotencyKey together.
+   P2002 rolls back the trip request (no orphans).
+9. **P2002 catch** — fetches existing mapping, returns 200.
+10. **Success** — returns 201 with created TripRequest.
+
+#### `src/__tests__/ride-create.test.ts`
+- Updated idempotency replay mock data: `driverUserId` → `userId`, added `entityType: "RIDE"`.
+
+#### `src/__tests__/trip-request-create.test.ts` (new file)
+Seven test cases:
+  1. `returns 201 with created trip request on successful create` — verifies $transaction atomicity.
+  2. `returns 400 when Idempotency-Key header is missing`.
+  3. `returns 400 when earliestDesiredAt is after latestDesiredAt`.
+  4. `returns 400 when desired window exceeds 48 hours`.
+  5. `returns 400 when seatsNeeded is outside 1-8 range`.
+  6. `returns 400 when distanceCategory is invalid` — tests "VERY_FAR" rejected.
+  7. `returns 200 with existing trip request on idempotency replay`.
+Mock setup mirrors ride tests: `vi.hoisted()` for mock objects, mocks for auth/prisma/DistanceCategory.
+
