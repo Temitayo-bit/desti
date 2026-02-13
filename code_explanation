@@ -470,3 +470,59 @@ ensures no bug, migration, or manual SQL can create an invalid row.
 
 Note: Prisma doesn't natively support CHECK constraints, so this was added as raw SQL in the
 migration. Prisma will not manage or drop this constraint — it lives as a "DB-only" safeguard.
+
+## 2026-02-13 — Store Route and Timing Data (MVP 1)
+
+### Overview
+
+Adds three optional fields to both `Ride` and `TripRequest` models so that creators can attach route context and a preferred timing anchor at creation time. All fields are nullable with no breaking changes.
+
+### Fields Added
+
+| Field | Type | Validation |
+|-------|------|------------|
+| `pickupInstructions` | `String?` | If provided: trimmed, non-empty, ≤ 500 chars |
+| `dropoffInstructions` | `String?` | If provided: trimmed, non-empty, ≤ 500 chars |
+| `preferredDepartAt` | `DateTime?` | If provided: valid ISO datetime, must fall within `[earliest, latest]` window |
+
+### Files Changed
+
+#### `prisma/schema.prisma`
+
+- Added `pickupInstructions`, `dropoffInstructions`, `preferredDepartAt` to both `Ride` and `TripRequest` models.
+- All columns mapped to snake_case (`pickup_instructions`, `dropoff_instructions`, `preferred_depart_at`).
+- All nullable, default `NULL`.
+
+#### `prisma/migrations/20260213190344_add_route_context_and_timing/migration.sql`
+
+- Six `ALTER TABLE ... ADD COLUMN` statements (3 per table). No data migration needed — all nullable.
+
+#### `src/app/api/rides/route.ts`
+
+- Extended `validateRideBody()` with validation blocks for the 3 new optional fields.
+- Instructions: if provided and not a string → error. If string but empty/whitespace after trim → error. If > 500 chars → error.
+- `preferredDepartAt`: if provided, parsed as Date, checked against `[earliestDepartAt, latestDepartAt]` range.
+- Extended `parsed` return type with `pickupInstructions: string | null`, `dropoffInstructions: string | null`, `preferredDepartAt: Date | null`.
+- Added the 3 fields to `tx.ride.create({ data })`.
+
+#### `src/app/api/trip-requests/route.ts`
+
+- Same pattern as rides. `preferredDepartAt` validated against `[earliestDesiredAt, latestDesiredAt]`.
+
+#### `src/__tests__/ride-create.test.ts`
+
+Five new tests (#8–#12):
+- 201 with all 3 new fields (verifies trimming).
+- 400 for whitespace-only `pickupInstructions`.
+- 400 for `dropoffInstructions` > 500 chars.
+- 400 for `preferredDepartAt` before `earliestDepartAt`.
+- 400 for `preferredDepartAt` after `latestDepartAt`.
+
+#### `src/__tests__/trip-request-create.test.ts`
+
+Five new tests (#16–#20): same validation scenarios adapted for trip request field names (`earliestDesiredAt`/`latestDesiredAt`).
+
+### Test Results
+
+All 32 tests pass (12 ride + 20 trip-request).
+
