@@ -224,8 +224,9 @@ describe("POST /api/rides", () => {
         const existingRide = fakeRide();
         mockPrisma.idempotencyKey.findUnique.mockResolvedValue({
             id: "idem-uuid-001",
-            driverUserId: "user_test123",
+            userId: "user_test123",
             idempotencyKey: "test-key-123",
+            entityType: "RIDE",
             rideId: existingRide.id,
             ride: existingRide,
         });

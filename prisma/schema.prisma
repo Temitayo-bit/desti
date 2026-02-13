@@ -22,12 +22,13 @@ model User {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  rides Ride[] @relation("DriverRides")
+  rides        Ride[]        @relation("DriverRides")
+  tripRequests TripRequest[] @relation("RiderTripRequests")
 
   @@map("users")
 }
 
-/// Distance category for a ride.
+/// Distance category for a ride or trip request.
 enum DistanceCategory {
   SHORT
   MEDIUM
@@ -37,6 +38,18 @@ enum DistanceCategory {
 /// Current status of a ride.
 enum RideStatus {
   ACTIVE
+}
+
+/// Current status of a trip request.
+enum TripRequestStatus {
+  ACTIVE
+  CANCELLED
+}
+
+/// Discriminator for the idempotency key table.
+enum IdempotencyEntityType {
+  RIDE
+  TRIP_REQUEST
 }
 
 /// A ride offered by a driver.
@@ -55,22 +68,46 @@ model Ride {
   createdAt        DateTime         @default(now()) @map("created_at")
   updatedAt        DateTime         @updatedAt @map("updated_at")
 
-  driver User @relation("DriverRides", fields: [driverUserId], references: [clerkUserId])
+  driver          User             @relation("DriverRides", fields: [driverUserId], references: [clerkUserId])
   idempotencyKeys IdempotencyKey[]
 
   @@map("rides")
 }
 
-/// Idempotency key mapping for ride creation.
+/// A trip request posted by a rider.
+model TripRequest {
+  id               String            @id @default(uuid())
+  riderUserId      String            @map("rider_user_id")
+  originText       String            @map("origin_text")
+  destinationText  String            @map("destination_text")
+  earliestDesiredAt DateTime         @map("earliest_desired_at")
+  latestDesiredAt   DateTime         @map("latest_desired_at")
+  distanceCategory DistanceCategory  @map("distance_category")
+  seatsNeeded      Int               @map("seats_needed")
+  status           TripRequestStatus @default(ACTIVE)
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+
+  rider           User             @relation("RiderTripRequests", fields: [riderUserId], references: [clerkUserId])
+  idempotencyKeys IdempotencyKey[]
+
+  @@map("trip_requests")
+}
+
+/// Idempotency key mapping — shared across rides and trip requests.
 model IdempotencyKey {
-  id             String   @id @default(uuid())
-  driverUserId   String   @map("driver_user_id")
-  idempotencyKey String   @map("idempotency_key")
-  rideId         String   @map("ride_id")
-  createdAt      DateTime @default(now()) @map("created_at")
+  id             String                @id @default(uuid())
+  userId         String                @map("user_id")
+  idempotencyKey String                @map("idempotency_key")
+  entityType     IdempotencyEntityType @map("entity_type")
+  rideId         String?               @map("ride_id")
+  tripRequestId  String?               @map("trip_request_id")
+  createdAt      DateTime              @default(now()) @map("created_at")
 
-  ride Ride @relation(fields: [rideId], references: [id])
+  ride        Ride?        @relation(fields: [rideId], references: [id], onDelete: Restrict)
+  tripRequest TripRequest? @relation(fields: [tripRequestId], references: [id], onDelete: Restrict)
 
-  @@unique([driverUserId, idempotencyKey])
+  @@unique([userId, idempotencyKey, entityType])
   @@map("idempotency_keys")
 }
+
