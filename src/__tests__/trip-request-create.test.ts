@@ -237,4 +237,146 @@ describe("POST /api/trip-requests", () => {
         // Ensure no new trip request was created
         expect(mockPrisma.tripRequest.create).not.toHaveBeenCalled();
     });
+
+    // 8) Auth failure → returns error response from requireStetsonAuth
+    it("returns 401 when user is not authenticated", async () => {
+        mockRequireStetsonAuth.mockResolvedValue({
+            error: new Response(
+                JSON.stringify({ error: "Unauthorized", message: "Not authenticated" }),
+                { status: 401, headers: { "Content-Type": "application/json" } }
+            ),
+        });
+
+        const req = makeRequest(validBody());
+        const res = await POST(req as never);
+
+        expect(res.status).toBe(401);
+    });
+
+    // 9) Body is not an object (array) → 400
+    it("returns 400 when request body is an array instead of object", async () => {
+        const req = new Request("http://localhost:3000/api/trip-requests", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Idempotency-Key": "test-key-456",
+            },
+            body: JSON.stringify([1, 2, 3]),
+        });
+
+        const res = await POST(req as never);
+        const json = await res.json();
+
+        expect(res.status).toBe(400);
+        expect(json.message).toContain("JSON object");
+    });
+
+    // 10) Missing originText → 400
+    it("returns 400 when originText is missing", async () => {
+        const body = validBody();
+        delete (body as Record<string, unknown>).originText;
+
+        const req = makeRequest(body);
+        const res = await POST(req as never);
+        const json = await res.json();
+
+        expect(res.status).toBe(400);
+        expect(json.error).toBe("Validation Error");
+        const fields = json.details.map((d: { field: string }) => d.field);
+        expect(fields).toContain("originText");
+    });
+
+    // 11) Missing destinationText → 400
+    it("returns 400 when destinationText is missing", async () => {
+        const body = validBody();
+        delete (body as Record<string, unknown>).destinationText;
+
+        const req = makeRequest(body);
+        const res = await POST(req as never);
+        const json = await res.json();
+
+        expect(res.status).toBe(400);
+        expect(json.error).toBe("Validation Error");
+        const fields = json.details.map((d: { field: string }) => d.field);
+        expect(fields).toContain("destinationText");
+    });
+
+    // 12) originText too short (< 3 chars) → 400
+    it("returns 400 when originText is shorter than 3 characters", async () => {
+        const body = validBody({ originText: "AB" });
+
+        const req = makeRequest(body);
+        const res = await POST(req as never);
+        const json = await res.json();
+
+        expect(res.status).toBe(400);
+        expect(json.error).toBe("Validation Error");
+        const fields = json.details.map((d: { field: string }) => d.field);
+        expect(fields).toContain("originText");
+    });
+
+    // 13) earliestDesiredAt in the past → 400
+    it("returns 400 when earliestDesiredAt is in the past", async () => {
+        const past = new Date(Date.now() - 60 * 60 * 1000); // 1 hour ago
+        const body = validBody({
+            earliestDesiredAt: past.toISOString(),
+            latestDesiredAt: new Date(past.getTime() + 2 * 60 * 60 * 1000).toISOString(),
+        });
+
+        const req = makeRequest(body);
+        const res = await POST(req as never);
+        const json = await res.json();
+
+        expect(res.status).toBe(400);
+        expect(json.error).toBe("Validation Error");
+        const fields = json.details.map((d: { field: string }) => d.field);
+        expect(fields).toContain("earliestDesiredAt");
+    });
+
+    // 14) seatsNeeded is a float → 400
+    it("returns 400 when seatsNeeded is not an integer", async () => {
+        const body = validBody({ seatsNeeded: 2.5 });
+
+        const req = makeRequest(body);
+        const res = await POST(req as never);
+        const json = await res.json();
+
+        expect(res.status).toBe(400);
+        expect(json.error).toBe("Validation Error");
+        const fields = json.details.map((d: { field: string }) => d.field);
+        expect(fields).toContain("seatsNeeded");
+    });
+
+    // 15) Stale idempotency key (tripRequest is null) → deletes key and re-creates
+    it("deletes stale idempotency key and re-creates when tripRequest is null", async () => {
+        // First call returns an idempotency key with null tripRequest (corruption)
+        mockPrisma.idempotencyKey.findUnique.mockResolvedValueOnce({
+            id: "stale-idem-uuid",
+            userId: "user_rider789",
+            idempotencyKey: "test-key-456",
+            entityType: "TRIP_REQUEST",
+            tripRequestId: null,
+            tripRequest: null,
+        });
+
+        // Add deleteMany mock for the stale key cleanup (no-op safe)
+        (mockPrisma.idempotencyKey as Record<string, ReturnType<typeof vi.fn>>).deleteMany =
+            vi.fn().mockResolvedValue({ count: 1 });
+
+        const tripReq = fakeTripRequest();
+        mockPrisma.tripRequest.create.mockResolvedValue(tripReq);
+        mockPrisma.idempotencyKey.create.mockResolvedValue({});
+
+        const req = makeRequest(validBody());
+        const res = await POST(req as never);
+        const json = await res.json();
+
+        // Should have deleted the stale key via deleteMany
+        expect(
+            (mockPrisma.idempotencyKey as Record<string, ReturnType<typeof vi.fn>>).deleteMany
+        ).toHaveBeenCalledWith({ where: { id: "stale-idem-uuid" } });
+        // Should have re-created successfully
+        expect(res.status).toBe(201);
+        expect(json.id).toBe("trip-req-uuid-001");
+    });
 });

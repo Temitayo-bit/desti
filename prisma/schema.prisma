@@ -104,8 +104,8 @@ model IdempotencyKey {
   tripRequestId  String?               @map("trip_request_id")
   createdAt      DateTime              @default(now()) @map("created_at")
 
-  ride        Ride?        @relation(fields: [rideId], references: [id])
-  tripRequest TripRequest? @relation(fields: [tripRequestId], references: [id])
+  ride        Ride?        @relation(fields: [rideId], references: [id], onDelete: Restrict)
+  tripRequest TripRequest? @relation(fields: [tripRequestId], references: [id], onDelete: Restrict)
 
   @@unique([userId, idempotencyKey, entityType])
   @@map("idempotency_keys")

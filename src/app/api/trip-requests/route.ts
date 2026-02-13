@@ -217,7 +217,16 @@ export async function POST(request: NextRequest) {
         });
 
         if (existingMapping) {
-            return NextResponse.json(existingMapping.tripRequest, { status: 200 });
+            if (!existingMapping.tripRequest) {
+                // Corruption: idempotency key exists but linked trip request is missing.
+                // Use deleteMany (not delete) so concurrent cleanup is a no-op, not a P2025 throw.
+                console.warn(
+                    `[POST /api/trip-requests] Stale idempotency key ${idempotencyKey}: tripRequest is null. Deleting and re-creating.`
+                );
+                await prisma.idempotencyKey.deleteMany({ where: { id: existingMapping.id } });
+            } else {
+                return NextResponse.json(existingMapping.tripRequest, { status: 200 });
+            }
         }
 
         // 5. Ensure local User record exists (FK: trip_requests.rider_user_id → users.clerk_user_id)
@@ -274,6 +283,19 @@ export async function POST(request: NextRequest) {
                 });
 
                 if (existing) {
+                    if (!existing.tripRequest) {
+                        // Corruption in race-condition path: stale idempotency key.
+                        console.warn(
+                            `[POST /api/trip-requests] Stale idempotency key ${idempotencyKey} (race path): tripRequest is null.`
+                        );
+                        return NextResponse.json(
+                            {
+                                error: "Gone",
+                                message: "The trip request associated with this Idempotency-Key no longer exists.",
+                            },
+                            { status: 410 }
+                        );
+                    }
                     return NextResponse.json(existing.tripRequest, { status: 200 });
                 }
             }

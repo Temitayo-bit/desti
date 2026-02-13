@@ -3,12 +3,14 @@
 ## Patch: Next.js Proxy-Only Middleware Fix (codex/frontend-auth-gating-mvp1)
 
 ### Overview
+
 This patch resolves a Next.js build failure caused by having both `src/proxy.ts` and `src/middleware.ts`.
 In Next.js 16, this project must use `src/proxy.ts` only for middleware/proxy behavior.
 
 ### Files Changed
 
 #### `src/middleware.ts` (removed)
+
 - Deleted the shim file to avoid dual-detection conflict:
   - `Both middleware file ... and proxy file ... are detected. Please use ... proxy.ts only.`
 - `src/proxy.ts` remains the single source for Clerk middleware handler and matcher config.
@@ -18,12 +20,14 @@ In Next.js 16, this project must use `src/proxy.ts` only for middleware/proxy be
 ## Patch: Clerk Middleware Coverage Fix (codex/frontend-auth-gating-mvp1)
 
 ### Overview
+
 This patch fixes a production server error by ensuring Clerk middleware runs on frontend page requests (not only API routes).
 Without this, server-side calls like `auth()` and `currentUser()` on pages can fail at runtime in Vercel.
 
 ### Files Changed
 
 #### `src/proxy.ts`
+
 - Updated `config.matcher` from API-only to page+API coverage.
 - New matcher behavior:
   - Includes app/page routes.
@@ -36,8 +40,10 @@ Without this, server-side calls like `auth()` and `currentUser()` on pages can f
 ## PR: Frontend Auth Flow & Route Protection (codex/frontend-auth-gating-mvp1)
 
 ### Overview
+
 This PR adds frontend-only protection for app pages using Clerk in the Next.js App Router.
 It enforces that protected pages are accessible only to users who are:
+
 - signed in
 - using a verified email
 - using a verified `@stetson.edu` email
@@ -49,11 +55,13 @@ If a signed-in user is blocked (unverified or non-stetson), they are redirected 
 ### Files Changed
 
 #### `src/app/page.tsx` -> moved to `src/app/(protected)/page.tsx`
+
 - The root homepage is now placed inside a protected route group.
 - This preserves route URL (`/`) while making it subject to the protected layout guard.
 - The page content itself was not functionally changed; only route organization changed for gating.
 
 #### `src/app/(protected)/layout.tsx`
+
 - Adds centralized frontend route protection for everything in the `(protected)` group.
 - **`const user = await currentUser();`**
   - Reads Clerk session on the server for the current request.
@@ -67,6 +75,7 @@ If a signed-in user is blocked (unverified or non-stetson), they are redirected 
   - Renders protected content only when both auth and authorization pass.
 
 #### `src/lib/frontend-auth.ts`
+
 - New frontend authorization utility used by protected layouts/pages.
 - **`RestrictionReason`**
   - Enumerates explicit blocked states: missing email, unverified email, non-stetson domain.
@@ -80,6 +89,7 @@ If a signed-in user is blocked (unverified or non-stetson), they are redirected 
   - Maps block reasons to user-facing text for the restricted page.
 
 #### `src/app/access-restricted/page.tsx`
+
 - Implements the blocked-user UX page required for frontend authorization failures.
 - **Server `searchParams` parsing + reason validation**
   - Reads reason code passed by protected layout via page `searchParams` and validates it to known values.
@@ -94,6 +104,7 @@ If a signed-in user is blocked (unverified or non-stetson), they are redirected 
 - This page is intentionally minimal and consistent with existing app styling.
 
 #### `src/app/user-profile/[[...user-profile]]/page.tsx`
+
 - Adds a Clerk-hosted profile route so blocked users have a direct place to manage/verify email.
 - **`<SignedIn><UserProfile ... /></SignedIn>`**
   - Shows profile only for authenticated users.
@@ -103,6 +114,7 @@ If a signed-in user is blocked (unverified or non-stetson), they are redirected 
 ---
 
 ### Scope Confirmation
+
 - Implemented: frontend auth flow and route protection.
 - Implemented: Clerk-based gating for protected pages.
 - Implemented: blocked-user access UX with required actions.
@@ -113,6 +125,7 @@ If a signed-in user is blocked (unverified or non-stetson), they are redirected 
 ## PR: Backend Authentication & Authorization (feat/backend-auth)
 
 ### Overview
+
 This PR implements backend authentication and authorization enforcement for MVP 1.
 All protected API routes require a valid Clerk session AND a verified @stetson.edu email.
 
@@ -121,6 +134,7 @@ All protected API routes require a valid Clerk session AND a verified @stetson.e
 ### Files Changed
 
 #### `.env.local` / `.env.example`
+
 - **`.env.local`**: Contains the actual environment variable values (gitignored).
 - **`.env.example`**: Committed reference showing all required environment variables.
 - Variables:
@@ -130,6 +144,7 @@ All protected API routes require a valid Clerk session AND a verified @stetson.e
   - `DATABASE_URL` — PostgreSQL connection string for Prisma
 
 #### `prisma/schema.prisma`
+
 - Defines the PostgreSQL datasource and Prisma client generator.
 - **`User` model**: Local user record linked to Clerk.
   - `id` — UUID primary key (auto-generated).
@@ -139,15 +154,18 @@ All protected API routes require a valid Clerk session AND a verified @stetson.e
   - `@@map("users")` — Maps the model to a `users` table in PostgreSQL.
 
 #### `prisma.config.ts`
+
 - Auto-generated Prisma config. Loads `DATABASE_URL` from environment via `dotenv/config`.
 - Points to `prisma/schema.prisma` and `prisma/migrations` directory.
 
 #### `src/lib/prisma.ts`
+
 - **Singleton Prisma client**.
 - Uses `globalThis` caching to prevent multiple PrismaClient instances during Next.js dev hot-reloads.
 - `globalForPrisma.prisma` stores the client globally; in production, a fresh instance is created per cold start.
 
 #### `src/lib/auth.ts`
+
 - **`requireStetsonAuth()`** — The core auth guard function.
 - **Step 1**: Calls `currentUser()` from `@clerk/nextjs/server` to get the Clerk session user.
   - If `null` → returns `NextResponse` with **401** and `"Authentication required."` message.
@@ -159,17 +177,20 @@ All protected API routes require a valid Clerk session AND a verified @stetson.e
 - **Type `AuthResult`**: Discriminated union — either `{ user: AuthedUser }` or `{ error: NextResponse }`. Enables clean pattern matching in route handlers.
 
 #### `src/middleware.ts`
+
 - Exports `clerkMiddleware()` from `@clerk/nextjs/server`.
 - **Purpose**: Makes Clerk auth state (session, user) available to all matched routes. Without this, `currentUser()` would return `null` for every request.
 - **`config.matcher`**: Applies to all `/api/(.*)` routes and non-static pages. Skips Next.js internals (`_next`) and static assets (images, fonts, etc.).
 - **Note**: This middleware does NOT enforce authorization — it only provides session data. Authorization is enforced per-route by `requireStetsonAuth()`.
 
 #### `src/app/layout.tsx`
+
 - Wraps the entire app with `<ClerkProvider>` — required for Clerk to manage sessions.
 - Updates metadata title/description to "Desti".
 - **Note**: This is the only frontend file touched, and it's the minimal change needed for Clerk to function. No frontend route protection or UI logic is added.
 
 #### `src/app/api/me/route.ts`
+
 - **`GET /api/me`** — Returns the current user's profile.
 - **Line-by-line**:
   1. Calls `requireStetsonAuth()` — if it returns an error, that error response is returned immediately (401 or 403).
@@ -183,11 +204,13 @@ All protected API routes require a valid Clerk session AND a verified @stetson.e
 - **Idempotency**: `upsert` ensures no duplicate users are created even under concurrent requests.
 
 #### `src/app/api/health/route.ts`
+
 - **`GET /api/health`** — Public health-check endpoint. No authentication required.
 - Returns `{ status: "ok", timestamp: "..." }`.
 - Useful for uptime monitoring, load balancer health checks, and deployment verification.
 
 #### `.gitignore`
+
 - Updated to allow `.env.example` to be committed while still excluding `.env`, `.env.local`, and `*.local` env files.
 
 ---
@@ -204,6 +227,7 @@ All protected API routes require a valid Clerk session AND a verified @stetson.e
 ## 2026-02-12 — Ride Creation (POST /api/rides)
 
 ### Overview
+
 This PR implements the ride creation endpoint for MVP 1. Drivers with verified @stetson.edu emails can create rides. The endpoint enforces comprehensive validation, uses idempotency keys to prevent duplicate rides under retries/concurrency, and derives server-side fields (driverUserId, seatsAvailable, status) from auth context and business rules.
 
 ---
@@ -211,6 +235,7 @@ This PR implements the ride creation endpoint for MVP 1. Drivers with verified @
 ### Files Changed
 
 #### `prisma/schema.prisma`
+
 - **`DistanceCategory` enum** — Defines `SHORT`, `MEDIUM`, `LONG` values. Used by the `Ride` model to categorize trip distance.
 - **`RideStatus` enum** — Defines `ACTIVE` for MVP 1. Room to add `CANCELLED`, `COMPLETED` later.
 - **`Ride` model** — Mapped to `rides` table. Contains:
@@ -235,6 +260,7 @@ This PR implements the ride creation endpoint for MVP 1. Drivers with verified @
 - **`User` model** — Added `rides Ride[] @relation("DriverRides")` back-relation.
 
 #### `prisma/migrations/20260212190911_add_ride_and_idempotency_models/migration.sql`
+
 - Auto-generated Prisma migration that:
   - Creates `DistanceCategory` and `RideStatus` enums in PostgreSQL.
   - Creates the `rides` table with all columns and FK to `users.clerk_user_id`.
@@ -242,6 +268,7 @@ This PR implements the ride creation endpoint for MVP 1. Drivers with verified @
   - Adds unique index on `(driver_user_id, idempotency_key)`.
 
 #### `src/app/api/rides/route.ts`
+
 - **`POST` handler** — The main endpoint implementation. Flow:
   1. **Auth guard** (`requireStetsonAuth()`) — Rejects unauthenticated (401) or non-stetson (403) users. Derives `driverUserId` from `auth.user.clerkUserId`. Client-supplied `driverUserId` is explicitly deleted from the body.
   2. **Idempotency-Key header** — Read from `request.headers.get("Idempotency-Key")`. If missing or empty after trim → 400.
@@ -264,6 +291,7 @@ This PR implements the ride creation endpoint for MVP 1. Drivers with verified @
 - **`isPrismaUniqueConstraintError(err)`** — Type guard checking for Prisma error code `P2002`. Used in the idempotency conflict handler.
 
 #### `src/__tests__/ride-create.test.ts`
+
 - **Test file** — 7 unit tests using Vitest with mocked auth and Prisma:
   1. `returns 201 with created ride on successful create` — Verifies status, ride ID, driverUserId, seatsAvailable, and status in response.
   2. `returns 400 when Idempotency-Key header is missing` — Request has no Idempotency-Key header.
@@ -276,16 +304,18 @@ This PR implements the ride creation endpoint for MVP 1. Drivers with verified @
 - **Helpers** — `validBody()` builds a valid request body, `makeRequest()` builds a Request object, `successAuth()` returns mock auth, `fakeRide()` returns a mock Ride object.
 
 #### `vitest.config.ts`
+
 - Vitest configuration file. Sets test environment to `node` and configures `@/` path alias to resolve to `./src/` (matches `tsconfig.json` paths).
 
 #### `package.json`
+
 - Added `"test": "vitest run"` script.
 - Added `vitest` as a devDependency.
-
 
 ## Patch: Trip Request Creation Endpoint (feature/trip-request-create-idempotency)
 
 ### Overview
+
 Adds POST /api/trip-requests — a rider-authored trip request endpoint for MVP 1.
 Also generalizes the idempotency_keys table to support both rides and trip requests,
 avoiding a redundant parallel idempotency system.
@@ -293,6 +323,7 @@ avoiding a redundant parallel idempotency system.
 ### Files Changed
 
 #### `prisma/schema.prisma`
+
 - **TripRequestStatus enum**: ACTIVE, CANCELLED (CANCELLED in schema only; no cancellation endpoint).
 - **IdempotencyEntityType enum**: RIDE, TRIP_REQUEST — discriminator for the shared idempotency table.
 - **TripRequest model**: riderUserId (FK → users.clerk_user_id), originText, destinationText,
@@ -307,6 +338,7 @@ avoiding a redundant parallel idempotency system.
 - **User model**: Added `tripRequests` back-relation.
 
 #### `prisma/migrations/.../migration.sql`
+
 - Custom migration with data-migration steps:
   1. Creates enums + trip_requests table.
   2. Adds `user_id` and `entity_type` as nullable columns.
@@ -316,12 +348,15 @@ avoiding a redundant parallel idempotency system.
   6. Creates new unique index and foreign keys.
 
 #### `src/app/api/rides/route.ts` (minimal required update)
+
 - All IdempotencyKey queries updated: `driverUserId` → `userId`, added `entityType: "RIDE"`.
 - Compound unique key references changed from `driverUserId_idempotencyKey` to `userId_idempotencyKey_entityType`.
 - No changes to ride business logic.
 
 #### `src/app/api/trip-requests/route.ts` (new file)
+
 Handler follows the same architecture as rides/route.ts:
+
 1. **Auth guard** — `requireStetsonAuth()`, derives `riderUserId = auth.user.clerkUserId`.
 2. **Idempotency-Key header** — required, trimmed, 400 if missing.
 3. **JSON body parsing** — type guard rejects non-object JSON (null/arrays/primitives).
@@ -342,10 +377,13 @@ Handler follows the same architecture as rides/route.ts:
 10. **Success** — returns 201 with created TripRequest.
 
 #### `src/__tests__/ride-create.test.ts`
+
 - Updated idempotency replay mock data: `driverUserId` → `userId`, added `entityType: "RIDE"`.
 
 #### `src/__tests__/trip-request-create.test.ts` (new file)
+
 Seven test cases:
+
   1. `returns 201 with created trip request on successful create` — verifies $transaction atomicity.
   2. `returns 400 when Idempotency-Key header is missing`.
   3. `returns 400 when earliestDesiredAt is after latestDesiredAt`.
@@ -355,3 +393,80 @@ Seven test cases:
   7. `returns 200 with existing trip request on idempotency replay`.
 Mock setup mirrors ride tests: `vi.hoisted()` for mock objects, mocks for auth/prisma/DistanceCategory.
 
+## Patch: Harden IdempotencyKey FK Semantics & CHECK Constraint
+
+### Overview
+
+Tightens the idempotency_keys table at the database level to prevent two classes of bugs:
+
+1. **Dangling idempotency keys** — where a ride or trip request gets deleted but the idempotency
+   key row survives with a NULL FK, causing subsequent replays to return `null` bodies as 200 OK.
+2. **Mismatched entity types** — where a row could theoretically have `entity_type = 'RIDE'` but
+   point at a `trip_request_id`, or have both FKs set/null simultaneously.
+
+### Why ON DELETE RESTRICT instead of SET NULL
+
+**Before (SET NULL)**:
+
+```
+idempotency_keys.ride_id  →  rides.id  ON DELETE SET NULL
+```
+
+If a ride gets deleted (now or via a future admin API), the FK becomes NULL. On the next
+replay with the same Idempotency-Key, the handler calls `idempotencyKey.findUnique({ include: { ride: true } })`
+and gets `{ ride: null }`. The endpoint would then return `NextResponse.json(null, { status: 200 })` —
+a successful HTTP 200 with a null body. The client thinks everything is fine, but the ride is gone.
+
+**After (RESTRICT)**:
+
+```
+idempotency_keys.ride_id  →  rides.id  ON DELETE RESTRICT
+```
+
+PostgreSQL now **blocks** any `DELETE FROM rides WHERE id = ?` if an idempotency_keys row references it.
+This forces the application to explicitly clean up the idempotency mapping first before deleting the
+referenced entity — making the deletion a deliberate, multi-step operation rather than a silent data loss.
+
+The same logic applies to `trip_request_id → trip_requests.id`.
+
+### Why the CHECK constraint
+
+The `idempotency_keys` table is polymorphic — it stores mappings for both rides and trip requests
+in the same table, distinguished by `entity_type`. Without a CHECK constraint, the DB permits
+rows that violate the intended exclusivity rules:
+
+| Scenario                              | entity_type  | ride_id | trip_request_id | Valid? |
+|---------------------------------------|-------------|---------|-----------------|--------|
+| Ride mapping                          | RIDE        | ✓ set   | NULL            | ✅ Yes  |
+| Trip request mapping                  | TRIP_REQUEST| NULL    | ✓ set           | ✅ Yes  |
+| Both FKs set                          | RIDE        | ✓ set   | ✓ set           | ❌ No   |
+| Wrong FK for type                     | RIDE        | NULL    | ✓ set           | ❌ No   |
+| Neither FK set                        | RIDE        | NULL    | NULL            | ❌ No   |
+
+The CHECK constraint enforces this at the database level:
+
+```sql
+CHECK (
+    (entity_type = 'RIDE'         AND ride_id IS NOT NULL AND trip_request_id IS NULL) OR
+    (entity_type = 'TRIP_REQUEST' AND trip_request_id IS NOT NULL AND ride_id IS NULL)
+)
+```
+
+This is **defense in depth** — the application code already sets these correctly, but the CHECK
+ensures no bug, migration, or manual SQL can create an invalid row.
+
+### Files Changed
+
+#### `prisma/schema.prisma`
+
+- Added `onDelete: Restrict` to both `ride` and `tripRequest` relations on the `IdempotencyKey` model.
+  Prisma's default for optional relations is `SetNull`; we now explicitly override this.
+
+#### `prisma/migrations/.../harden_idempotency_fk_and_check/migration.sql`
+
+1. **Drops** both existing FK constraints (which had `ON DELETE SET NULL`).
+2. **Recreates** them with `ON DELETE RESTRICT ON UPDATE CASCADE`.
+3. **Adds** `chk_idempotency_entity_fk` CHECK constraint enforcing the entity-type exclusivity rules.
+
+Note: Prisma doesn't natively support CHECK constraints, so this was added as raw SQL in the
+migration. Prisma will not manage or drop this constraint — it lives as a "DB-only" safeguard.
