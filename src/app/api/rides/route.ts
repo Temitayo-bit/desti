@@ -31,6 +31,9 @@ function validateRideBody(body: Record<string, unknown>): {
         distanceCategory: DistanceCategory;
         priceCents: number;
         seatsTotal: number;
+        pickupInstructions: string | null;
+        dropoffInstructions: string | null;
+        preferredDepartAt: Date | null;
     } | null;
 } {
     const errors: ValidationError[] = [];
@@ -118,6 +121,60 @@ function validateRideBody(body: Record<string, unknown>): {
         errors.push({ field: "seatsTotal", message: "seatsTotal must be an integer between 1 and 8." });
     }
 
+    // — pickupInstructions (optional) ———————————————————————————————————————
+    let pickupInstructions: string | null = null;
+    if (body.pickupInstructions !== undefined && body.pickupInstructions !== null) {
+        if (typeof body.pickupInstructions !== "string") {
+            errors.push({ field: "pickupInstructions", message: "pickupInstructions must be a string." });
+        } else {
+            const trimmed = body.pickupInstructions.trim();
+            if (trimmed.length === 0) {
+                errors.push({ field: "pickupInstructions", message: "pickupInstructions must not be empty after trimming." });
+            } else if (trimmed.length > 500) {
+                errors.push({ field: "pickupInstructions", message: "pickupInstructions must be 500 characters or fewer." });
+            } else {
+                pickupInstructions = trimmed;
+            }
+        }
+    }
+
+    // — dropoffInstructions (optional) ——————————————————————————————————————
+    let dropoffInstructions: string | null = null;
+    if (body.dropoffInstructions !== undefined && body.dropoffInstructions !== null) {
+        if (typeof body.dropoffInstructions !== "string") {
+            errors.push({ field: "dropoffInstructions", message: "dropoffInstructions must be a string." });
+        } else {
+            const trimmed = body.dropoffInstructions.trim();
+            if (trimmed.length === 0) {
+                errors.push({ field: "dropoffInstructions", message: "dropoffInstructions must not be empty after trimming." });
+            } else if (trimmed.length > 500) {
+                errors.push({ field: "dropoffInstructions", message: "dropoffInstructions must be 500 characters or fewer." });
+            } else {
+                dropoffInstructions = trimmed;
+            }
+        }
+    }
+
+    // — preferredDepartAt (optional) ———————————————————————————————————————
+    let preferredDepartAt: Date | null = null;
+    if (body.preferredDepartAt !== undefined && body.preferredDepartAt !== null) {
+        if (typeof body.preferredDepartAt !== "string") {
+            errors.push({ field: "preferredDepartAt", message: "preferredDepartAt must be an ISO datetime string." });
+        } else {
+            preferredDepartAt = new Date(body.preferredDepartAt);
+            if (isNaN(preferredDepartAt.getTime())) {
+                errors.push({ field: "preferredDepartAt", message: "preferredDepartAt must be a valid ISO datetime." });
+                preferredDepartAt = null;
+            } else if (earliestDepartAt && latestDepartAt) {
+                if (preferredDepartAt.getTime() < earliestDepartAt.getTime()) {
+                    errors.push({ field: "preferredDepartAt", message: "preferredDepartAt must not be before earliestDepartAt." });
+                } else if (preferredDepartAt.getTime() > latestDepartAt.getTime()) {
+                    errors.push({ field: "preferredDepartAt", message: "preferredDepartAt must not be after latestDepartAt." });
+                }
+            }
+        }
+    }
+
     if (errors.length > 0) {
         return { errors, parsed: null };
     }
@@ -132,6 +189,9 @@ function validateRideBody(body: Record<string, unknown>): {
             distanceCategory: distRaw as DistanceCategory,
             priceCents: priceRaw as number,
             seatsTotal: seatsRaw as number,
+            pickupInstructions,
+            dropoffInstructions,
+            preferredDepartAt,
         },
     };
 }
@@ -252,6 +312,9 @@ export async function POST(request: NextRequest) {
                         priceCents: parsed.priceCents,
                         seatsTotal: parsed.seatsTotal,
                         seatsAvailable: parsed.seatsTotal, // ← invariant: seatsAvailable == seatsTotal on create
+                        pickupInstructions: parsed.pickupInstructions,
+                        dropoffInstructions: parsed.dropoffInstructions,
+                        preferredDepartAt: parsed.preferredDepartAt,
                         status: "ACTIVE",
                     },
                 });

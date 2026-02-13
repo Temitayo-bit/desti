@@ -379,4 +379,107 @@ describe("POST /api/trip-requests", () => {
         expect(res.status).toBe(201);
         expect(json.id).toBe("trip-req-uuid-001");
     });
+
+    // 16) Successful create with route context and timing fields → 201
+    it("returns 201 with pickupInstructions, dropoffInstructions, and preferredDepartAt", async () => {
+        const body = validBody();
+        const preferred = new Date(
+            (new Date(body.earliestDesiredAt).getTime() + new Date(body.latestDesiredAt).getTime()) / 2
+        ).toISOString();
+
+        const tripReq = fakeTripRequest({
+            pickupInstructions: "Meet at the north entrance",
+            dropoffInstructions: "Drop off at terminal B",
+            preferredDepartAt: new Date(preferred),
+        });
+        mockPrisma.tripRequest.create.mockResolvedValue(tripReq);
+        mockPrisma.idempotencyKey.create.mockResolvedValue({});
+
+        const req = makeRequest({
+            ...body,
+            pickupInstructions: "  Meet at the north entrance  ",
+            dropoffInstructions: "Drop off at terminal B",
+            preferredDepartAt: preferred,
+        });
+        const res = await POST(req as never);
+        const json = await res.json();
+
+        expect(res.status).toBe(201);
+        expect(json.pickupInstructions).toBe("Meet at the north entrance");
+        expect(json.dropoffInstructions).toBe("Drop off at terminal B");
+    });
+
+    // 17) Whitespace-only pickupInstructions → 400
+    it("returns 400 when pickupInstructions is only whitespace", async () => {
+        const body = validBody({ pickupInstructions: "   " });
+
+        const req = makeRequest(body);
+        const res = await POST(req as never);
+        const json = await res.json();
+
+        expect(res.status).toBe(400);
+        expect(json.error).toBe("Validation Error");
+        const fields = json.details.map((d: { field: string }) => d.field);
+        expect(fields).toContain("pickupInstructions");
+    });
+
+    // 18) dropoffInstructions > 500 chars → 400
+    it("returns 400 when dropoffInstructions exceeds 500 characters", async () => {
+        const body = validBody({ dropoffInstructions: "A".repeat(501) });
+
+        const req = makeRequest(body);
+        const res = await POST(req as never);
+        const json = await res.json();
+
+        expect(res.status).toBe(400);
+        expect(json.error).toBe("Validation Error");
+        const fields = json.details.map((d: { field: string }) => d.field);
+        expect(fields).toContain("dropoffInstructions");
+    });
+
+    // 19) preferredDepartAt before earliestDesiredAt → 400
+    it("returns 400 when preferredDepartAt is before earliestDesiredAt", async () => {
+        const now = new Date();
+        const earliest = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+        const latest = new Date(earliest.getTime() + 2 * 60 * 60 * 1000);
+        const preferred = new Date(earliest.getTime() - 30 * 60 * 1000); // 30 min before earliest
+
+        const body = validBody({
+            earliestDesiredAt: earliest.toISOString(),
+            latestDesiredAt: latest.toISOString(),
+            preferredDepartAt: preferred.toISOString(),
+        });
+
+        const req = makeRequest(body);
+        const res = await POST(req as never);
+        const json = await res.json();
+
+        expect(res.status).toBe(400);
+        expect(json.error).toBe("Validation Error");
+        const fields = json.details.map((d: { field: string }) => d.field);
+        expect(fields).toContain("preferredDepartAt");
+    });
+
+    // 20) preferredDepartAt after latestDesiredAt → 400
+    it("returns 400 when preferredDepartAt is after latestDesiredAt", async () => {
+        const now = new Date();
+        const earliest = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+        const latest = new Date(earliest.getTime() + 2 * 60 * 60 * 1000);
+        const preferred = new Date(latest.getTime() + 30 * 60 * 1000); // 30 min after latest
+
+        const body = validBody({
+            earliestDesiredAt: earliest.toISOString(),
+            latestDesiredAt: latest.toISOString(),
+            preferredDepartAt: preferred.toISOString(),
+        });
+
+        const req = makeRequest(body);
+        const res = await POST(req as never);
+        const json = await res.json();
+
+        expect(res.status).toBe(400);
+        expect(json.error).toBe("Validation Error");
+        const fields = json.details.map((d: { field: string }) => d.field);
+        expect(fields).toContain("preferredDepartAt");
+    });
 });
