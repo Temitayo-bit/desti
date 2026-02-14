@@ -526,3 +526,27 @@ Five new tests (#16–#20): same validation scenarios adapted for trip request f
 
 All 32 tests pass (12 ride + 20 trip-request).
 
+## 2026-02-14 — Browsing API Design (MVP 1)
+
+### Overview
+
+Created the definitive design blueprint for `GET /api/rides` and `GET /api/trip-requests`. Because listing endpoints are high-traffic and complex (pagination, filtering, sorting), this PR delivers the *contract* and *contracts* only, without the implementation code.
+
+### Files Added
+
+#### `docs/browsing_mvp1_contract.md`
+
+- **The Bible** for the browsing implementation.
+- Specifies strict query parameter validation rules.
+- Defines the **Keyset Pagination** strategy (Cursor-based) to ensure O(1) performance and prevent offset drift.
+- Defines deterministic sorting: `Timestamp ASC` + `ID ASC`.
+- Provides the exact Prisma `where` clause structure to handle cursor predicates safely.
+- Outlines the testing matrix required for the implementation phase.
+
+#### `src/lib/pagination.ts`
+
+- A utility module to centralize pagination logic.
+- **`encodeCursor` / `decodeCursor`**: Handles Base64 wrapping of the `{id, timestamp}` cursor object.
+- **`CursorSchema`**: Zod schema to validate decoded cursors structure at runtime.
+- **`parseLimit`**: Enforces the 1–50 limit constraint (default 20).
+- **`PaginatedResponse<T>`**: TypeScript interface ensuring consistent API response shapes.
