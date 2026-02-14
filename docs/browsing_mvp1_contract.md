@@ -15,11 +15,17 @@ All query parameters are optional strings. The handler must parse and validate t
 
 ### Common Parameters (Both Endpoints)
 
-| Parameter | Type | Default | Validation Rules |
+| Parameter | Type | Default | Validated As |
 |---|---|---|---|
-| `limit` | int | `20` | Min `1`, Max `50`. If > 50, clamp or error (prefer strict error). invalid int -> 400. |
-| `cursor` | string | `undefined` | Base64-encoded JSON. Must decode to `{ id: string, <sortKey>: string|number }`. If invalid format -> 400. |
-| `distanceCategory` | enum | `undefined` | Must be one of `SHORT`, `MEDIUM`, `LONG`. Invalid value -> 400. |
+| `limit` | int | `20` | Integer 1–50. |
+| `cursor` | string | `undefined` | Base64 JSON (id + timestamp). |
+| `distanceCategory` | enum | `undefined` | `SHORT`, `MEDIUM`, or `LONG`. |
+
+#### Validation Detail
+
+- **limit**: Strict integer parse. Min 1, max 50. Defaults to 20 if missing. Invalid or out-of-range -> **400**.
+- **cursor**: base64-encoded string decoding to `{ id: string, timestamp: string (ISO) }`. Malformed/invalid json -> **400**.
+- **distanceCategory**: Must match `DistanceCategory` enum exactly. Invalid -> **400**.
 
 ### Rides-Specific Parameters (`GET /api/rides`)
 
@@ -54,7 +60,7 @@ Format: `base64(JSON.stringify({ id: "uuid", check: "value" }))`
 ```json
 {
   "id": "ride-uuid-123",
-  "earliestDepartAt": "2026-03-15T10:00:00.000Z"
+  "timestamp": "2026-03-15T10:00:00.000Z"
 }
 ```
 
@@ -63,7 +69,7 @@ Format: `base64(JSON.stringify({ id: "uuid", check: "value" }))`
 ```json
 {
   "id": "trip-req-uuid-456",
-  "earliestDesiredAt": "2026-03-15T10:00:00.000Z"
+  "timestamp": "2026-03-15T10:00:00.000Z"
 }
 ```
 

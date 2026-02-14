@@ -22,18 +22,29 @@ export function encodeCursor(cursor: Cursor): string {
 }
 
 /**
- * Decodes and validates a Base64 cursor string.
- * Returns null if invalid or malformed.
+ * Result type for cursor decoding.
  */
-export function decodeCursor(cursorString: string | undefined | null): Cursor | null {
-    if (!cursorString) return null;
+export type CursorResult =
+    | { status: "missing" }
+    | { status: "invalid"; reason: string }
+    | { status: "valid"; cursor: Cursor };
+
+/**
+ * Decodes and validates a Base64 cursor string.
+ * Returns a discriminated union to handle missing vs invalid states.
+ */
+export function decodeCursor(cursorString: string | undefined | null): CursorResult {
+    if (!cursorString) return { status: "missing" };
     try {
         const json = Buffer.from(cursorString, "base64").toString("utf-8");
         const parsed = JSON.parse(json);
         const result = CursorSchema.safeParse(parsed);
-        return result.success ? result.data : null;
+        if (result.success) {
+            return { status: "valid", cursor: result.data };
+        }
+        return { status: "invalid", reason: "Cursor schema validation failed" };
     } catch {
-        return null;
+        return { status: "invalid", reason: "Malformed cursor encoding" };
     }
 }
 
