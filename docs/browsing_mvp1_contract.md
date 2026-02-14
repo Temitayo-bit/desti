@@ -130,9 +130,9 @@ WHERE ... AND (
 ```typescript
 if (decodedCursor) {
   where.OR = [
-    { earliestDepartAt: { gt: decodedCursor.earliestDepartAt } },
+    { earliestDepartAt: { gt: decodedCursor.timestamp } },
     {
-      earliestDepartAt: decodedCursor.earliestDepartAt,
+      earliestDepartAt: decodedCursor.timestamp,
       id: { gt: decodedCursor.id }
     }
   ];
