@@ -31,8 +31,8 @@ All query parameters are optional strings. The handler must parse and validate t
 
 | Parameter | Type | Validation Rules |
 |---|---|---|
-| `includeFull` | boolean | `false`. If "true" (case-insensitive), filter excludes rides where `seatsAvailable < 1`. |
-| `earliestAfter` | ISO Date | Filter rides where `earliestDepartAt >= value`. Invalid date -> 400. |
+| `includeFull` | boolean | `false` (default). If `false`, filter excludes rides where `seatsAvailable < 1`. If `true`, returns all rides regardless of availability. |
+| `earliestAfter` | ISO Date | Filter rides where `earliestDepartAt >= value`. Defaults to `NOW()` if missing. Invalid date -> 400. |
 | `latestBefore` | ISO Date | Filter rides where `latestDepartAt <= value`. Invalid date -> 400. |
 | `seatsMin` | int | Filter rides where `seatsAvailable >= value`. Min 1. Invalid -> 400. |
 
@@ -53,7 +53,7 @@ We use **Keyset Pagination** (Cursor-based) for O(1) database performance. Offse
 ### Encoding
 
 The cursor is a Base64-encoded JSON string containing the last record's sort values.
-Format: `base64(JSON.stringify({ id: "uuid", check: "value" }))`
+Format: `base64(JSON.stringify({ id: "uuid", timestamp: "value" }))`
 
 #### Rides Cursor
 
@@ -102,7 +102,7 @@ All conditions are combined with `AND`.
 ```typescript
 const where: Prisma.RideWhereInput = {
   status: "ACTIVE", // ALWAYS applied
-  earliestDepartAt: { gt: new Date() }, // Not stale (unless overridden by specific filters?)
+  // earliestDepartAt: { gt: new Date() }, // Applied by default if `earliestAfter` is missing
   // ... other filters map directly
 };
 
