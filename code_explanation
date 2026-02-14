@@ -1,5 +1,129 @@
 # Code Explanation
 
+## PR: Browsing Endpoints (design/browsing-api-endpoint)
+
+### Overview
+This PR implements backend-only browsing endpoints for MVP 1:
+- `GET /api/rides`
+- `GET /api/trip-requests`
+
+Both endpoints:
+- enforce `requireStetsonAuth()` exactly
+- return only `ACTIVE` and not-stale records
+- use strict query validation with `400` on invalid parameters
+- use deterministic keyset (cursor) pagination
+- return `{ items, nextCursor }`
+
+---
+
+### Files Changed
+
+#### `src/lib/browse-query.ts`
+- Centralized parsing and cursor utilities shared by both GET endpoints.
+- **`QueryValidationError` class**
+  - Carries both `field` and human-readable message so handlers can return consistent `400` payloads.
+- **`parseLimit()`**
+  - Enforces integer limits in range `1..50`, defaults to `20`.
+- **`parseDistanceCategory()`**
+  - Validates enum strictly against `SHORT | MEDIUM | LONG`.
+- **`parseISODateParam()`**
+  - Validates ISO-like datetime parseability for `earliestAfter` / `latestBefore`.
+- **`parseBooleanParam()`**
+  - Strictly accepts only `"true"` or `"false"` for `includeFull`.
+- **`parseSeatsParam()`**
+  - Validates positive integers for `seatsMin` / `seatsMax`.
+- **`decodeCursor()`**
+  - Decodes Base64 JSON and validates `{ id, timestamp }`.
+  - Enforces valid UUID id and valid timestamp.
+  - Throws `QueryValidationError` for malformed cursor input.
+- **`encodeCursor()`**
+  - Generates Base64 JSON cursor from `{ id, timestamp: ISO }` for response `nextCursor`.
+
+#### `src/app/api/rides/route.ts`
+- Added `GET /api/rides` without changing existing `POST`.
+- **Auth block**
+  - Executes:
+    - `const auth = await requireStetsonAuth();`
+    - `if (auth.error) return auth.error;`
+- **Query parsing block**
+  - Parses and validates: `limit`, `cursor`, `distanceCategory`, `includeFull`, `earliestAfter`, `latestBefore`, `seatsMin`.
+  - Uses shared helpers from `src/lib/browse-query.ts`.
+- **Base filters block**
+  - Always applies:
+    - `status = ACTIVE`
+    - `latestDepartAt > now` (not stale)
+    - `earliestDepartAt >= earliestAfter` (defaults to `now` when missing)
+- **Capacity block**
+  - Default (`includeFull=false`) enforces `seatsAvailable >= 1`.
+  - `includeFull=true` removes default full-ride exclusion.
+  - `seatsMin` overrides threshold when provided.
+- **Cursor predicate block**
+  - Applies strict “after cursor” logic for deterministic order:
+    - `(earliestDepartAt > cursor.timestamp) OR (earliestDepartAt = cursor.timestamp AND id > cursor.id)`
+- **Fetch block**
+  - Uses `take: limit + 1`, `orderBy earliestDepartAt ASC, id ASC`, and stable select shape (`RideSummary`).
+- **Response block**
+  - Returns `{ items, nextCursor }`.
+  - `nextCursor` is generated from the last returned item when an extra sentinel row exists.
+- **Error handling block**
+  - Returns `400` for validation errors.
+  - Returns `500` for unexpected errors.
+
+#### `src/app/api/trip-requests/route.ts`
+- Added `GET /api/trip-requests` without changing existing `POST`.
+- **Auth block**
+  - Same required `requireStetsonAuth()` guard pattern.
+- **Query parsing block**
+  - Parses and validates: `limit`, `cursor`, `distanceCategory`, `earliestAfter`, `latestBefore`, `seatsMax`.
+- **Base filters block**
+  - Always applies:
+    - `status = ACTIVE`
+    - `latestDesiredAt > now` (not stale)
+- **Optional filter block**
+  - Applies `earliestDesiredAt >= earliestAfter`, `latestDesiredAt <= latestBefore`, distance category filter, and `seatsNeeded <= seatsMax`.
+- **Cursor predicate block**
+  - Applies strict keyset predicate:
+    - `(earliestDesiredAt > cursor.timestamp) OR (earliestDesiredAt = cursor.timestamp AND id > cursor.id)`
+- **Fetch block**
+  - Uses `take: limit + 1`, `orderBy earliestDesiredAt ASC, id ASC`, stable select shape (`TripRequestSummary`).
+- **Response block**
+  - Returns `{ items, nextCursor }` with Base64 cursor generation from the last returned row.
+- **Error handling block**
+  - Returns `400` for invalid params/cursor and `500` for unexpected issues.
+
+#### `src/__tests__/rides-browse.test.ts`
+- Added GET browse tests for rides.
+- Significant coverage:
+  - ACTIVE + not-stale baseline filtering.
+  - Default full-ride exclusion and `includeFull=true` override.
+  - `distanceCategory` + `seatsMin` filter application.
+  - `400` on invalid cursor.
+  - `400` on invalid enum/date/limit values.
+  - Deterministic pagination across pages with no duplicate IDs.
+
+#### `src/__tests__/trip-requests-browse.test.ts`
+- Added GET browse tests for trip requests.
+- Significant coverage:
+  - ACTIVE + not-stale baseline filtering.
+  - `distanceCategory`, `seatsMax`, `earliestAfter`, `latestBefore` filters.
+  - `400` on invalid cursor.
+  - `400` on invalid enum/date/limit values.
+  - Deterministic cursor pagination with no duplicate IDs.
+
+#### `prisma/schema.prisma`
+- Added minimal cursor-order indexes (blueprint-aligned):
+  - `Ride`: `@@index([earliestDepartAt, id])`
+  - `TripRequest`: `@@index([earliestDesiredAt, id])`
+- Purpose: support deterministic keyset pagination ordering efficiently.
+
+#### `prisma/migrations/20260214221500_add_browse_cursor_indexes/migration.sql`
+- Adds DB indexes matching schema updates:
+  - `rides(earliest_depart_at, id)`
+  - `trip_requests(earliest_desired_at, id)`
+- Keeps migration scope minimal and specific to browse endpoint pagination performance.
+
+---
+
 ## Patch: Next.js Proxy-Only Middleware Fix (codex/frontend-auth-gating-mvp1)
 
 ### Overview

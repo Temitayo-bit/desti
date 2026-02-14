@@ -1,7 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireStetsonAuth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { DistanceCategory } from "@/generated/prisma/client";
+import { DistanceCategory, Prisma } from "@/generated/prisma/client";
+import {
+    QueryValidationError,
+    decodeCursor,
+    encodeCursor,
+    parseBooleanParam,
+    parseDistanceCategory,
+    parseISODateParam,
+    parseLimit,
+    parseSeatsParam,
+} from "@/lib/browse-query";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const VALID_DISTANCE_CATEGORIES: ReadonlySet<string> = new Set(
@@ -9,6 +19,130 @@ const VALID_DISTANCE_CATEGORIES: ReadonlySet<string> = new Set(
 );
 const MAX_DEPARTURE_WINDOW_MS = 48 * 60 * 60 * 1000; // 48 hours
 const CLOCK_SKEW_GRACE_MS = 10 * 60 * 1000; // 10 minutes
+
+const rideSummarySelect = {
+    id: true,
+    driverUserId: true,
+    originText: true,
+    destinationText: true,
+    earliestDepartAt: true,
+    latestDepartAt: true,
+    distanceCategory: true,
+    priceCents: true,
+    seatsTotal: true,
+    seatsAvailable: true,
+    pickupInstructions: true,
+    dropoffInstructions: true,
+    preferredDepartAt: true,
+    status: true,
+    createdAt: true,
+    updatedAt: true,
+} satisfies Prisma.RideSelect;
+
+type RideSummary = Prisma.RideGetPayload<{ select: typeof rideSummarySelect }>;
+
+// ── GET /api/rides ───────────────────────────────────────────────────────────
+
+/**
+ * GET /api/rides
+ *
+ * Returns active rides with cursor-based pagination and strict query validation.
+ */
+export async function GET(request: NextRequest) {
+    try {
+        const auth = await requireStetsonAuth();
+        if (auth.error) return auth.error;
+
+        const now = new Date();
+        const searchParams = new URL(request.url).searchParams;
+
+        const limit = parseLimit(searchParams.get("limit"));
+        const cursor = decodeCursor(searchParams.get("cursor"));
+        const distanceCategory = parseDistanceCategory(
+            searchParams.get("distanceCategory")
+        );
+        const includeFull = parseBooleanParam(
+            searchParams.get("includeFull"),
+            "includeFull",
+            false
+        );
+        const earliestAfter =
+            parseISODateParam(searchParams.get("earliestAfter"), "earliestAfter") ??
+            now;
+        const latestBefore = parseISODateParam(
+            searchParams.get("latestBefore"),
+            "latestBefore"
+        );
+        const seatsMin = parseSeatsParam(searchParams.get("seatsMin"), "seatsMin");
+
+        const andClauses: Prisma.RideWhereInput[] = [
+            { status: "ACTIVE" },
+            { latestDepartAt: { gt: now } },
+            { earliestDepartAt: { gte: earliestAfter } },
+        ];
+
+        if (latestBefore) {
+            andClauses.push({ latestDepartAt: { lte: latestBefore } });
+        }
+        if (distanceCategory) {
+            andClauses.push({ distanceCategory });
+        }
+
+        const seatsThreshold = seatsMin ?? (includeFull ? undefined : 1);
+        if (seatsThreshold !== undefined) {
+            andClauses.push({ seatsAvailable: { gte: seatsThreshold } });
+        }
+
+        if (cursor) {
+            andClauses.push({
+                OR: [
+                    { earliestDepartAt: { gt: cursor.timestamp } },
+                    {
+                        earliestDepartAt: cursor.timestamp,
+                        id: { gt: cursor.id },
+                    },
+                ],
+            });
+        }
+
+        const rides = await prisma.ride.findMany({
+            where: { AND: andClauses },
+            take: limit + 1,
+            orderBy: [{ earliestDepartAt: "asc" }, { id: "asc" }],
+            select: rideSummarySelect,
+        });
+
+        const hasNextPage = rides.length > limit;
+        const items: RideSummary[] = hasNextPage ? rides.slice(0, limit) : rides;
+        const lastItem = items.at(-1);
+        const nextCursor =
+            hasNextPage && lastItem
+                ? encodeCursor(lastItem.id, lastItem.earliestDepartAt)
+                : null;
+
+        return NextResponse.json({ items, nextCursor });
+    } catch (error) {
+        if (error instanceof QueryValidationError) {
+            return NextResponse.json(
+                {
+                    error: "Bad Request",
+                    field: error.field,
+                    message: error.message,
+                },
+                { status: 400 }
+            );
+        }
+
+        console.error("[GET /api/rides] Unexpected error:", error);
+        return NextResponse.json(
+            {
+                error: "Internal Server Error",
+                message: "An unexpected error occurred while fetching rides.",
+            },
+            { status: 500 }
+        );
+    }
+}
 
 // ── Validation helpers ───────────────────────────────────────────────────────
 

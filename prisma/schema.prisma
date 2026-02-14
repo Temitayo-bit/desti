@@ -74,6 +74,7 @@ model Ride {
   driver          User             @relation("DriverRides", fields: [driverUserId], references: [clerkUserId])
   idempotencyKeys IdempotencyKey[]
 
+  @@index([earliestDepartAt, id])
   @@map("rides")
 }
 
@@ -97,6 +98,7 @@ model TripRequest {
   rider           User             @relation("RiderTripRequests", fields: [riderUserId], references: [clerkUserId])
   idempotencyKeys IdempotencyKey[]
 
+  @@index([earliestDesiredAt, id])
   @@map("trip_requests")
 }
 
@@ -116,4 +118,3 @@ model IdempotencyKey {
   @@unique([userId, idempotencyKey, entityType])
   @@map("idempotency_keys")
 }
-
