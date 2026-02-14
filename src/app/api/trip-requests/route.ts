@@ -1,7 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireStetsonAuth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { DistanceCategory } from "@/generated/prisma/client";
+import { DistanceCategory, Prisma } from "@/generated/prisma/client";
+import {
+    QueryValidationError,
+    decodeCursor,
+    encodeCursor,
+    parseDistanceCategory,
+    parseISODateParam,
+    parseLimit,
+    parseSeatsParam,
+} from "@/lib/browse-query";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const VALID_DISTANCE_CATEGORIES: ReadonlySet<string> = new Set(
@@ -9,6 +18,128 @@ const VALID_DISTANCE_CATEGORIES: ReadonlySet<string> = new Set(
 );
 const MAX_DESIRED_WINDOW_MS = 48 * 60 * 60 * 1000; // 48 hours
 const CLOCK_SKEW_GRACE_MS = 10 * 60 * 1000; // 10 minutes
+
+const tripRequestSummarySelect = {
+    id: true,
+    riderUserId: true,
+    originText: true,
+    destinationText: true,
+    earliestDesiredAt: true,
+    latestDesiredAt: true,
+    distanceCategory: true,
+    seatsNeeded: true,
+    pickupInstructions: true,
+    dropoffInstructions: true,
+    preferredDepartAt: true,
+    status: true,
+    createdAt: true,
+    updatedAt: true,
+} satisfies Prisma.TripRequestSelect;
+
+type TripRequestSummary = Prisma.TripRequestGetPayload<{
+    select: typeof tripRequestSummarySelect;
+}>;
+
+// ── GET /api/trip-requests ───────────────────────────────────────────────────
+
+/**
+ * GET /api/trip-requests
+ *
+ * Returns active trip requests with cursor-based pagination and strict query validation.
+ */
+export async function GET(request: NextRequest) {
+    try {
+        const auth = await requireStetsonAuth();
+        if (auth.error) return auth.error;
+
+        const now = new Date();
+        const searchParams = new URL(request.url).searchParams;
+
+        const limit = parseLimit(searchParams.get("limit"));
+        const cursor = decodeCursor(searchParams.get("cursor"));
+        const distanceCategory = parseDistanceCategory(
+            searchParams.get("distanceCategory")
+        );
+        const earliestAfter = parseISODateParam(
+            searchParams.get("earliestAfter"),
+            "earliestAfter"
+        );
+        const latestBefore = parseISODateParam(
+            searchParams.get("latestBefore"),
+            "latestBefore"
+        );
+        const seatsMax = parseSeatsParam(searchParams.get("seatsMax"), "seatsMax");
+
+        const andClauses: Prisma.TripRequestWhereInput[] = [
+            { status: "ACTIVE" },
+            { latestDesiredAt: { gt: now } },
+        ];
+
+        if (earliestAfter) {
+            andClauses.push({ earliestDesiredAt: { gte: earliestAfter } });
+        }
+        if (latestBefore) {
+            andClauses.push({ latestDesiredAt: { lte: latestBefore } });
+        }
+        if (distanceCategory) {
+            andClauses.push({ distanceCategory });
+        }
+        if (seatsMax !== undefined) {
+            andClauses.push({ seatsNeeded: { lte: seatsMax } });
+        }
+        if (cursor) {
+            andClauses.push({
+                OR: [
+                    { earliestDesiredAt: { gt: cursor.timestamp } },
+                    {
+                        earliestDesiredAt: cursor.timestamp,
+                        id: { gt: cursor.id },
+                    },
+                ],
+            });
+        }
+
+        const tripRequests = await prisma.tripRequest.findMany({
+            where: { AND: andClauses },
+            take: limit + 1,
+            orderBy: [{ earliestDesiredAt: "asc" }, { id: "asc" }],
+            select: tripRequestSummarySelect,
+        });
+
+        const hasNextPage = tripRequests.length > limit;
+        const items: TripRequestSummary[] = hasNextPage
+            ? tripRequests.slice(0, limit)
+            : tripRequests;
+        const lastItem = items.at(-1);
+        const nextCursor =
+            hasNextPage && lastItem
+                ? encodeCursor(lastItem.id, lastItem.earliestDesiredAt)
+                : null;
+
+        return NextResponse.json({ items, nextCursor });
+    } catch (error) {
+        if (error instanceof QueryValidationError) {
+            return NextResponse.json(
+                {
+                    error: "Bad Request",
+                    field: error.field,
+                    message: error.message,
+                },
+                { status: 400 }
+            );
+        }
+
+        console.error("[GET /api/trip-requests] Unexpected error:", error);
+        return NextResponse.json(
+            {
+                error: "Internal Server Error",
+                message:
+                    "An unexpected error occurred while fetching trip requests.",
+            },
+            { status: 500 }
+        );
+    }
+}
 
 // ── Validation helpers ───────────────────────────────────────────────────────
 
