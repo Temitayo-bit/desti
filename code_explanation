@@ -1,5 +1,76 @@
 # Code Explanation
 
+## 2026-02-16 — Prevent Self-Booking (MVP 1)
+
+### Overview
+This change adds a single guard in `POST /api/bookings` to prevent riders from booking rides they own (self-booking).
+Scope is intentionally minimal:
+- no schema changes
+- no migration changes
+- no new endpoints
+- no changes to booking create/cancel contracts beyond this guard
+
+### Files Changed
+
+#### `src/app/api/bookings/route.ts`
+- Added two constants near the top of the file:
+  - `SELF_BOOKING_ERROR_CODE = "SELF_BOOKING_NOT_ALLOWED"`
+  - `SELF_BOOKING_ERROR_MESSAGE = "You can’t book your own ride."`
+  - Responsibility: keep the self-booking conflict response stable and reusable.
+
+- Added an early self-booking check after idempotency replay and before any write:
+  - `const rideForSelfBookingCheck = await prisma.ride.findUnique({ ... select: { driverUserId: true } })`
+  - `if (rideForSelfBookingCheck?.driverUserId === riderUserId) return 409 ...`
+  - Responsibility by line/block:
+    - fetches only `driverUserId` for the target ride (minimal data needed)
+    - compares authenticated rider ID to ride owner ID
+    - immediately returns `409 Conflict` with:
+      - `code: SELF_BOOKING_NOT_ALLOWED`
+      - `message: "You can’t book your own ride."`
+    - guarantees no booking row, no seat decrement, and no idempotency mapping write on blocked self-book attempts
+
+- Hardened transactional seat decrement predicate:
+  - Added `driverUserId: { not: riderUserId }` to `tx.ride.updateMany({ where: ... })`
+  - Responsibility: enforce non-self condition inside the same atomic seat-decrement query path to avoid edge-case race gaps.
+
+- Added self-booking branch in transaction failure diagnosis:
+  - inside `if (updateResult.count === 0)`, after fetching `ride`:
+    - `if (ride.driverUserId === riderUserId) throw new Error(SELF_BOOKING_ERROR_CODE);`
+  - Responsibility: preserve deterministic self-book conflict behavior if transaction path fails due owner/rider match.
+
+- Added error mapping for self-booking code in catch block:
+  - if `err.message === SELF_BOOKING_ERROR_CODE`, return `409` with stable `code` + `message`.
+  - Responsibility: unify response shape regardless of whether self-booking was blocked at the early guard or transaction diagnosis path.
+
+- Existing auth guard remains unchanged and exact:
+  - `const auth = await requireStetsonAuth();`
+  - `if (auth.error) return auth.error;`
+
+- Existing idempotency replay remains unchanged:
+  - if idempotency mapping already exists for this key, endpoint still returns existing booking `200` before self-book checks.
+  - Responsibility: keep replay semantics intact for prior successful non-self bookings.
+
+#### `src/__tests__/booking-create.test.ts`
+- Updated `beforeEach` default ride mock:
+  - `mockPrisma.ride.findUnique.mockResolvedValue({ id: "ride-1", driverUserId: "driver_other_user" })`
+  - Responsibility: provide a stable non-self default for tests that now pass through the new guard.
+
+- Updated idempotency replay test:
+  - added assertion `expect(mockPrisma.ride.findUnique).not.toHaveBeenCalled();`
+  - Responsibility: confirm replay path still short-circuits before ride lookup and seat mutation.
+
+- Added new test: `"returns 409 and blocks self-booking without mutating seats or booking rows"`
+  - sets `ride.findUnique` to same rider as driver
+  - expects `409`, `code: SELF_BOOKING_NOT_ALLOWED`, and exact message
+  - asserts all mutation calls are not invoked:
+    - `ride.updateMany` (no seat decrement)
+    - `booking.create` (no booking row)
+    - `idempotencyKey.create` (no idempotency write)
+    - `user.upsert` (no local user write in blocked path)
+  - Responsibility: enforce and lock the self-booking invariant with explicit non-mutation guarantees.
+
+---
+
 ## PR: GET /api/bookings/mine (design/booking-flow-endpoint)
 
 ### Overview

@@ -63,6 +63,10 @@ describe("POST /api/bookings", () => {
         vi.clearAllMocks();
         mockRequireStetsonAuth.mockResolvedValue(successAuth());
         mockPrisma.idempotencyKey.findUnique.mockResolvedValue(null);
+        mockPrisma.ride.findUnique.mockResolvedValue({
+            id: "ride-1",
+            driverUserId: "driver_other_user",
+        });
     });
 
     // 1. Success
@@ -102,17 +106,38 @@ describe("POST /api/bookings", () => {
 
         expect(res.status).toBe(200);
         expect(json.id).toBe("booking-old");
+        expect(mockPrisma.ride.findUnique).not.toHaveBeenCalled();
         expect(mockPrisma.ride.updateMany).not.toHaveBeenCalled();
     });
 
-    // 3. Validation Errors
+    // 3. Self Booking Guard
+    it("returns 409 and blocks self-booking without mutating seats or booking rows", async () => {
+        mockPrisma.ride.findUnique.mockResolvedValue({
+            id: "ride-1",
+            driverUserId: "rider_test1",
+        });
+
+        const req = makeRequest({ rideId: "ride-1", seatsBooked: 1 });
+        const res = await POST(req as never);
+        const json = await res.json();
+
+        expect(res.status).toBe(409);
+        expect(json.code).toBe("SELF_BOOKING_NOT_ALLOWED");
+        expect(json.message).toBe("You can’t book your own ride.");
+        expect(mockPrisma.ride.updateMany).not.toHaveBeenCalled();
+        expect(mockPrisma.booking.create).not.toHaveBeenCalled();
+        expect(mockPrisma.idempotencyKey.create).not.toHaveBeenCalled();
+        expect(mockPrisma.user.upsert).not.toHaveBeenCalled();
+    });
+
+    // 4. Validation Errors
     it("returns 400 for invalid seatsBooked", async () => {
         const req = makeRequest({ rideId: "ride-1", seatsBooked: 9 });
         const res = await POST(req as never);
         expect(res.status).toBe(400);
     });
 
-    // 4. Capacity Failure (UpdateMany returns 0)
+    // 5. Capacity Failure (UpdateMany returns 0)
     it("returns 409 when seats are unavailable (race condition checked via count=0)", async () => {
         mockPrisma.ride.updateMany.mockResolvedValue({ count: 0 });
         // Mock finding the ride to determine WHY it failed
@@ -131,7 +156,7 @@ describe("POST /api/bookings", () => {
         expect(json.message).toBe("Not enough seats available.");
     });
 
-    // 5. Stale Ride (Status not ACTIVE)
+    // 6. Stale Ride (Status not ACTIVE)
     it("returns 409 when ride is not active", async () => {
         mockPrisma.ride.updateMany.mockResolvedValue({ count: 0 });
         mockPrisma.ride.findUnique.mockResolvedValue({
@@ -147,7 +172,7 @@ describe("POST /api/bookings", () => {
         expect(json.message).toBe("Ride is not active.");
     });
 
-    // 6. Double Booking (Unique Constraint Violation)
+    // 7. Double Booking (Unique Constraint Violation)
     it("returns 409 when rider already has a confirmed booking", async () => {
         mockPrisma.ride.updateMany.mockResolvedValue({ count: 1 });
         // Simulate unique constraint violation
