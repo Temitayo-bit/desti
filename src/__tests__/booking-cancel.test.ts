@@ -6,6 +6,7 @@ const { mockRequireStetsonAuth, mockPrisma } = vi.hoisted(() => {
         booking: {
             findUnique: vi.fn(),
             update: vi.fn(),
+            updateMany: vi.fn(), // Needed for atomic updates
         },
         ride: {
             update: vi.fn(),
@@ -62,20 +63,26 @@ describe("POST /api/bookings/:bookingId/cancel", () => {
             seatsBooked: 2,
             status: "CONFIRMED",
         });
+        mockPrisma.booking.updateMany.mockResolvedValue({ count: 1 }); // Update succeeds
 
         const req = makeRequest("booking-1");
         // Mock Next.js dynamic route params
-        const res = await POST(req as never, { params: { bookingId: "booking-1" } });
+        const res = await POST(req as never, { params: Promise.resolve({ bookingId: "booking-1" }) });
         const json = await res.json();
 
         expect(res.status).toBe(200);
         expect(json.message).toBe("Booking cancelled successfully.");
 
-        // Verify changes
-        expect(mockPrisma.booking.update).toHaveBeenCalledWith({
-            where: { id: "booking-1" },
+        // Verify atomic check-and-update
+        expect(mockPrisma.booking.updateMany).toHaveBeenCalledWith({
+            where: {
+                id: "booking-1",
+                status: { not: "CANCELLED" },
+            },
             data: { status: "CANCELLED" },
         });
+
+        // Verify seats incremented
         expect(mockPrisma.ride.update).toHaveBeenCalledWith({
             where: { id: "ride-1" },
             data: { seatsAvailable: { increment: 2 } },
@@ -91,7 +98,7 @@ describe("POST /api/bookings/:bookingId/cancel", () => {
         });
 
         const req = makeRequest("booking-1");
-        const res = await POST(req as never, { params: { bookingId: "booking-1" } });
+        const res = await POST(req as never, { params: Promise.resolve({ bookingId: "booking-1" }) });
 
         expect(res.status).toBe(403);
     });
@@ -101,7 +108,7 @@ describe("POST /api/bookings/:bookingId/cancel", () => {
         mockPrisma.booking.findUnique.mockResolvedValue(null);
 
         const req = makeRequest("booking-missing");
-        const res = await POST(req as never, { params: { bookingId: "booking-missing" } });
+        const res = await POST(req as never, { params: Promise.resolve({ bookingId: "booking-missing" }) });
 
         expect(res.status).toBe(404);
     });
@@ -113,14 +120,19 @@ describe("POST /api/bookings/:bookingId/cancel", () => {
             riderUserId: "rider_test1",
             status: "CANCELLED",
         });
+        // Mock updateMany failing to update any rows (status check failed)
+        // Note: findUnique returns CANCELLED, so updateMany where status != CANCELLED finds 0.
+        mockPrisma.booking.updateMany.mockResolvedValue({ count: 0 });
 
         const req = makeRequest("booking-1");
-        const res = await POST(req as never, { params: { bookingId: "booking-1" } });
+        const res = await POST(req as never, { params: Promise.resolve({ bookingId: "booking-1" }) });
 
         expect(res.status).toBe(200);
-        // Rides should NOT be updated
+        expect(await res.json()).toEqual({ message: "Booking already cancelled." });
+
+        // Ride seats should NOT be updated
         expect(mockPrisma.ride.update).not.toHaveBeenCalled();
-        // Booking should NOT be updated
-        expect(mockPrisma.booking.update).not.toHaveBeenCalled();
+        // Booking IS checked via updateMany
+        expect(mockPrisma.booking.updateMany).toHaveBeenCalled();
     });
 });
