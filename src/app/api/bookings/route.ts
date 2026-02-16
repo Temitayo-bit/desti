@@ -3,6 +3,9 @@ import { requireStetsonAuth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 
+const SELF_BOOKING_ERROR_CODE = "SELF_BOOKING_NOT_ALLOWED";
+const SELF_BOOKING_ERROR_MESSAGE = "You can’t book your own ride.";
+
 /**
  * POST /api/bookings
  *
@@ -76,14 +79,31 @@ export async function POST(request: NextRequest) {
             return NextResponse.json(existingMapping.booking, { status: 200 });
         }
 
-        // 6. Ensure Rider Exists locally
+        // 6. Self-booking guard
+        const rideForSelfBookingCheck = await prisma.ride.findUnique({
+            where: { id: rideId },
+            select: { driverUserId: true },
+        });
+
+        if (rideForSelfBookingCheck?.driverUserId === riderUserId) {
+            return NextResponse.json(
+                {
+                    error: "Conflict",
+                    code: SELF_BOOKING_ERROR_CODE,
+                    message: SELF_BOOKING_ERROR_MESSAGE,
+                },
+                { status: 409 }
+            );
+        }
+
+        // 7. Ensure Rider Exists locally
         await prisma.user.upsert({
             where: { clerkUserId: riderUserId },
             update: { email: auth.user.primaryStetsonEmail },
             create: { clerkUserId: riderUserId, email: auth.user.primaryStetsonEmail },
         });
 
-        // 7. Transactional Booking
+        // 8. Transactional Booking
         try {
             const result = await prisma.$transaction(async (tx) => {
                 // A. Decrement Seats (Atomic Condition)
@@ -92,6 +112,7 @@ export async function POST(request: NextRequest) {
                 const updateResult = await tx.ride.updateMany({
                     where: {
                         id: rideId,
+                        driverUserId: { not: riderUserId },
                         status: "ACTIVE",
                         latestDepartAt: { gt: now },
                         seatsAvailable: { gte: seatsBooked },
@@ -105,6 +126,9 @@ export async function POST(request: NextRequest) {
                     // Check why it failed for better error message
                     const ride = await tx.ride.findUnique({ where: { id: rideId } });
                     if (!ride) throw new Error("Ride not found.");
+                    if (ride.driverUserId === riderUserId) {
+                        throw new Error(SELF_BOOKING_ERROR_CODE);
+                    }
                     if (ride.status !== "ACTIVE") throw new Error("Ride is not active.");
                     if (ride.latestDepartAt <= now) throw new Error("Ride has departed.");
                     if (ride.seatsAvailable < seatsBooked) throw new Error("Not enough seats available.");
@@ -138,6 +162,16 @@ export async function POST(request: NextRequest) {
             return NextResponse.json(result, { status: 201 });
         } catch (err: any) {
             // Handle known errors
+            if (err.message === SELF_BOOKING_ERROR_CODE) {
+                return NextResponse.json(
+                    {
+                        error: "Conflict",
+                        code: SELF_BOOKING_ERROR_CODE,
+                        message: SELF_BOOKING_ERROR_MESSAGE,
+                    },
+                    { status: 409 }
+                );
+            }
             if (err.message === "Not enough seats available.") {
                 return NextResponse.json({ error: "Conflict", message: err.message }, { status: 409 });
             }
