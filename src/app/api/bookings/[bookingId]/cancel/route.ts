@@ -12,10 +12,12 @@ import { prisma } from "@/lib/prisma";
  */
 export async function POST(
     request: NextRequest,
-    { params }: { params: { bookingId: string } }
+    props: { params: Promise<{ bookingId: string }> }
 ) {
+    const params = await props.params;
+    const { bookingId } = params;
+
     try {
-        const { bookingId } = params;
         if (!bookingId) {
             return NextResponse.json(
                 { error: "Bad Request", message: "Missing booking ID." },
