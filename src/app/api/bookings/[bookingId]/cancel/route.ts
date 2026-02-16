@@ -48,16 +48,22 @@ export async function POST(
                 throw new Error("Unauthorized access to booking."); // Map to 403 outside
             }
 
-            // C. Idempotency / State Check
-            if (booking.status === "CANCELLED") {
+            // C. Atomic Status Update (Idempotency Guard)
+            // Use updateMany to conditionally update only if not already CANCELLED.
+            // This prevents race conditions where parallel requests could double-count seat restoration.
+            const updateResult = await tx.booking.updateMany({
+                where: {
+                    id: bookingId,
+                    status: { not: "CANCELLED" },
+                },
+                data: { status: "CANCELLED" },
+            });
+
+            if (updateResult.count === 0) {
                 return { status: 200, message: "Booking already cancelled." };
             }
 
-            // D. Update Booking Status
-            await tx.booking.update({
-                where: { id: bookingId },
-                data: { status: "CANCELLED" },
-            });
+            // D. Restore Seats (only if status update succeeded)
 
             // E. Restore Seats (Atomic Increment)
             // "Ensure seatsAvailable never exceeds seatsTotal" - enforced by logic usually.
