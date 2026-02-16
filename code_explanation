@@ -1,5 +1,81 @@
 # Code Explanation
 
+## PR: GET /api/bookings/mine (design/booking-flow-endpoint)
+
+### Overview
+This PR adds one backend endpoint:
+- `GET /api/bookings/mine`
+
+It returns the authenticated rider's bookings with:
+- default `CONFIRMED` filtering
+- optional `status` filter (`CONFIRMED` or `CANCELLED`)
+- cursor pagination (base64 JSON cursor)
+- deterministic ordering (`createdAt DESC`, `id DESC`)
+- strict `400` validation for invalid `cursor`, `limit`, or `status`
+
+No booking create/cancel behavior was changed.
+
+---
+
+### Files Changed
+
+#### `src/lib/booking-query.ts`
+- New booking-specific query parsing helpers.
+- **`BookingQueryValidationError`**
+  - Error type used to return structured `400` responses (`field` + message).
+- **`parseBookingLimit(value)`**
+  - Applies default `20`.
+  - Validates integer range `1..50`.
+- **`parseBookingStatus(value)`**
+  - Defaults to `CONFIRMED`.
+  - Accepts only `CONFIRMED` or `CANCELLED`.
+- **`decodeBookingCursor(value)`**
+  - Decodes base64 JSON cursor in required shape:
+    - `{ createdAt: ISO, id: bookingId }`
+  - Validates UUID `id` and ISO `createdAt`.
+- **`encodeBookingCursor(id, createdAt)`**
+  - Encodes response `nextCursor` in the same required base64 JSON shape.
+
+#### `src/app/api/bookings/mine/route.ts`
+- New endpoint implementation for `GET /api/bookings/mine`.
+- **Auth guard block**
+  - Uses required guard exactly:
+    - `const auth = await requireStetsonAuth();`
+    - `if (auth.error) return auth.error;`
+- **Query parse block**
+  - Parses `limit`, `status`, and `cursor` with strict validation.
+- **Filter block**
+  - Always filters by `riderUserId = auth.user.clerkUserId`.
+  - Applies status default of `CONFIRMED` unless `status` query is supplied.
+- **Cursor semantics block**
+  - Applies strict “after cursor” logic for DESC ordering:
+    - `(createdAt < cursor.createdAt) OR (createdAt = cursor.createdAt AND id < cursor.id)`
+- **Query block**
+  - Uses `take: limit + 1` for next-page detection.
+  - Uses deterministic sort:
+    - `createdAt DESC`
+    - `id DESC`
+  - Selects response fields exactly, including nested minimal `ride` summary.
+- **Response block**
+  - Returns:
+    - `{ items, nextCursor }`
+  - `nextCursor` is generated from last returned item when extra sentinel row exists.
+- **Error block**
+  - Returns `400` for parsing/validation errors.
+  - Returns `500` for unexpected runtime failures.
+
+#### `src/__tests__/bookings-mine.test.ts`
+- New tests for `GET /api/bookings/mine`.
+- Coverage includes:
+  - default `CONFIRMED` filter
+  - `status=CANCELLED` behavior
+  - invalid cursor returns `400`
+  - invalid limit/status returns `400`
+  - deterministic cursor pagination without duplicates
+  - nested minimal ride summary fields included in response
+
+---
+
 ## PR: Browsing Endpoints (design/browsing-api-endpoint)
 
 ### Overview
@@ -729,4 +805,3 @@ Implements the core booking transaction logic. Riders can book specific rides, d
   - Verify double-booking constraints.
   - Verify authorization rules.
   - Verify idempotency replays.
-
