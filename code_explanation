@@ -674,3 +674,59 @@ Created the definitive design blueprint for `GET /api/rides` and `GET /api/trip-
 - **`CursorSchema`**: Zod schema to validate decoded cursors structure at runtime.
 - **`parseLimit`**: Enforces the 1–50 limit constraint (default 20).
 - **`PaginatedResponse<T>`**: TypeScript interface ensuring consistent API response shapes.
+
+## 2026-02-16 — Booking Flow (MVP 1)
+
+### Overview
+
+Implements the core booking transaction logic. Riders can book specific rides, decrementing seat inventory atomically. Includes strict idempotency to prevent double-booking or overbooking race conditions, and cancellability that restores seat inventory.
+
+### Files Changed
+
+#### `prisma/schema.prisma`
+
+- **`Booking` model**:
+  - `id`, `rideId`, `riderUserId`, `seatsBooked`, `status` (CONFIRMED/CANCELLED).
+  - Relations to `Ride`, `User`, and `IdempotencyKey`.
+- **`BookingStatus` enum**: CONFIRMED, CANCELLED.
+- **`IdempotencyKey` updates**:
+  - Added `bookingId` field and relation.
+  - Added `BOOKING` to `IdempotencyEntityType`.
+
+#### `prisma/migrations/.../add_booking_model/migration.sql`
+
+- Added `bookings` table.
+- **Custom SQL**: Added partial unique index `UNIQUE(ride_id, rider_user_id) WHERE status = 'CONFIRMED'`.
+  - Ensures a rider can only have *one* active booking per ride.
+  - Allows re-booking if the previous one was CANCELLED.
+
+#### `src/app/api/bookings/route.ts`
+
+- **`POST /api/bookings`**
+- **Auth**: Requires verified Stetson email.
+- **Validation**: `seatsBooked` (1-8), `rideId` exists.
+- **Transaction**:
+  1. **Decrement Seats**: `UPDATE rides SET seats_available = seats_available - N WHERE id = ? AND seats_available >= N`.
+     - Returns 0 count if race condition or capacity fails -> throws 409.
+  2. **Create Booking**: Inserts booking record.
+  3. **Idempotency**: Inserts key.
+- **Concurrency**: Relies on atomic database constraints to prevent overbooking.
+
+#### `src/app/api/bookings/[bookingId]/cancel/route.ts`
+
+- **`POST .../cancel`**
+- **Auth**: Only the booking owner can cancel.
+- **Logic**:
+  - Checks if already cancelled (idempotent 200).
+  - Updates status to `CANCELLED`.
+  - Atomically increments `ride.seatsAvailable` by `seatsBooked`.
+
+#### `src/__tests__/booking-create.test.ts` & `booking-cancel.test.ts`
+
+- **Unit Tests**:
+  - Verify success flow (transaction atomicity).
+  - Verify capacity constraints (mocked race conditions).
+  - Verify double-booking constraints.
+  - Verify authorization rules.
+  - Verify idempotency replays.
+
