@@ -69,12 +69,15 @@ export async function POST(
             // "Ensure seatsAvailable never exceeds seatsTotal" - enforced by logic usually.
             // If we want to be strict, we can't easily Clamp in one query without raw SQL.
             // We'll trust atomic arithmetic: Available was X, Booked Y. X+Y <= Total.
-            await tx.ride.update({
-                where: { id: booking.rideId },
-                data: {
-                    seatsAvailable: { increment: booking.seatsBooked },
-                },
-            });
+            // If the booking is linked to a Ride, restore the seats
+            if (booking.rideId) {
+                await tx.ride.update({
+                    where: { id: booking.rideId },
+                    data: {
+                        seatsAvailable: { increment: booking.seatsBooked },
+                    },
+                });
+            }
 
             return { status: 200, message: "Booking cancelled successfully." };
         });
