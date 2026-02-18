@@ -129,7 +129,7 @@ export async function POST(
             if (!existingMapping.offer) {
                 // Corruption cleanup
                 console.warn(`[POST /offers] Stale idempotency key ${idempotencyKey}. Cleaning up.`);
-                await prisma.idempotencyKey.deleteMany({ where: { id: existingMapping.id } });
+                await prisma.idempotencyKey.delete({ where: { id: existingMapping.id } });
             } else {
                 return NextResponse.json(existingMapping.offer, { status: 200 });
             }
@@ -190,12 +190,12 @@ export async function POST(
         // 7. Transactional Creation
         try {
             const offer = await prisma.$transaction(async (tx) => {
-                // Re-check constraints inside transaction? 
-                // Strict correctness might require locking, but for MVP strict serializability 
-                // via optimistic checks usually suffices unless high contention.
-                // We rely on 'existingOffer' check above. If race occurs, user gets two offers? 
-                // We can add a unique index on (tripRequestId, driverUserId) where status != CANCELLED if we want strictness.
-                // For now, we rely on application check.
+                // The existingOffer check above is the optimistic guard.
+                // The DB also enforces uniqueness via the partial unique index
+                // "offer_active_per_driver_request" (migration 20260218000234_unique_active_offer)
+                // on (trip_request_id, driver_user_id) WHERE status IN ('PENDING','ACCEPTED').
+                // If a race slips past the application check, the DB constraint catches it
+                // and the outer catch block maps the P2002 error to a 409 response.
 
                 const newOffer = await tx.offer.create({
                     data: {

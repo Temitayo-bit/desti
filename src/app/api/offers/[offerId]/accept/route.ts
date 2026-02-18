@@ -4,8 +4,6 @@ import { prisma } from "@/lib/prisma";
 
 // ── POST /api/offers/:offerId/accept ─────────────────────────────────────────
 
-// ── POST /api/offers/:offerId/accept ─────────────────────────────────────────
-
 export async function POST(
     request: NextRequest,
     params: { params: Promise<{ offerId: string }> } // Correct Next.js 15+ signature
