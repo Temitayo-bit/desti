@@ -57,22 +57,25 @@ export async function POST(
                 throw new Error("Conflict: This trip request already has an accepted offer");
             }
 
-            // 7. Update Offer -> ACCEPTED
-            const updatedOffer = await tx.offer.update({
-                where: { id: offerId },
+            // 7. Atomically update Offer -> ACCEPTED (only if still PENDING)
+            const { count } = await tx.offer.updateMany({
+                where: { id: offerId, status: "PENDING" },
                 data: { status: "ACCEPTED" },
             });
+
+            if (count === 0) {
+                throw new Error("Conflict: Offer was already accepted or modified by another request");
+            }
 
             // 8. Create Booking (CONFIRMED)
             const booking = await tx.booking.create({
                 data: {
                     tripRequestId: offer.tripRequestId,
-                    driverUserId: offer.driverUserId, // Now supported on Booking
+                    driverUserId: offer.driverUserId,
                     riderUserId: offer.riderUserId,
                     seatsBooked: offer.seatsOffered,
-                    priceCents: offer.priceCents,     // Now supported on Booking
+                    priceCents: offer.priceCents,
                     status: "CONFIRMED",
-                    // rideId is undefined/null
                 },
             });
 
@@ -87,12 +90,12 @@ export async function POST(
                 where: {
                     tripRequestId: offer.tripRequestId,
                     status: "PENDING",
-                    id: { not: offerId }, // Exclude the one we just accepted (though it's ACCEPTED now)
+                    id: { not: offerId },
                 },
                 data: { status: "CANCELLED" },
             });
 
-            return { offer: updatedOffer, booking };
+            return { offer: { ...offer, status: "ACCEPTED" }, booking };
         });
 
         return NextResponse.json(result, { status: 200 });
