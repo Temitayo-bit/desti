@@ -94,8 +94,13 @@ export async function POST(
                 },
                 data: { status: "CANCELLED" },
             });
+            // 11. Re-fetch the updated offer with its relations for a fresh response
+            const freshOffer = await tx.offer.findUnique({
+                where: { id: offerId },
+                include: { tripRequest: true },
+            });
 
-            return { offer: { ...offer, status: "ACCEPTED" }, booking };
+            return { offer: freshOffer, booking };
         });
 
         return NextResponse.json(result, { status: 200 });
