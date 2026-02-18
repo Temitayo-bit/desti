@@ -59,19 +59,27 @@ export async function POST(
 
         // 4. Transactional Update
         const result = await prisma.$transaction(async (tx) => {
+            // Re-query offer to get strict current state (locks logic slightly better than outside)
+            const currentOffer = await tx.offer.findUnique({
+                where: { id: offerId }
+            });
+
+            if (!currentOffer) {
+                throw new Error("Offer not found during cancellation.");
+            }
+
             // Update Offer -> CANCELLED
             const updatedOffer = await tx.offer.update({
                 where: { id: offerId },
                 data: { status: "CANCELLED" },
             });
 
-            // If it was ACCEPTED, we must also cancel Booking and Re-open TripRequest
-            if (offer.status === "ACCEPTED") {
+            // Use currentOffer triggers (if it WAS accepted, we must cleanup)
+            if (currentOffer.status === "ACCEPTED") {
                 // Cancel Booking
-                // We find the CONFIRMED booking for this trip request
                 await tx.booking.updateMany({
                     where: {
-                        tripRequestId: offer.tripRequestId,
+                        tripRequestId: currentOffer.tripRequestId,
                         status: "CONFIRMED"
                     },
                     data: { status: "CANCELLED" }
@@ -79,7 +87,7 @@ export async function POST(
 
                 // Re-Open Trip Request
                 await tx.tripRequest.update({
-                    where: { id: offer.tripRequestId },
+                    where: { id: currentOffer.tripRequestId },
                     data: { status: "ACTIVE" }
                 });
             }

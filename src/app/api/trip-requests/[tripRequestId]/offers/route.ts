@@ -21,8 +21,8 @@ function validateOfferBody(body: Record<string, unknown>): {
 
     // — seatsOffered —
     const seatsRaw = body.seatsOffered;
-    if (typeof seatsRaw !== "number" || !Number.isInteger(seatsRaw) || seatsRaw < 1) {
-        errors.push({ field: "seatsOffered", message: "seatsOffered must be a positive integer >= 1." });
+    if (typeof seatsRaw !== "number" || !Number.isInteger(seatsRaw) || seatsRaw < 1 || seatsRaw > 8) {
+        errors.push({ field: "seatsOffered", message: "seatsOffered must be a positive integer between 1 and 8." });
     }
 
     // — priceCents —
@@ -224,13 +224,26 @@ export async function POST(
             return NextResponse.json(offer, { status: 201 });
 
         } catch (err: unknown) {
-            // Handle P2002 Race Condition on Idempotency Key
+            // Handle P2002 Race Condition
             if (
                 typeof err === "object" &&
                 err !== null &&
                 "code" in err &&
                 (err as { code: string }).code === "P2002"
             ) {
+                const meta = (err as any).meta;
+                // 1. Partial Unique Index Violation (Active Offer)
+                if (meta?.target && (
+                    meta.target === "offer_active_per_driver_request" ||
+                    (Array.isArray(meta.target) && meta.target.includes("offer_active_per_driver_request"))
+                )) {
+                    return NextResponse.json(
+                        { error: "Conflict", message: "You already have an active offer for this trip request." },
+                        { status: 409 }
+                    );
+                }
+
+                // 2. Idempotency Key Violation
                 const retryExisting = await prisma.idempotencyKey.findUnique({
                     where: {
                         userId_idempotencyKey_entityType: {

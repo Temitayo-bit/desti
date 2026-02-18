@@ -102,6 +102,14 @@ export async function POST(
     } catch (error: unknown) {
         console.error("[POST /api/offers/:id/accept] Error:", error);
 
+        // Handle Prisma Unique Constraint Violation
+        if ((error as any).code === "P2002") {
+            return NextResponse.json(
+                { error: "Conflict", message: "Conflict" },
+                { status: 409 }
+            );
+        }
+
         const msg = error instanceof Error ? error.message : "Internal Server Error";
         if (msg === "Offer not found") {
             return NextResponse.json({ error: "Not Found", message: msg }, { status: 404 });
