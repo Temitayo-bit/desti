@@ -3,8 +3,10 @@
 ## 2026-02-16 — Prevent Self-Booking (MVP 1)
 
 ### Overview
+
 This change adds a single guard in `POST /api/bookings` to prevent riders from booking rides they own (self-booking).
 Scope is intentionally minimal:
+
 - no schema changes
 - no migration changes
 - no new endpoints
@@ -13,6 +15,7 @@ Scope is intentionally minimal:
 ### Files Changed
 
 #### `src/app/api/bookings/route.ts`
+
 - Added two constants near the top of the file:
   - `SELF_BOOKING_ERROR_CODE = "SELF_BOOKING_NOT_ALLOWED"`
   - `SELF_BOOKING_ERROR_MESSAGE = "You can’t book your own ride."`
@@ -51,6 +54,7 @@ Scope is intentionally minimal:
   - Responsibility: keep replay semantics intact for prior successful non-self bookings.
 
 #### `src/__tests__/booking-create.test.ts`
+
 - Updated `beforeEach` default ride mock:
   - `mockPrisma.ride.findUnique.mockResolvedValue({ id: "ride-1", driverUserId: "driver_other_user" })`
   - Responsibility: provide a stable non-self default for tests that now pass through the new guard.
@@ -74,10 +78,13 @@ Scope is intentionally minimal:
 ## PR: GET /api/bookings/mine (design/booking-flow-endpoint)
 
 ### Overview
+
 This PR adds one backend endpoint:
+
 - `GET /api/bookings/mine`
 
 It returns the authenticated rider's bookings with:
+
 - default `CONFIRMED` filtering
 - optional `status` filter (`CONFIRMED` or `CANCELLED`)
 - cursor pagination (base64 JSON cursor)
@@ -91,6 +98,7 @@ No booking create/cancel behavior was changed.
 ### Files Changed
 
 #### `src/lib/booking-query.ts`
+
 - New booking-specific query parsing helpers.
 - **`BookingQueryValidationError`**
   - Error type used to return structured `400` responses (`field` + message).
@@ -108,6 +116,7 @@ No booking create/cancel behavior was changed.
   - Encodes response `nextCursor` in the same required base64 JSON shape.
 
 #### `src/app/api/bookings/mine/route.ts`
+
 - New endpoint implementation for `GET /api/bookings/mine`.
 - **Auth guard block**
   - Uses required guard exactly:
@@ -136,6 +145,7 @@ No booking create/cancel behavior was changed.
   - Returns `500` for unexpected runtime failures.
 
 #### `src/__tests__/bookings-mine.test.ts`
+
 - New tests for `GET /api/bookings/mine`.
 - Coverage includes:
   - default `CONFIRMED` filter
@@ -150,11 +160,14 @@ No booking create/cancel behavior was changed.
 ## PR: Browsing Endpoints (design/browsing-api-endpoint)
 
 ### Overview
+
 This PR implements backend-only browsing endpoints for MVP 1:
+
 - `GET /api/rides`
 - `GET /api/trip-requests`
 
 Both endpoints:
+
 - enforce `requireStetsonAuth()` exactly
 - return only `ACTIVE` and not-stale records
 - use strict query validation with `400` on invalid parameters
@@ -166,6 +179,7 @@ Both endpoints:
 ### Files Changed
 
 #### `src/lib/browse-query.ts`
+
 - Centralized parsing and cursor utilities shared by both GET endpoints.
 - **`QueryValidationError` class**
   - Carries both `field` and human-readable message so handlers can return consistent `400` payloads.
@@ -187,6 +201,7 @@ Both endpoints:
   - Generates Base64 JSON cursor from `{ id, timestamp: ISO }` for response `nextCursor`.
 
 #### `src/app/api/rides/route.ts`
+
 - Added `GET /api/rides` without changing existing `POST`.
 - **Auth block**
   - Executes:
@@ -217,6 +232,7 @@ Both endpoints:
   - Returns `500` for unexpected errors.
 
 #### `src/app/api/trip-requests/route.ts`
+
 - Added `GET /api/trip-requests` without changing existing `POST`.
 - **Auth block**
   - Same required `requireStetsonAuth()` guard pattern.
@@ -239,6 +255,7 @@ Both endpoints:
   - Returns `400` for invalid params/cursor and `500` for unexpected issues.
 
 #### `src/__tests__/rides-browse.test.ts`
+
 - Added GET browse tests for rides.
 - Significant coverage:
   - ACTIVE + not-stale baseline filtering.
@@ -249,6 +266,7 @@ Both endpoints:
   - Deterministic pagination across pages with no duplicate IDs.
 
 #### `src/__tests__/trip-requests-browse.test.ts`
+
 - Added GET browse tests for trip requests.
 - Significant coverage:
   - ACTIVE + not-stale baseline filtering.
@@ -258,12 +276,14 @@ Both endpoints:
   - Deterministic cursor pagination with no duplicate IDs.
 
 #### `prisma/schema.prisma`
+
 - Added minimal cursor-order indexes (blueprint-aligned):
   - `Ride`: `@@index([earliestDepartAt, id])`
   - `TripRequest`: `@@index([earliestDesiredAt, id])`
 - Purpose: support deterministic keyset pagination ordering efficiently.
 
 #### `prisma/migrations/20260214221500_add_browse_cursor_indexes/migration.sql`
+
 - Adds DB indexes matching schema updates:
   - `rides(earliest_depart_at, id)`
   - `trip_requests(earliest_desired_at, id)`
@@ -783,6 +803,7 @@ Adds three optional fields to both `Ride` and `TripRequest` models so that creat
 #### `src/__tests__/ride-create.test.ts`
 
 Five new tests (#8–#12):
+
 - 201 with all 3 new fields (verifies trimming).
 - 400 for whitespace-only `pickupInstructions`.
 - 400 for `dropoffInstructions` > 500 chars.
@@ -876,3 +897,123 @@ Implements the core booking transaction logic. Riders can book specific rides, d
   - Verify double-booking constraints.
   - Verify authorization rules.
   - Verify idempotency replays.
+
+## 2026-02-18 — Trip Request Offers
+
+### Overview
+
+This change implements the write-side of the Trip Request Offer flow. Drivers can now offer rides to specific Trip Requests, and Riders can accept those offers. The implementation includes a new database model, status management, and strict business rules (idempotency, one-active-offer limits).
+
+### Files Changed
+
+#### `prisma/schema.prisma`
+
+- **`Offer` model**: Mapped to `Offer` table (keeping PascalCase for table name was a minor inconsistency, typically we use snake_case map, but functionality is unaffected).
+  - `id`: UUID.
+  - `tripRequestId`: FK to TripRequest.
+  - `driverUserId`: FK to User (Driver).
+  - `riderUserId`: FK to User (Rider).
+  - `seatsOffered`: Int.
+  - `priceCents`: Int.
+  - `status`: Enum (`PENDING`, `ACCEPTED`, `CANCELLED`).
+  - `message`: Optional string.
+  - Indexes: Covered by FKs and status queries.
+- **`OfferStatus` enum**: Defines the three states.
+- **`IdempotencyEntityType`**: Added `OFFER`.
+- **`IdempotencyKey` check constraints**: Updated raw SQL to support `OFFER` type.
+
+#### `prisma/migrations/20260217213327_add_offer_model/migration.sql`
+
+- Creates `Offer` table and `OfferStatus` enum.
+- Adds partial unique index: `CREATE UNIQUE INDEX offer_trip_request_accepted_unique ON "Offer"("trip_request_id") WHERE status = 'ACCEPTED'`.
+  - **Purpose**: Database-level guarantee that a TripRequest can have at most ONE accepted offer.
+
+#### `prisma/migrations/20260217214323_add_idempotency_check_offer/migration.sql`
+
+- Updates the `chk_idempotency_entity_fk` check constraint to allow `entity_type = 'OFFER'` with `offer_id` set (and others null).
+
+#### `src/app/api/trip-requests/[tripRequestId]/offers/route.ts`
+
+- **`POST` handler** (Create Offer):
+  1. **Auth**: Drivers only (must have `@stetson.edu` email).
+  2. **Validation**:
+     - `seatsOffered`: 1-8.
+     - `priceCents`: >= 0.
+     - `message`: max 500 chars.
+  3. **Guards**:
+     - **Self-offer**: Driver cannot offer on their own request.
+     - **One-active-offer**: Driver cannot have >1 PENDING/ACCEPTED offer for the same request.
+     - **Request State**: TripRequest must be `ACTIVE`.
+  4. **Idempotency**: Standard `Idempotency-Key` header support.
+  5. **Transaction**: Creates `Offer` + `IdempotencyKey` atomically.
+
+#### `src/app/api/offers/[offerId]/accept/route.ts`
+
+- **`POST` handler** (Accept Offer):
+  1. **Auth**: Only the **Rider** who owns the request can accept.
+  2. **Guards**:
+     - Offer must be `PENDING`.
+     - TripRequest must be `ACTIVE`.
+     - **Double-Accept**: Checks if another offer is already `ACCEPTED` (redundant with DB index, but provides better error message).
+  3. **Update**: Sets status to `ACCEPTED`.
+
+#### `src/app/api/offers/[offerId]/cancel/route.ts`
+
+- **`POST` handler** (Cancel Offer):
+  1. **Auth**:
+     - **Driver**: Can cancel their own offer if `PENDING`.
+     - **Rider**: Can cancel an offer on their request if `PENDING` or `ACCEPTED`.
+  2. **Update**: Sets status to `CANCELLED`.
+  3. **Idempotency**: Returns 200 if already `CANCELLED`.
+
+#### `src/__tests__/offer-lifecycle.test.ts`
+
+- **Integration Tests**: 10 scenarios using `vitest` and `prisma` mock/test-db.
+  1. Create Success.
+  2. Idempotency Replay.
+  3. Self-offer blocked (409).
+  4. Multiple active offers blocked (409).
+  5. Accept Success.
+  6. Driver acceptance blocked (403).
+  7. Double-accept blocked (409).
+  8. Driver cancel success.
+  9. Driver cancel accepted blocked (409).
+  10. Rider cancel accepted success.
+
+## 2026-02-18 — Offer Acceptance Creates Booking
+
+### Overview
+
+Added the transactional logic for Rider acceptance. when a Rider accepts an offer, the system now automatically creates a Confirmed Booking, closes the Trip Request, and cancels all other pending offers for that request.
+
+### Files Changed
+
+#### `prisma/schema.prisma`
+
+- **`Booking` model**:
+    - Made `rideId` optional (nullable).
+    - Added `tripRequestId` (FK to TripRequest, optional).
+    - Added `driverUserId` and `priceCents` to support TripRequest-based bookings.
+- **`TripRequestStatus` enum**:
+    - Added `CLOSED` status.
+- **`TripRequest` model**:
+    - Added `bookings` relation.
+
+#### `src/app/api/offers/[offerId]/accept/route.ts`
+
+- **`POST` handler** (Updated):
+    - Wrapped in `prisma.$transaction`.
+    - **Logic**:
+        1. Verify Offer (`PENDING`) and TripRequest (`ACTIVE`).
+        2. Update Offer (`ACCEPTED`).
+        3. Create Booking (`CONFIRMED`, linked to TripRequest).
+        4. Update TripRequest (`CLOSED`).
+        5. Update competing Offers (`CANCELLED`).
+
+#### `src/__tests__/offer-lifecycle.test.ts`
+
+- Updated **Test 5** to verify side effects:
+    - Checks `Booking` created with correct driver/price.
+    - Checks `TripRequest` status is `CLOSED`.
+    - Checks competing offers are `CANCELLED`.
+- Updated **Test 7** to verify double-booking prevention on fresh requests.
