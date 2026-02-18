@@ -120,7 +120,7 @@ export async function POST(
         }
 
         return NextResponse.json(
-            { error: "Internal Server Error", message: msg, details: String(error) },
+            { error: "Internal Server Error", message: "An unexpected error occurred." },
             { status: 500 }
         );
     }
