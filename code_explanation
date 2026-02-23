@@ -1,5 +1,105 @@
 # Code Explanation
 
+## 2026-02-23 — GET /api/offers/mine
+
+### Overview
+
+This change adds one backend read endpoint:
+
+- `GET /api/offers/mine`
+
+Scope is intentionally limited to listing logic only (no offer create/accept/cancel changes, no booking changes, no schema changes).
+
+### Files Changed
+
+#### `src/lib/offer-query.ts`
+
+- Added a new query parsing/validation module dedicated to `GET /api/offers/mine`.
+- Significant blocks and responsibilities:
+  - `OfferRole` type:
+    - Restricts role values to `"rider"` or `"driver"` so route logic is explicit and type-safe.
+  - `OfferCursor` interface:
+    - Defines decoded cursor shape as `{ id, createdAt }`.
+  - `OfferQueryValidationError`:
+    - Provides structured validation errors with both `field` and `message` for consistent `400` responses.
+  - `parseOfferRole(value)`:
+    - Enforces that `role` is required.
+    - Accepts only `"rider"` or `"driver"`.
+    - Throws `OfferQueryValidationError("role", ...)` for missing/invalid role.
+  - `parseOfferStatus(value)`:
+    - Supports optional `status`.
+    - Accepts only `PENDING | ACCEPTED | CANCELLED`.
+    - Throws `OfferQueryValidationError("status", ...)` on invalid values.
+  - `parseOfferLimit(value)`:
+    - Defaults to `20` when omitted.
+    - Validates numeric integer input and bounds `1..50`.
+    - Throws `OfferQueryValidationError("limit", ...)` when invalid.
+  - `decodeOfferCursor(value)`:
+    - Decodes Base64 JSON cursor.
+    - Validates `id` as UUID and `createdAt` as valid ISO datetime.
+    - Returns parsed cursor object or throws `OfferQueryValidationError("cursor", ...)`.
+  - `encodeOfferCursor(id, createdAt)`:
+    - Generates response cursor using the same base64 JSON shape for pagination continuity.
+
+#### `src/app/api/offers/mine/route.ts`
+
+- Added new endpoint implementation for `GET /api/offers/mine`.
+- Significant blocks and responsibilities:
+  - `offerMineSelect`:
+    - Limits selected fields to required offer fields plus minimal `tripRequest` summary.
+    - Keeps payload small and avoids unrelated joins.
+  - Auth guard block:
+    - Uses required shared guard exactly:
+      - `const auth = await requireStetsonAuth();`
+      - `if (auth.error) return auth.error;`
+  - Query parsing block:
+    - Reads `role`, `status`, `limit`, and `cursor` from URL params.
+    - Uses `parseOfferRole`, `parseOfferStatus`, `parseOfferLimit`, `decodeOfferCursor`.
+  - Filtering block:
+    - Applies role-based identity filter:
+      - `role=rider` => `riderUserId = auth.user.clerkUserId`
+      - `role=driver` => `driverUserId = auth.user.clerkUserId`
+    - Applies optional `status` filter only when provided.
+  - Cursor predicate block (DESC ordering semantics):
+    - Adds:
+      - `(createdAt < cursor.createdAt) OR (createdAt = cursor.createdAt AND id < cursor.id)`
+    - Ensures stable keyset pagination for `createdAt DESC, id DESC`.
+  - Query execution block:
+    - Uses `take: limit + 1` to detect next page.
+    - Uses deterministic ordering:
+      - `createdAt: "desc"`
+      - `id: "desc"`
+    - Applies `offerMineSelect` projection.
+  - Response block:
+    - Returns `{ items, nextCursor }`.
+    - Computes `nextCursor` from last returned item when a sentinel row exists.
+  - Error handling block:
+    - Returns `400` with `{ error, field, message }` for query validation failures.
+    - Returns `500` with stable message for unexpected failures.
+
+#### `src/__tests__/offers-mine.test.ts`
+
+- Added a focused test suite for `GET /api/offers/mine`.
+- Significant tests and responsibilities:
+  - `returns rider offers when role=rider`:
+    - Verifies `riderUserId == auth.userId` filter is applied.
+  - `returns driver offers when role=driver`:
+    - Verifies `driverUserId == auth.userId` filter is applied.
+  - `applies status filter when provided`:
+    - Verifies optional status filter (`ACCEPTED` in test) is passed to query.
+  - `uses requested limit and enforces default paging shape`:
+    - Verifies `take = limit + 1` and deterministic DESC ordering.
+  - `returns 400 for missing or invalid role`:
+    - Verifies missing role and invalid role are rejected.
+  - `returns 400 for invalid status, limit, and cursor`:
+    - Verifies strict validation for malformed params.
+  - `paginates deterministically with no duplicates and correct nextCursor`:
+    - Verifies no duplicate records across pages.
+    - Verifies second-page cursor predicate matches DESC semantics.
+    - Verifies `nextCursor` transitions correctly.
+  - `includes minimal trip request summary fields`:
+    - Verifies response includes expected minimal nested `tripRequest` fields.
+
 ## 2026-02-16 — Prevent Self-Booking (MVP 1)
 
 ### Overview
