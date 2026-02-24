@@ -29,14 +29,14 @@ interface ValidationError {
 
 export async function PATCH(
     request: NextRequest,
-    segmentData: { params: Promise<{ rideId: string }> | { rideId: string } }
+    { params }: { params: Promise<{ rideId: string }> }
 ) {
     try {
         const auth = await requireStetsonAuth();
         if (auth.error) return auth.error;
 
-        const params = await segmentData.params;
-        const rideId = params.rideId;
+        const resolvedParams = await params;
+        const rideId = resolvedParams.rideId;
 
         const ride = await prisma.ride.findUnique({
             where: { id: rideId },
@@ -274,24 +274,41 @@ export async function PATCH(
             finalSeatsAvailable = finalSeatsTotal;
         }
 
-        const updatedRide = await prisma.ride.update({
-            where: { id: rideId },
-            data: {
-                originText: finalOriginText,
-                destinationText: finalDestinationText,
-                earliestDepartAt: finalEarliestDepartAt,
-                latestDepartAt: finalLatestDepartAt,
-                preferredDepartAt: finalPreferredDepartAt,
-                distanceCategory: finalDistanceCategory,
-                priceCents: finalPriceCents,
-                seatsTotal: finalSeatsTotal,
-                seatsAvailable: finalSeatsAvailable,
-                pickupInstructions: finalPickupInstructions,
-                dropoffInstructions: finalDropoffInstructions
-            }
-        });
+        try {
+            const updatedRide = await prisma.ride.update({
+                where: {
+                    id: rideId,
+                    bookings: { none: { status: "CONFIRMED" } }
+                },
+                data: {
+                    originText: finalOriginText,
+                    destinationText: finalDestinationText,
+                    earliestDepartAt: finalEarliestDepartAt,
+                    latestDepartAt: finalLatestDepartAt,
+                    preferredDepartAt: finalPreferredDepartAt,
+                    distanceCategory: finalDistanceCategory,
+                    priceCents: finalPriceCents,
+                    seatsTotal: finalSeatsTotal,
+                    seatsAvailable: finalSeatsAvailable,
+                    pickupInstructions: finalPickupInstructions,
+                    dropoffInstructions: finalDropoffInstructions
+                }
+            });
 
-        return NextResponse.json(updatedRide, { status: 200 });
+            return NextResponse.json(updatedRide, { status: 200 });
+        } catch (updateError: any) {
+            if (updateError.code === 'P2025') {
+                return NextResponse.json(
+                    {
+                        error: "Conflict",
+                        code: "RIDE_EDIT_LOCKED_CONFIRMED",
+                        message: "Ride can’t be edited after it has a confirmed booking. Cancel it instead."
+                    },
+                    { status: 409 }
+                );
+            }
+            throw updateError;
+        }
 
     } catch (error) {
         console.error("[PATCH /api/rides/:rideId] Unexpected error:", error);
