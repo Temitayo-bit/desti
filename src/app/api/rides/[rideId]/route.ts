@@ -275,7 +275,7 @@ export async function PATCH(
         }
 
         try {
-            const updatedRide = await prisma.ride.update({
+            const updateResult = await prisma.ride.updateMany({
                 where: {
                     id: rideId,
                     bookings: { none: { status: "CONFIRMED" } }
@@ -295,9 +295,7 @@ export async function PATCH(
                 }
             });
 
-            return NextResponse.json(updatedRide, { status: 200 });
-        } catch (updateError: any) {
-            if (updateError.code === 'P2025') {
+            if (updateResult.count === 0) {
                 return NextResponse.json(
                     {
                         error: "Conflict",
@@ -307,6 +305,14 @@ export async function PATCH(
                     { status: 409 }
                 );
             }
+
+            const updatedRide = await prisma.ride.findUnique({
+                where: { id: rideId }
+            });
+
+            return NextResponse.json(updatedRide, { status: 200 });
+        } catch (updateError: any) {
+            console.error("[PATCH /api/rides/:rideId] Unexpected error during update:", updateError);
             throw updateError;
         }
 

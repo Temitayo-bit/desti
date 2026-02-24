@@ -8,6 +8,7 @@ const { mockRequireStetsonAuth, mockPrisma } = vi.hoisted(() => {
             ride: {
                 findUnique: vi.fn(),
                 update: vi.fn(),
+                updateMany: vi.fn(),
             },
         },
     };
@@ -92,16 +93,19 @@ describe("PATCH /api/rides/:rideId", () => {
 
     it("1) Owner can edit when no CONFIRMED booking exists", async () => {
         const dbRide = fakeRide();
-        mockPrisma.ride.findUnique.mockResolvedValue(dbRide);
-        mockPrisma.ride.update.mockResolvedValue({ ...dbRide, priceCents: 600 });
+        mockPrisma.ride.findUnique
+            .mockResolvedValueOnce(dbRide)
+            .mockResolvedValueOnce({ ...dbRide, priceCents: 600 });
+        mockPrisma.ride.updateMany.mockResolvedValue({ count: 1 });
 
         const req = makeRequest({ priceCents: 600 });
         const params = { rideId: "ride-123" };
         const res = await PATCH(req as never, { params: Promise.resolve(params) });
 
         expect(res.status).toBe(200);
-        expect(mockPrisma.ride.update).toHaveBeenCalledWith(
+        expect(mockPrisma.ride.updateMany).toHaveBeenCalledWith(
             expect.objectContaining({
+                where: { id: "ride-123", bookings: { none: { status: "CONFIRMED" } } },
                 data: expect.objectContaining({ priceCents: 600 })
             })
         );
@@ -118,7 +122,7 @@ describe("PATCH /api/rides/:rideId", () => {
 
         expect(res.status).toBe(409);
         expect(json.code).toBe("RIDE_EDIT_LOCKED_CONFIRMED");
-        expect(mockPrisma.ride.update).not.toHaveBeenCalled();
+        expect(mockPrisma.ride.updateMany).not.toHaveBeenCalled();
     });
 
     it("3) Non-owner cannot edit (403)", async () => {
@@ -130,7 +134,7 @@ describe("PATCH /api/rides/:rideId", () => {
         const res = await PATCH(req as never, { params: Promise.resolve(params) });
 
         expect(res.status).toBe(403);
-        expect(mockPrisma.ride.update).not.toHaveBeenCalled();
+        expect(mockPrisma.ride.updateMany).not.toHaveBeenCalled();
     });
 
     it("4) Invalid window ordering rejected (400)", async () => {
@@ -169,16 +173,19 @@ describe("PATCH /api/rides/:rideId", () => {
 
     it("6) seatsTotal update resets seatsAvailable when no bookings", async () => {
         const dbRide = fakeRide({ seatsTotal: 4, seatsAvailable: 2 });
-        mockPrisma.ride.findUnique.mockResolvedValue(dbRide);
-        mockPrisma.ride.update.mockResolvedValue({ ...dbRide, seatsTotal: 5, seatsAvailable: 5 });
+        mockPrisma.ride.findUnique
+            .mockResolvedValueOnce(dbRide)
+            .mockResolvedValueOnce({ ...dbRide, seatsTotal: 5, seatsAvailable: 5 });
+        mockPrisma.ride.updateMany.mockResolvedValue({ count: 1 });
 
         const req = makeRequest({ seatsTotal: 5 });
         const params = { rideId: "ride-123" };
         const res = await PATCH(req as never, { params: Promise.resolve(params) });
 
         expect(res.status).toBe(200);
-        expect(mockPrisma.ride.update).toHaveBeenCalledWith(
+        expect(mockPrisma.ride.updateMany).toHaveBeenCalledWith(
             expect.objectContaining({
+                where: { id: "ride-123", bookings: { none: { status: "CONFIRMED" } } },
                 data: expect.objectContaining({ seatsTotal: 5, seatsAvailable: 5 })
             })
         );
