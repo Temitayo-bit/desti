@@ -11,7 +11,7 @@ This change adds one backend endpoint:
 The endpoint allows trip request editing only when:
 - caller is the owner (`riderUserId` matches auth user)
 - no `CONFIRMED` booking exists for the trip request
-- trip request is not `CLOSED`
+- trip request is `ACTIVE`
 
 No offer mutation, booking mutation, or frontend changes were added.
 
@@ -37,7 +37,7 @@ No offer mutation, booking mutation, or frontend changes were added.
     - Loads trip request by id and includes one confirmed booking.
     - Returns `404` when missing.
     - Returns `403` when non-owner.
-    - Returns `409 TRIP_REQUEST_CLOSED` when status is `CLOSED`.
+    - Returns `409 TRIP_REQUEST_CLOSED` when status is not `ACTIVE` (for example `CLOSED` or `CANCELLED`).
     - Returns `409 TRIP_REQUEST_EDIT_LOCKED_CONFIRMED` when any confirmed booking exists.
   - **Body parsing and unknown-field rejection**
     - Accepts only JSON object payload.
@@ -48,7 +48,7 @@ No offer mutation, booking mutation, or frontend changes were added.
     - `preferredDepartAt`: ISO datetime or `null`.
     - `distanceCategory`: enum `SHORT | MEDIUM | LONG`.
     - `seatsNeeded`: integer `1..8`.
-    - `pickupInstructions`, `dropoffInstructions`: when provided, string only, trimmed, non-empty, max `500`.
+    - `pickupInstructions`, `dropoffInstructions`: when provided, accepts `null` (clear) or string; string values are trimmed, must be non-empty, and max `500`.
   - **Merged-state validation**
     - Validates final merged state (existing + patch):
       - `latestDesiredAt > earliestDesiredAt`
@@ -62,13 +62,13 @@ No offer mutation, booking mutation, or frontend changes were added.
       - `details[]` field-level errors
   - **Transactional guarded update**
     - Uses `prisma.$transaction` with:
-      - `updateMany` guarded by owner, not-closed status, and no confirmed bookings
-      - Guard blocks `CLOSED` in the write predicate, so closed requests cannot be updated.
+      - `updateMany` guarded by owner, `status: "ACTIVE"`, and no confirmed bookings
+      - Active-only allowlist prevents updates for terminal or non-active statuses.
       - follow-up read to diagnose conflict reason deterministically
     - On `count === 0`, remaps to:
       - `404` (deleted)
       - `403` (ownership mismatch)
-      - `409 TRIP_REQUEST_CLOSED`
+      - `409 TRIP_REQUEST_CLOSED` when latest status is no longer active
       - `409 TRIP_REQUEST_EDIT_LOCKED_CONFIRMED`
       - fallback `409` conflict
   - **Success response**
@@ -86,7 +86,8 @@ No offer mutation, booking mutation, or frontend changes were added.
   - `Non-owner cannot edit` -> `403`.
   - `Invalid window ordering rejected` -> `400`.
   - `preferredDepartAt outside window rejected` -> `400`.
-  - `CLOSED trip requests cannot be edited` -> `409` with `TRIP_REQUEST_CLOSED`.
+  - `CLOSED and CANCELLED trip requests cannot be edited` -> `409` with `TRIP_REQUEST_CLOSED`.
+  - `pickupInstructions`/`dropoffInstructions` can be cleared with `null`.
   - `Unknown fields rejected` -> `400`.
 
 ## 2026-02-24 — PATCH /api/rides/:rideId — Edit Lock Before Confirmation

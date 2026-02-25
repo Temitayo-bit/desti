@@ -18,7 +18,8 @@ const TRIP_REQUEST_EDIT_LOCKED_CONFIRMED_MESSAGE =
     "Trip request can’t be edited after it has a confirmed booking. Cancel instead.";
 const TRIP_REQUEST_CLOSED_CODE = "TRIP_REQUEST_CLOSED";
 const TRIP_REQUEST_CLOSED_MESSAGE =
-    "Trip request cannot be edited because it is closed.";
+    "Trip request cannot be edited because it is no longer active.";
+const EDITABLE_STATUS = "ACTIVE";
 
 const ALLOWED_UPDATE_FIELDS = new Set([
     "originText",
@@ -73,7 +74,7 @@ export async function PATCH(
         }
 
         const currentStatus = tripRequest.status as string;
-        if (currentStatus === "CLOSED") {
+        if (currentStatus !== EDITABLE_STATUS) {
             return NextResponse.json(
                 {
                     error: "Conflict",
@@ -268,7 +269,9 @@ export async function PATCH(
         let finalPickupInstructions = tripRequest.pickupInstructions;
         if (body.pickupInstructions !== undefined) {
             const value = body.pickupInstructions;
-            if (typeof value !== "string") {
+            if (value === null) {
+                finalPickupInstructions = null;
+            } else if (typeof value !== "string") {
                 errors.push({
                     field: "pickupInstructions",
                     message: "pickupInstructions must be a string.",
@@ -296,7 +299,9 @@ export async function PATCH(
         let finalDropoffInstructions = tripRequest.dropoffInstructions;
         if (body.dropoffInstructions !== undefined) {
             const value = body.dropoffInstructions;
-            if (typeof value !== "string") {
+            if (value === null) {
+                finalDropoffInstructions = null;
+            } else if (typeof value !== "string") {
                 errors.push({
                     field: "dropoffInstructions",
                     message: "dropoffInstructions must be a string.",
@@ -380,7 +385,7 @@ export async function PATCH(
                 where: {
                     id: tripRequestId,
                     riderUserId,
-                    status: { not: "CLOSED" },
+                    status: EDITABLE_STATUS,
                     bookings: { none: { status: BookingStatus.CONFIRMED } },
                 },
                 data: {
@@ -422,7 +427,7 @@ export async function PATCH(
             }
 
             const latestStatus = maybeUpdatedTripRequest.status as string;
-            if (latestStatus === "CLOSED") {
+            if (latestStatus !== EDITABLE_STATUS) {
                 return NextResponse.json(
                     {
                         error: "Conflict",

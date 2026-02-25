@@ -116,14 +116,16 @@ describe("PATCH /api/trip-requests/:tripRequestId", () => {
             }) as never,
             { params: Promise.resolve({ tripRequestId: "trip-123" }) }
         );
+        const json = await res.json();
 
         expect(res.status).toBe(200);
+        expect(json).not.toHaveProperty("bookings");
         expect(mockPrisma.tripRequest.updateMany).toHaveBeenCalledWith(
             expect.objectContaining({
                 where: {
                     id: "trip-123",
                     riderUserId: "user_rider_1",
-                    status: { not: "CLOSED" },
+                    status: "ACTIVE",
                     bookings: { none: { status: "CONFIRMED" } },
                 },
                 data: expect.objectContaining({
@@ -224,7 +226,126 @@ describe("PATCH /api/trip-requests/:tripRequestId", () => {
         expect(closedJson.code).toBe("TRIP_REQUEST_CLOSED");
     });
 
-    it("rejects unknown fields with 400", async () => {
+    it("7) CANCELLED trip requests cannot be edited (409)", async () => {
+        mockPrisma.tripRequest.findUnique.mockResolvedValueOnce(
+            fakeTripRequest({ status: "CANCELLED" })
+        );
+
+        const cancelledRes = await PATCH(
+            makeRequest({ seatsNeeded: 3 }) as never,
+            { params: Promise.resolve({ tripRequestId: "trip-123" }) }
+        );
+        const cancelledJson = await cancelledRes.json();
+
+        expect(cancelledRes.status).toBe(409);
+        expect(cancelledJson.code).toBe("TRIP_REQUEST_CLOSED");
+    });
+
+    it("8) allows clearing instruction fields with null", async () => {
+        const currentTripRequest = fakeTripRequest({
+            pickupInstructions: "Gate A",
+            dropoffInstructions: "Dorm lobby",
+        });
+        const updatedTripRequest = fakeTripRequest({
+            pickupInstructions: null,
+            dropoffInstructions: null,
+            bookings: [],
+        });
+
+        mockPrisma.tripRequest.findUnique
+            .mockResolvedValueOnce(currentTripRequest)
+            .mockResolvedValueOnce(updatedTripRequest);
+        mockPrisma.tripRequest.updateMany.mockResolvedValue({ count: 1 });
+
+        const res = await PATCH(
+            makeRequest({
+                pickupInstructions: null,
+                dropoffInstructions: null,
+            }) as never,
+            { params: Promise.resolve({ tripRequestId: "trip-123" }) }
+        );
+
+        expect(res.status).toBe(200);
+        expect(mockPrisma.tripRequest.updateMany).toHaveBeenCalledWith(
+            expect.objectContaining({
+                data: expect.objectContaining({
+                    pickupInstructions: null,
+                    dropoffInstructions: null,
+                }),
+            })
+        );
+    });
+
+    it("9) rejects empty instruction strings after trimming", async () => {
+        mockPrisma.tripRequest.findUnique.mockResolvedValue(fakeTripRequest());
+
+        const res = await PATCH(
+            makeRequest({
+                pickupInstructions: "   ",
+                dropoffInstructions: "\t  ",
+            }) as never,
+            { params: Promise.resolve({ tripRequestId: "trip-123" }) }
+        );
+        const json = await res.json();
+
+        expect(res.status).toBe(400);
+        const fields = json.details.map((d: { field: string }) => d.field);
+        expect(fields).toContain("pickupInstructions");
+        expect(fields).toContain("dropoffInstructions");
+    });
+
+    it("10) rejects instruction strings longer than 500 characters", async () => {
+        mockPrisma.tripRequest.findUnique.mockResolvedValue(fakeTripRequest());
+        const tooLong = "x".repeat(501);
+
+        const res = await PATCH(
+            makeRequest({
+                pickupInstructions: tooLong,
+                dropoffInstructions: tooLong,
+            }) as never,
+            { params: Promise.resolve({ tripRequestId: "trip-123" }) }
+        );
+        const json = await res.json();
+
+        expect(res.status).toBe(400);
+        const fields = json.details.map((d: { field: string }) => d.field);
+        expect(fields).toContain("pickupInstructions");
+        expect(fields).toContain("dropoffInstructions");
+    });
+
+    it("11) accepts valid instruction strings and trims values", async () => {
+        const currentTripRequest = fakeTripRequest();
+        const updatedTripRequest = fakeTripRequest({
+            pickupInstructions: "Gate A",
+            dropoffInstructions: "Dorm lobby",
+            bookings: [],
+        });
+
+        mockPrisma.tripRequest.findUnique
+            .mockResolvedValueOnce(currentTripRequest)
+            .mockResolvedValueOnce(updatedTripRequest);
+        mockPrisma.tripRequest.updateMany.mockResolvedValue({ count: 1 });
+
+        const res = await PATCH(
+            makeRequest({
+                pickupInstructions: "  Gate A  ",
+                dropoffInstructions: "  Dorm lobby  ",
+            }) as never,
+            { params: Promise.resolve({ tripRequestId: "trip-123" }) }
+        );
+
+        expect(res.status).toBe(200);
+        expect(mockPrisma.tripRequest.updateMany).toHaveBeenCalledWith(
+            expect.objectContaining({
+                data: expect.objectContaining({
+                    pickupInstructions: "Gate A",
+                    dropoffInstructions: "Dorm lobby",
+                }),
+            })
+        );
+    });
+
+    it("12) rejects unknown fields with 400", async () => {
         mockPrisma.tripRequest.findUnique.mockResolvedValue(fakeTripRequest());
 
         const res = await PATCH(
