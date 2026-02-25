@@ -12,7 +12,8 @@ const { mockRequireStetsonAuth, mockPrisma } = vi.hoisted(() => {
             },
             booking: {
                 aggregate: vi.fn(),
-            }
+            },
+            $transaction: vi.fn().mockImplementation((promises) => Promise.all(promises)),
         },
     };
 });
@@ -231,5 +232,21 @@ describe("PATCH /api/rides/:rideId", () => {
 
         expect(res.status).toBe(400);
         expect(json.message).toContain("Unknown fields");
+    });
+
+    it("9) Ride unexpectedly deleted during edit returns 404", async () => {
+        const dbRide = fakeRide();
+        // First findUnique checks existence. The transaction's findUnique returns null.
+        mockPrisma.ride.findUnique
+            .mockResolvedValueOnce(dbRide)
+            .mockResolvedValueOnce(null);
+        mockPrisma.ride.updateMany.mockResolvedValue({ count: 0 }); // Update fails
+
+        const req = makeRequest({ priceCents: 600 });
+        const params = { rideId: "ride-123" };
+        const res = await PATCH(req as never, { params: Promise.resolve(params) });
+
+        expect(res.status).toBe(404);
+        expect(mockPrisma.ride.updateMany).toHaveBeenCalled();
     });
 });

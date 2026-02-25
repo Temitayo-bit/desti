@@ -286,27 +286,38 @@ export async function PATCH(
         }
 
         try {
-            const updateResult = await prisma.ride.updateMany({
-                where: {
-                    id: rideId,
-                    bookings: { none: { status: "CONFIRMED" } }
-                },
-                data: {
-                    originText: finalOriginText,
-                    destinationText: finalDestinationText,
-                    earliestDepartAt: finalEarliestDepartAt,
-                    latestDepartAt: finalLatestDepartAt,
-                    preferredDepartAt: finalPreferredDepartAt,
-                    distanceCategory: finalDistanceCategory,
-                    priceCents: finalPriceCents,
-                    seatsTotal: finalSeatsTotal,
-                    seatsAvailable: finalSeatsAvailable,
-                    pickupInstructions: finalPickupInstructions,
-                    dropoffInstructions: finalDropoffInstructions
-                }
-            });
+            const [updateResult, transUpdatedRide] = await prisma.$transaction([
+                prisma.ride.updateMany({
+                    where: {
+                        id: rideId,
+                        bookings: { none: { status: "CONFIRMED" } }
+                    },
+                    data: {
+                        originText: finalOriginText,
+                        destinationText: finalDestinationText,
+                        earliestDepartAt: finalEarliestDepartAt,
+                        latestDepartAt: finalLatestDepartAt,
+                        preferredDepartAt: finalPreferredDepartAt,
+                        distanceCategory: finalDistanceCategory,
+                        priceCents: finalPriceCents,
+                        seatsTotal: finalSeatsTotal,
+                        seatsAvailable: finalSeatsAvailable,
+                        pickupInstructions: finalPickupInstructions,
+                        dropoffInstructions: finalDropoffInstructions
+                    }
+                }),
+                prisma.ride.findUnique({
+                    where: { id: rideId }
+                })
+            ]);
 
             if (updateResult.count === 0) {
+                if (!transUpdatedRide) {
+                    return NextResponse.json(
+                        { error: "Not Found", message: "Ride not found." },
+                        { status: 404 }
+                    );
+                }
                 return NextResponse.json(
                     {
                         error: "Conflict",
@@ -317,11 +328,7 @@ export async function PATCH(
                 );
             }
 
-            const updatedRide = await prisma.ride.findUnique({
-                where: { id: rideId }
-            });
-
-            return NextResponse.json(updatedRide, { status: 200 });
+            return NextResponse.json(transUpdatedRide, { status: 200 });
         } catch (updateError: any) {
             console.error("[PATCH /api/rides/:rideId] Unexpected error during update:", updateError);
             throw updateError;
