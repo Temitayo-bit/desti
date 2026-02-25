@@ -31,6 +31,10 @@ vi.mock("@/generated/prisma/client", () => ({
         MEDIUM: "MEDIUM",
         LONG: "LONG",
     },
+    BookingStatus: {
+        CONFIRMED: "CONFIRMED",
+        CANCELLED: "CANCELLED",
+    }
 }));
 
 import { PATCH } from "@/app/api/rides/[rideId]/route";
@@ -195,8 +199,8 @@ describe("PATCH /api/rides/:rideId", () => {
         );
     });
 
-    it("7) seatsTotal update subtracts PENDING bookings to compute seatsAvailable", async () => {
-        const dbRide = fakeRide({ seatsTotal: 4, seatsAvailable: 2 }); // 2 PENDING seats
+    it("7) seatsTotal update subtracts CONFIRMED bookings to compute seatsAvailable", async () => {
+        const dbRide = fakeRide({ seatsTotal: 4, seatsAvailable: 2 }); // 2 CONFIRMED seats
         mockPrisma.ride.findUnique
             .mockResolvedValueOnce(dbRide)
             .mockResolvedValueOnce({ ...dbRide, seatsTotal: 5, seatsAvailable: 3 });

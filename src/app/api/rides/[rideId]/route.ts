@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireStetsonAuth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { DistanceCategory } from "@/generated/prisma/client";
+import { DistanceCategory, BookingStatus } from "@/generated/prisma/client";
 
 const VALID_DISTANCE_CATEGORIES: ReadonlySet<string> = new Set(
     Object.values(DistanceCategory)
@@ -274,7 +274,7 @@ export async function PATCH(
             const pendingBookings = await prisma.booking.aggregate({
                 where: {
                     rideId,
-                    status: "PENDING" as any // Type override due to Prisma schema limitations here
+                    status: BookingStatus.CONFIRMED
                 },
                 _sum: {
                     seatsBooked: true
