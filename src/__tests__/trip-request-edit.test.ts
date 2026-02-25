@@ -122,12 +122,13 @@ describe("PATCH /api/trip-requests/:tripRequestId", () => {
         expect(json).not.toHaveProperty("bookings");
         expect(mockPrisma.tripRequest.updateMany).toHaveBeenCalledWith(
             expect.objectContaining({
-                where: {
+                where: expect.objectContaining({
                     id: "trip-123",
                     riderUserId: "user_rider_1",
                     status: "ACTIVE",
+                    updatedAt: currentTripRequest.updatedAt,
                     bookings: { none: { status: "CONFIRMED" } },
-                },
+                }),
                 data: expect.objectContaining({
                     destinationText: "Sanford Airport",
                     seatsNeeded: 3,
@@ -356,5 +357,25 @@ describe("PATCH /api/trip-requests/:tripRequestId", () => {
 
         expect(res.status).toBe(400);
         expect(json.message).toContain("Unknown fields");
+    });
+
+    it("13) returns 409 when optimistic concurrency guard fails", async () => {
+        const currentTripRequest = fakeTripRequest();
+        const latestTripRequest = fakeTripRequest({ bookings: [] });
+
+        mockPrisma.tripRequest.findUnique
+            .mockResolvedValueOnce(currentTripRequest)
+            .mockResolvedValueOnce(latestTripRequest);
+        mockPrisma.tripRequest.updateMany.mockResolvedValue({ count: 0 });
+
+        const res = await PATCH(
+            makeRequest({ destinationText: "Updated destination" }) as never,
+            { params: Promise.resolve({ tripRequestId: "trip-123" }) }
+        );
+        const json = await res.json();
+
+        expect(res.status).toBe(409);
+        expect(json.error).toBe("Conflict");
+        expect(json.message).toContain("could not be completed");
     });
 });

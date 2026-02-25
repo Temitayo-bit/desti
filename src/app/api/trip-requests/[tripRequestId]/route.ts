@@ -96,6 +96,8 @@ export async function PATCH(
             );
         }
 
+        const previousUpdatedAt = tripRequest.updatedAt;
+
         let body: Record<string, unknown>;
         try {
             const parsed = await request.json();
@@ -386,6 +388,7 @@ export async function PATCH(
                     id: tripRequestId,
                     riderUserId,
                     status: EDITABLE_STATUS,
+                    updatedAt: previousUpdatedAt,
                     bookings: { none: { status: BookingStatus.CONFIRMED } },
                 },
                 data: {

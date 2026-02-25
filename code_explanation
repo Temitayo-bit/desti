@@ -62,8 +62,9 @@ No offer mutation, booking mutation, or frontend changes were added.
       - `details[]` field-level errors
   - **Transactional guarded update**
     - Uses `prisma.$transaction` with:
-      - `updateMany` guarded by owner, `status: "ACTIVE"`, and no confirmed bookings
+      - `updateMany` guarded by owner, `status: "ACTIVE"`, prior `updatedAt` value, and no confirmed bookings
       - Active-only allowlist prevents updates for terminal or non-active statuses.
+      - `updatedAt` optimistic concurrency check ensures stale read-merge-write attempts update 0 rows instead of overwriting newer edits.
       - follow-up read to diagnose conflict reason deterministically
     - On `count === 0`, remaps to:
       - `404` (deleted)
@@ -88,6 +89,7 @@ No offer mutation, booking mutation, or frontend changes were added.
   - `preferredDepartAt outside window rejected` -> `400`.
   - `CLOSED and CANCELLED trip requests cannot be edited` -> `409` with `TRIP_REQUEST_CLOSED`.
   - `pickupInstructions`/`dropoffInstructions` can be cleared with `null`.
+  - Stale concurrent PATCH attempts return `409 Conflict` via the optimistic-concurrency guard path.
   - `Unknown fields rejected` -> `400`.
 
 ## 2026-02-24 — PATCH /api/rides/:rideId — Edit Lock Before Confirmation
