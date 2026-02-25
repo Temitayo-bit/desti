@@ -31,12 +31,6 @@ vi.mock("@/generated/prisma/client", () => ({
         MEDIUM: "MEDIUM",
         LONG: "LONG",
     },
-    TripRequestStatus: {
-        ACTIVE: "ACTIVE",
-        CANCELLED: "CANCELLED",
-        CLOSED: "CLOSED",
-        FULFILLED: "FULFILLED",
-    },
     BookingStatus: {
         CONFIRMED: "CONFIRMED",
         CANCELLED: "CANCELLED",
@@ -129,7 +123,7 @@ describe("PATCH /api/trip-requests/:tripRequestId", () => {
                 where: {
                     id: "trip-123",
                     riderUserId: "user_rider_1",
-                    status: { notIn: ["CLOSED", "FULFILLED"] },
+                    status: { not: "CLOSED" },
                     bookings: { none: { status: "CONFIRMED" } },
                 },
                 data: expect.objectContaining({
@@ -216,7 +210,7 @@ describe("PATCH /api/trip-requests/:tripRequestId", () => {
         );
     });
 
-    it("6) CLOSED and FULFILLED trip requests cannot be edited (409)", async () => {
+    it("6) CLOSED trip requests cannot be edited (409)", async () => {
         mockPrisma.tripRequest.findUnique.mockResolvedValueOnce(
             fakeTripRequest({ status: "CLOSED" })
         );
@@ -228,18 +222,6 @@ describe("PATCH /api/trip-requests/:tripRequestId", () => {
         const closedJson = await closedRes.json();
         expect(closedRes.status).toBe(409);
         expect(closedJson.code).toBe("TRIP_REQUEST_CLOSED");
-
-        mockPrisma.tripRequest.findUnique.mockResolvedValueOnce(
-            fakeTripRequest({ status: "FULFILLED" })
-        );
-
-        const fulfilledRes = await PATCH(
-            makeRequest({ seatsNeeded: 3 }) as never,
-            { params: Promise.resolve({ tripRequestId: "trip-123" }) }
-        );
-        const fulfilledJson = await fulfilledRes.json();
-        expect(fulfilledRes.status).toBe(409);
-        expect(fulfilledJson.code).toBe("TRIP_REQUEST_CLOSED");
     });
 
     it("rejects unknown fields with 400", async () => {
