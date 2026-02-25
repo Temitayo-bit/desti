@@ -63,6 +63,7 @@ No offer mutation, booking mutation, or frontend changes were added.
   - **Transactional guarded update**
     - Uses `prisma.$transaction` with:
       - `updateMany` guarded by owner, not-closed status, and no confirmed bookings
+      - Guard now blocks both `CLOSED` and `FULFILLED` in the write predicate (not just `CLOSED`) to prevent stale-status edits.
       - follow-up read to diagnose conflict reason deterministically
     - On `count === 0`, remaps to:
       - `404` (deleted)

@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { BookingStatus, DistanceCategory } from "@/generated/prisma/client";
+import {
+    BookingStatus,
+    DistanceCategory,
+    TripRequestStatus,
+} from "@/generated/prisma/client";
 import { requireStetsonAuth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -16,6 +20,10 @@ const TRIP_REQUEST_EDIT_LOCKED_CONFIRMED_MESSAGE =
 const TRIP_REQUEST_CLOSED_CODE = "TRIP_REQUEST_CLOSED";
 const TRIP_REQUEST_CLOSED_MESSAGE =
     "Trip request cannot be edited because it is closed.";
+const EDIT_LOCKED_STATUSES: TripRequestStatus[] = [TripRequestStatus.CLOSED];
+if ("FULFILLED" in TripRequestStatus) {
+    EDIT_LOCKED_STATUSES.push("FULFILLED" as unknown as TripRequestStatus);
+}
 
 const ALLOWED_UPDATE_FIELDS = new Set([
     "originText",
@@ -377,7 +385,7 @@ export async function PATCH(
                 where: {
                     id: tripRequestId,
                     riderUserId,
-                    status: { not: "CLOSED" },
+                    status: { notIn: EDIT_LOCKED_STATUSES },
                     bookings: { none: { status: BookingStatus.CONFIRMED } },
                 },
                 data: {

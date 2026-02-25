@@ -31,6 +31,12 @@ vi.mock("@/generated/prisma/client", () => ({
         MEDIUM: "MEDIUM",
         LONG: "LONG",
     },
+    TripRequestStatus: {
+        ACTIVE: "ACTIVE",
+        CANCELLED: "CANCELLED",
+        CLOSED: "CLOSED",
+        FULFILLED: "FULFILLED",
+    },
     BookingStatus: {
         CONFIRMED: "CONFIRMED",
         CANCELLED: "CANCELLED",
@@ -123,7 +129,7 @@ describe("PATCH /api/trip-requests/:tripRequestId", () => {
                 where: {
                     id: "trip-123",
                     riderUserId: "user_rider_1",
-                    status: { not: "CLOSED" },
+                    status: { notIn: ["CLOSED", "FULFILLED"] },
                     bookings: { none: { status: "CONFIRMED" } },
                 },
                 data: expect.objectContaining({
