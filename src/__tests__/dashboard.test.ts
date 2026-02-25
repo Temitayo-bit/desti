@@ -160,6 +160,32 @@ describe("GET /api/dashboard", () => {
         mockRequireStetsonAuth.mockResolvedValue(successAuth());
     });
 
+    // ── 0. Auth failure paths ────────────────────────────────────────────
+
+    it("returns auth error and skips Prisma when auth returns 401", async () => {
+        const errorResponse = new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+        mockRequireStetsonAuth.mockResolvedValue({ error: errorResponse });
+
+        const res = await GET();
+        expect(res.status).toBe(401);
+
+        expect(mockPrisma.ride.count).not.toHaveBeenCalled();
+        expect(mockPrisma.ride.findMany).not.toHaveBeenCalled();
+        expect(mockPrisma.booking.count).not.toHaveBeenCalled();
+        expect(mockPrisma.offer.count).not.toHaveBeenCalled();
+    });
+
+    it("returns auth error and skips Prisma when auth returns 403", async () => {
+        const errorResponse = new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 });
+        mockRequireStetsonAuth.mockResolvedValue({ error: errorResponse });
+
+        const res = await GET();
+        expect(res.status).toBe(403);
+
+        expect(mockPrisma.ride.count).not.toHaveBeenCalled();
+        expect(mockPrisma.offer.findMany).not.toHaveBeenCalled();
+    });
+
     // ── 1. Correct counts and lists ──────────────────────────────────────
 
     it("returns correct counts and lists when user has items in all categories", async () => {
@@ -253,6 +279,27 @@ describe("GET /api/dashboard", () => {
         expect(trBookingWhere.status).toBe("CONFIRMED");
         expect(trBookingWhere.tripRequestId).toEqual({ not: null });
         expect(trBookingWhere.tripRequest.latestDesiredAt.gt).toBeInstanceOf(Date);
+    });
+
+    it("passes stale-offer filter (tripRequest.latestDesiredAt > now) to offer queries", async () => {
+        setupDefaults();
+        await GET();
+
+        // Offer sent count
+        const offerSentCountWhere = mockPrisma.offer.count.mock.calls[0][0].where;
+        expect(offerSentCountWhere.tripRequest.latestDesiredAt.gt).toBeInstanceOf(Date);
+
+        // Offer sent findMany
+        const offerSentFindWhere = mockPrisma.offer.findMany.mock.calls[0][0].where;
+        expect(offerSentFindWhere.tripRequest.latestDesiredAt.gt).toBeInstanceOf(Date);
+
+        // Offer received count
+        const offerRecCountWhere = mockPrisma.offer.count.mock.calls[1][0].where;
+        expect(offerRecCountWhere.tripRequest.latestDesiredAt.gt).toBeInstanceOf(Date);
+
+        // Offer received findMany
+        const offerRecFindWhere = mockPrisma.offer.findMany.mock.calls[1][0].where;
+        expect(offerRecFindWhere.tripRequest.latestDesiredAt.gt).toBeInstanceOf(Date);
     });
 
     // ── 4. Lists capped at 5 ─────────────────────────────────────────────

@@ -31,19 +31,7 @@ const rideInBookingSelect = {
     status: true,
 } satisfies Prisma.RideSelect;
 
-const tripRequestInBookingSelect = {
-    id: true,
-    originText: true,
-    destinationText: true,
-    earliestDesiredAt: true,
-    latestDesiredAt: true,
-    preferredDepartAt: true,
-    distanceCategory: true,
-    seatsNeeded: true,
-    status: true,
-} satisfies Prisma.TripRequestSelect;
-
-const tripRequestInOfferSelect = {
+const tripRequestSummarySelect = {
     id: true,
     originText: true,
     destinationText: true,
@@ -65,7 +53,7 @@ const offerSummarySelect = {
     message: true,
     status: true,
     createdAt: true,
-    tripRequest: { select: tripRequestInOfferSelect },
+    tripRequest: { select: tripRequestSummarySelect },
 } satisfies Prisma.OfferSelect;
 
 /* ── GET /api/dashboard ───────────────────────────────────────────────────── */
@@ -183,7 +171,7 @@ export async function GET() {
                     status: true,
                     seatsBooked: true,
                     createdAt: true,
-                    tripRequest: { select: tripRequestInBookingSelect },
+                    tripRequest: { select: tripRequestSummarySelect },
                 },
                 orderBy: [
                     { tripRequest: { earliestDesiredAt: "asc" } },
@@ -197,6 +185,7 @@ export async function GET() {
                 where: {
                     driverUserId: userId,
                     status: "PENDING",
+                    tripRequest: { latestDesiredAt: { gt: now } },
                 },
             }),
 
@@ -205,6 +194,7 @@ export async function GET() {
                 where: {
                     driverUserId: userId,
                     status: "PENDING",
+                    tripRequest: { latestDesiredAt: { gt: now } },
                 },
                 select: offerSummarySelect,
                 orderBy: [
@@ -219,6 +209,7 @@ export async function GET() {
                 where: {
                     riderUserId: userId,
                     status: "PENDING",
+                    tripRequest: { latestDesiredAt: { gt: now } },
                 },
             }),
 
@@ -227,6 +218,7 @@ export async function GET() {
                 where: {
                     riderUserId: userId,
                     status: "PENDING",
+                    tripRequest: { latestDesiredAt: { gt: now } },
                 },
                 select: offerSummarySelect,
                 orderBy: [

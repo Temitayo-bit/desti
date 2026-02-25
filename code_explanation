@@ -16,12 +16,11 @@ Scope is intentionally limited to read-only aggregation. No create/update/cancel
 
 - Added new endpoint implementation for `GET /api/dashboard`.
 - Significant blocks and responsibilities:
-  - **Select shapes (lines 8–63)**:
+  - **Select shapes (lines 8–56)**:
     - `rideSummarySelect`: 11 fields for ride list items.
-    - `rideInBookingSelect`: 9 fields for ride summary nested inside bookings (no seatsTotal/seatsAvailable since those are booking context).
-    - `tripRequestInBookingSelect`: 9 fields for trip request summary nested inside bookings.
-    - `tripRequestInOfferSelect`: 9 fields for trip request summary nested inside offers.
-    - `offerSummarySelect`: 11 fields including nested `tripRequest`.
+    - `rideInBookingSelect`: 9 fields for ride summary nested inside bookings.
+    - `tripRequestSummarySelect`: 9 fields shared by bookings and offers (single source of truth).
+    - `offerSummarySelect`: 10 fields including nested `tripRequest`.
   - **Auth guard block**:
     - Uses required guard exactly:
       - `const auth = await requireStetsonAuth();`
@@ -33,9 +32,9 @@ Scope is intentionally limited to read-only aggregation. No create/update/cancel
     - `booking.findMany` (ride-based): Same filter, `orderBy: [ride.earliestDepartAt ASC, id ASC]`, `take: 5`. Includes nested `ride` summary.
     - `booking.count` (triprequest-based): Counts where `riderUserId == userId`, `status == CONFIRMED`, `tripRequestId != null`, `tripRequest.latestDesiredAt > now`.
     - `booking.findMany` (triprequest-based): Same filter, `orderBy: [tripRequest.earliestDesiredAt ASC, id ASC]`, `take: 5`. Includes nested `tripRequest` summary.
-    - `offer.count` (sent): Counts where `driverUserId == userId`, `status == PENDING`.
+    - `offer.count` (sent): Counts where `driverUserId == userId`, `status == PENDING`, `tripRequest.latestDesiredAt > now`.
     - `offer.findMany` (sent): Same filter, `orderBy: [createdAt DESC, id DESC]`, `take: 5`. Includes nested `tripRequest`.
-    - `offer.count` (received): Counts where `riderUserId == userId`, `status == PENDING`.
+    - `offer.count` (received): Counts where `riderUserId == userId`, `status == PENDING`, `tripRequest.latestDesiredAt > now`.
     - `offer.findMany` (received): Same filter, `orderBy: [createdAt DESC, id DESC]`, `take: 5`. Includes nested `tripRequest`.
   - **Booking merge block**:
     - Combines ride-based and triprequest-based booking results (up to 5 each).
