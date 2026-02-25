@@ -66,7 +66,6 @@ export default function PostRidePage() {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-indigo-50 py-12">
       <div className="max-w-2xl mx-auto px-4">
 
-        {/* Back */}
         <Link href="/dashboard" className="text-indigo-600 font-semibold hover:underline mb-8 block">
           ← Back to Dashboard
         </Link>
@@ -84,8 +83,6 @@ export default function PostRidePage() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
-
-            {/* Origin */}
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">
                 From (Origin)
@@ -100,7 +97,6 @@ export default function PostRidePage() {
               />
             </div>
 
-            {/* Destination */}
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">
                 To (Destination)
@@ -115,7 +111,6 @@ export default function PostRidePage() {
               />
             </div>
 
-            {/* Time Window */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">
@@ -145,7 +140,6 @@ export default function PostRidePage() {
               </div>
             </div>
 
-            {/* Distance Category */}
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">
                 Distance Category
@@ -162,7 +156,6 @@ export default function PostRidePage() {
               </select>
             </div>
 
-            {/* Price + Seats */}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">
@@ -198,7 +191,6 @@ export default function PostRidePage() {
               </div>
             </div>
 
-            {/* Submit */}
             <button
               type="submit"
               disabled={loading}
@@ -206,7 +198,6 @@ export default function PostRidePage() {
             >
               {loading ? 'Posting Ride...' : 'Post Ride 🚗'}
             </button>
-
           </form>
         </div>
       </div>
