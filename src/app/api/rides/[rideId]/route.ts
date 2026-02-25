@@ -40,7 +40,7 @@ export async function PATCH(
 
         const ride = await prisma.ride.findUnique({
             where: { id: rideId },
-            include: { bookings: { where: { status: "CONFIRMED" }, take: 1 } }
+            include: { bookings: { where: { status: BookingStatus.CONFIRMED }, take: 1 } }
         });
 
         if (!ride) {
@@ -271,18 +271,7 @@ export async function PATCH(
 
         let finalSeatsAvailable = ride.seatsAvailable;
         if (body.seatsTotal !== undefined && body.seatsTotal !== ride.seatsTotal) {
-            const pendingBookings = await prisma.booking.aggregate({
-                where: {
-                    rideId,
-                    status: BookingStatus.CONFIRMED
-                },
-                _sum: {
-                    seatsBooked: true
-                }
-            });
-            const pendingCount = pendingBookings._sum?.seatsBooked || 0;
-            const newAvailable = finalSeatsTotal - pendingCount;
-            finalSeatsAvailable = Math.max(0, Math.min(newAvailable, finalSeatsTotal));
+            finalSeatsAvailable = finalSeatsTotal;
         }
 
         try {
@@ -290,7 +279,7 @@ export async function PATCH(
                 prisma.ride.updateMany({
                     where: {
                         id: rideId,
-                        bookings: { none: { status: "CONFIRMED" } }
+                        bookings: { none: { status: BookingStatus.CONFIRMED } }
                     },
                     data: {
                         originText: finalOriginText,
