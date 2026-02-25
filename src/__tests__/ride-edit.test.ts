@@ -10,6 +10,9 @@ const { mockRequireStetsonAuth, mockPrisma } = vi.hoisted(() => {
                 update: vi.fn(),
                 updateMany: vi.fn(),
             },
+            booking: {
+                aggregate: vi.fn(),
+            }
         },
     };
 });
@@ -176,6 +179,7 @@ describe("PATCH /api/rides/:rideId", () => {
         mockPrisma.ride.findUnique
             .mockResolvedValueOnce(dbRide)
             .mockResolvedValueOnce({ ...dbRide, seatsTotal: 5, seatsAvailable: 5 });
+        mockPrisma.booking.aggregate.mockResolvedValue({ _sum: { seatsBooked: 0 } });
         mockPrisma.ride.updateMany.mockResolvedValue({ count: 1 });
 
         const req = makeRequest({ seatsTotal: 5 });
@@ -191,7 +195,28 @@ describe("PATCH /api/rides/:rideId", () => {
         );
     });
 
-    it("7) Unknown fields are rejected with 400", async () => {
+    it("7) seatsTotal update subtracts PENDING bookings to compute seatsAvailable", async () => {
+        const dbRide = fakeRide({ seatsTotal: 4, seatsAvailable: 2 }); // 2 PENDING seats
+        mockPrisma.ride.findUnique
+            .mockResolvedValueOnce(dbRide)
+            .mockResolvedValueOnce({ ...dbRide, seatsTotal: 5, seatsAvailable: 3 });
+        mockPrisma.booking.aggregate.mockResolvedValue({ _sum: { seatsBooked: 2 } });
+        mockPrisma.ride.updateMany.mockResolvedValue({ count: 1 });
+
+        const req = makeRequest({ seatsTotal: 5 });
+        const params = { rideId: "ride-123" };
+        const res = await PATCH(req as never, { params: Promise.resolve(params) });
+
+        expect(res.status).toBe(200);
+        expect(mockPrisma.ride.updateMany).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: { id: "ride-123", bookings: { none: { status: "CONFIRMED" } } },
+                data: expect.objectContaining({ seatsTotal: 5, seatsAvailable: 3 })
+            })
+        );
+    });
+
+    it("8) Unknown fields are rejected with 400", async () => {
         const dbRide = fakeRide();
         mockPrisma.ride.findUnique.mockResolvedValue(dbRide);
 

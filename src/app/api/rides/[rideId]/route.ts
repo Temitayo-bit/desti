@@ -271,7 +271,18 @@ export async function PATCH(
 
         let finalSeatsAvailable = ride.seatsAvailable;
         if (body.seatsTotal !== undefined && body.seatsTotal !== ride.seatsTotal) {
-            finalSeatsAvailable = finalSeatsTotal;
+            const pendingBookings = await prisma.booking.aggregate({
+                where: {
+                    rideId,
+                    status: "PENDING" as any // Type override due to Prisma schema limitations here
+                },
+                _sum: {
+                    seatsBooked: true
+                }
+            });
+            const pendingCount = pendingBookings._sum?.seatsBooked || 0;
+            const newAvailable = finalSeatsTotal - pendingCount;
+            finalSeatsAvailable = Math.max(0, Math.min(newAvailable, finalSeatsTotal));
         }
 
         try {
