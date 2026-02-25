@@ -172,7 +172,7 @@ describe("PATCH /api/rides/:rideId", () => {
     });
 
     it("6) seatsTotal update resets seatsAvailable when no bookings", async () => {
-        const dbRide = fakeRide({ seatsTotal: 4, seatsAvailable: 2 });
+        const dbRide = fakeRide({ seatsTotal: 4, seatsAvailable: 4 });
         mockPrisma.ride.findUnique
             .mockResolvedValueOnce(dbRide)
             .mockResolvedValueOnce({ ...dbRide, seatsTotal: 5, seatsAvailable: 5 });
