@@ -1,5 +1,70 @@
 # Code Explanation
 
+## 2026-02-25 — GET /api/dashboard — Unified Upcoming Dashboard
+
+### Overview
+
+This change adds one backend read endpoint:
+
+- `GET /api/dashboard`
+
+Scope is intentionally limited to read-only aggregation. No create/update/cancel logic was modified.
+
+### Files Changed
+
+#### `src/app/api/dashboard/route.ts`
+
+- Added new endpoint implementation for `GET /api/dashboard`.
+- Significant blocks and responsibilities:
+  - **Select shapes (lines 8–63)**:
+    - `rideSummarySelect`: 11 fields for ride list items.
+    - `rideInBookingSelect`: 9 fields for ride summary nested inside bookings (no seatsTotal/seatsAvailable since those are booking context).
+    - `tripRequestInBookingSelect`: 9 fields for trip request summary nested inside bookings.
+    - `tripRequestInOfferSelect`: 9 fields for trip request summary nested inside offers.
+    - `offerSummarySelect`: 11 fields including nested `tripRequest`.
+  - **Auth guard block**:
+    - Uses required guard exactly:
+      - `const auth = await requireStetsonAuth();`
+      - `if (auth.error) return auth.error;`
+  - **Parallel query block (Promise.all, 10 queries)**:
+    - `ride.count`: Counts active rides where `driverUserId == userId`, `status == ACTIVE`, `latestDepartAt > now`.
+    - `ride.findMany`: Same filter, `orderBy: [earliestDepartAt ASC, id ASC]`, `take: 5`.
+    - `booking.count` (ride-based): Counts where `riderUserId == userId`, `status == CONFIRMED`, `rideId != null`, `ride.latestDepartAt > now`.
+    - `booking.findMany` (ride-based): Same filter, `orderBy: [ride.earliestDepartAt ASC, id ASC]`, `take: 5`. Includes nested `ride` summary.
+    - `booking.count` (triprequest-based): Counts where `riderUserId == userId`, `status == CONFIRMED`, `tripRequestId != null`, `tripRequest.latestDesiredAt > now`.
+    - `booking.findMany` (triprequest-based): Same filter, `orderBy: [tripRequest.earliestDesiredAt ASC, id ASC]`, `take: 5`. Includes nested `tripRequest` summary.
+    - `offer.count` (sent): Counts where `driverUserId == userId`, `status == PENDING`.
+    - `offer.findMany` (sent): Same filter, `orderBy: [createdAt DESC, id DESC]`, `take: 5`. Includes nested `tripRequest`.
+    - `offer.count` (received): Counts where `riderUserId == userId`, `status == PENDING`.
+    - `offer.findMany` (received): Same filter, `orderBy: [createdAt DESC, id DESC]`, `take: 5`. Includes nested `tripRequest`.
+  - **Booking merge block**:
+    - Combines ride-based and triprequest-based booking results (up to 5 each).
+    - Sorts by associated event's earliest timestamp ASC, then `id` ASC tie-break.
+    - Uses `getBookingEarliest()` helper to extract `ride.earliestDepartAt` or `tripRequest.earliestDesiredAt`.
+    - Slices merged list to 5.
+  - **Count merge**:
+    - `confirmedBookingsCount = rideBookingsCount + tripRequestBookingsCount`.
+  - **Response shape**:
+    - Returns `{ now, summary, upcoming }` matching the locked contract.
+  - **Error handling**:
+    - Returns `500` with stable message for unexpected failures.
+
+#### `src/__tests__/dashboard.test.ts`
+
+- Added focused test suite for `GET /api/dashboard`.
+- Significant tests (10 total):
+  - `returns correct counts and lists when user has items in all categories`: Verifies all 4 count fields and all list populations.
+  - `returns zeros and empty arrays when user has nothing`: Verifies empty state.
+  - `passes latestDepartAt > now filter to ride queries`: Verifies stale exclusion by inspecting Prisma call arguments.
+  - `passes upcoming filters to booking queries`: Verifies both ride-based and triprequest-based stale filters.
+  - `caps merged booking list at 5 even when more exist`: Verifies 10 bookings merge to 5 items.
+  - `passes take: 5 to all list queries`: Verifies all 5 findMany calls use `take: 5`.
+  - `sorts rides by earliestDepartAt ASC, id ASC`: Verifies orderBy argument.
+  - `sorts offers sent by createdAt DESC, id DESC`: Verifies orderBy argument.
+  - `sorts merged bookings by earliest* ASC, id ASC`: Verifies cross-type merge sorting.
+  - `response shape matches the locked contract`: Verifies all top-level and nested keys exist.
+
+
 ## 2026-02-25 — PATCH /api/trip-requests/:tripRequestId — Edit Lock Before Confirmation
 
 ### Overview
