@@ -1,5 +1,54 @@
 # Code Explanation
 
+## 2026-02-24 — PATCH /api/rides/:rideId — Edit Lock Before Confirmation
+
+### Overview
+
+This change adds one backend update endpoint:
+
+- `PATCH /api/rides/:rideId`
+
+Scope is intentionally limited to the ride owner editing a ride, provided it has zero `CONFIRMED` bookings.
+
+### Files Changed
+
+#### `src/app/api/rides/[rideId]/route.ts`
+
+- Added new endpoint implementation for `PATCH /api/rides/:rideId`.
+- Significant blocks and responsibilities:
+  - Auth guard block:
+    - Uses required shared guard exactly:
+      - `const auth = await requireStetsonAuth();`
+      - `if (auth.error) return auth.error;`
+  - Ride fetch and Edit-lock check:
+    - Fetches the ride and includes up to 1 `CONFIRMED` booking.
+    - Returns `404` if the ride doesn't exist.
+    - Returns `403` if `ride.driverUserId !== auth.user.clerkUserId`.
+    - Returns `409 Conflict` if any `CONFIRMED` booking exists, with specific code `RIDE_EDIT_LOCKED_CONFIRMED`.
+  - Body parsing and unknown fields check:
+    - Rejects non-object bodies.
+    - Identifies and rejects any keys not in the `ALLOWED_UPDATE_FIELDS` set.
+  - Granular final-state validation:
+    - Evaluates the "merged" state for cross-field checks (e.g., if only `latestDepartAt` changes, it is validated against the existing `earliestDepartAt`).
+    - Validates strings, trims, and enforces length limits (3-200 for origin/destination, 1-500 for instructions).
+    - Checks `MAX_DEPARTURE_WINDOW_MS` (48 hours) and `CLOCK_SKEW_GRACE_MS` (10 minutes) for departure windows.
+    - Validates `preferredDepartAt` falls within the departure window.
+  - Seat invariant enforcement:
+    - `seatsAvailable` is reset to the new `seatsTotal` if `seatsTotal` changes. This is safe because execution guarantees zero confirmed bookings.
+  - Database update & Error handling:
+    - Updates fields and returns `200`.
+
+#### `src/__tests__/ride-edit.test.ts`
+
+- Added tests for `PATCH /api/rides/:rideId`.
+- Significant coverage:
+  - `Owner can edit when no CONFIRMED booking exists` -> `200` success.
+  - `Owner cannot edit after CONFIRMED booking exists (409)` -> verifies the edit-lock policy.
+  - `Non-owner cannot edit (403)` -> verifies authorization.
+  - `Invalid window ordering rejected (400)` -> verifies departure window logic.
+  - `Window > 48h rejected (400)`.
+  - `seatsTotal update resets seatsAvailable when no bookings` -> verifies the core seat invariant.
+
 ## 2026-02-23 — GET /api/offers/mine
 
 ### Overview
