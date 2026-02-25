@@ -1,5 +1,97 @@
 # Code Explanation
 
+## 2026-02-25 — PATCH /api/trip-requests/:tripRequestId — Edit Lock Before Confirmation
+
+### Overview
+
+This change adds one backend endpoint:
+
+- `PATCH /api/trip-requests/:tripRequestId`
+
+The endpoint allows trip request editing only when:
+- caller is the owner (`riderUserId` matches auth user)
+- no `CONFIRMED` booking exists for the trip request
+- trip request is `ACTIVE`
+
+No offer mutation, booking mutation, or frontend changes were added.
+
+### Files Changed
+
+#### `src/app/api/trip-requests/[tripRequestId]/route.ts`
+
+- Added new PATCH handler for trip request editing.
+- Significant blocks and responsibilities:
+  - **Constants and allowed fields**
+    - Defines strict allowed patch keys via `ALLOWED_UPDATE_FIELDS`.
+    - Defines validation limits:
+      - 48-hour max window
+      - 10-minute clock-skew grace
+    - Defines stable conflict codes/messages:
+      - `TRIP_REQUEST_EDIT_LOCKED_CONFIRMED`
+      - `TRIP_REQUEST_CLOSED`
+  - **Auth guard**
+    - Uses the required reusable guard exactly:
+      - `const auth = await requireStetsonAuth();`
+      - `if (auth.error) return auth.error;`
+  - **Initial fetch + lock checks**
+    - Loads trip request by id and includes one confirmed booking.
+    - Returns `404` when missing.
+    - Returns `403` when non-owner.
+    - Returns `409 TRIP_REQUEST_CLOSED` when status is not `ACTIVE` (for example `CLOSED` or `CANCELLED`).
+    - Returns `409 TRIP_REQUEST_EDIT_LOCKED_CONFIRMED` when any confirmed booking exists.
+  - **Body parsing and unknown-field rejection**
+    - Accepts only JSON object payload.
+    - Rejects unknown keys with `400`.
+  - **Per-field parse and trim validation**
+    - `originText`, `destinationText`: string, trimmed length `3..200`.
+    - `earliestDesiredAt`, `latestDesiredAt`: ISO datetime parsing.
+    - `preferredDepartAt`: ISO datetime or `null`.
+    - `distanceCategory`: enum `SHORT | MEDIUM | LONG`.
+    - `seatsNeeded`: integer `1..8`.
+    - `pickupInstructions`, `dropoffInstructions`: when provided, accepts `null` (clear) or string; string values are trimmed, must be non-empty, and max `500`.
+  - **Merged-state validation**
+    - Validates final merged state (existing + patch):
+      - `latestDesiredAt > earliestDesiredAt`
+      - window <= 48 hours
+      - `earliestDesiredAt >= now - 10 minutes`
+      - `preferredDepartAt` must be inside window if present
+  - **400 response for validation errors**
+    - Returns existing envelope pattern:
+      - `error: "Validation Error"`
+      - `message`
+      - `details[]` field-level errors
+  - **Transactional guarded update**
+    - Uses `prisma.$transaction` with:
+      - `updateMany` guarded by owner, `status: "ACTIVE"`, prior `updatedAt` value, and no confirmed bookings
+      - Active-only allowlist prevents updates for terminal or non-active statuses.
+      - `updatedAt` optimistic concurrency check ensures stale read-merge-write attempts update 0 rows instead of overwriting newer edits.
+      - follow-up read to diagnose conflict reason deterministically
+    - On `count === 0`, remaps to:
+      - `404` (deleted)
+      - `403` (ownership mismatch)
+      - `409 TRIP_REQUEST_CLOSED` when latest status is no longer active
+      - `409 TRIP_REQUEST_EDIT_LOCKED_CONFIRMED`
+      - fallback `409` conflict
+  - **Success response**
+    - Returns updated trip request with `200`.
+    - Removes internal included `bookings` from response payload.
+  - **Catch block**
+    - Logs and returns stable `500` envelope.
+
+#### `src/__tests__/trip-request-edit.test.ts`
+
+- Added test suite for PATCH trip request edit-lock behavior.
+- Significant test coverage:
+  - `Owner can edit when no CONFIRMED booking exists` -> `200`.
+  - `Owner cannot edit after CONFIRMED booking exists` -> `409` with `TRIP_REQUEST_EDIT_LOCKED_CONFIRMED`.
+  - `Non-owner cannot edit` -> `403`.
+  - `Invalid window ordering rejected` -> `400`.
+  - `preferredDepartAt outside window rejected` -> `400`.
+  - `CLOSED and CANCELLED trip requests cannot be edited` -> `409` with `TRIP_REQUEST_CLOSED`.
+  - `pickupInstructions`/`dropoffInstructions` can be cleared with `null`.
+  - Stale concurrent PATCH attempts return `409 Conflict` via the optimistic-concurrency guard path.
+  - `Unknown fields rejected` -> `400`.
+
 ## 2026-02-24 — PATCH /api/rides/:rideId — Edit Lock Before Confirmation
 
 ### Overview
