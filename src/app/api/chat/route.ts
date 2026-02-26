@@ -217,8 +217,20 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const ollamaData = await ollamaRes.json();
-        const answer: unknown = ollamaData?.message?.content;
+        let ollamaData: Record<string, unknown>;
+        try {
+            ollamaData = await ollamaRes.json();
+        } catch {
+            const raw = await ollamaRes.text().catch(() => "(unreadable)");
+            console.error("[POST /api/chat] Ollama returned non-JSON:", raw);
+            return NextResponse.json(
+                { error: "Model returned a malformed response. Try again later." },
+                { status: 502 }
+            );
+        }
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const answer: unknown = (ollamaData as any)?.message?.content;
 
         if (typeof answer !== "string" || answer.length === 0) {
             console.error("[POST /api/chat] Ollama returned malformed payload:", JSON.stringify(ollamaData));
