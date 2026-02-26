@@ -87,7 +87,7 @@ describe("Chat Gateway", () => {
         const messages = callBody.messages;
         // First message: system prompt
         expect(messages[0].role).toBe("system");
-        expect(messages[0].content).toContain("help assistant for a campus transport app");
+        expect(messages[0].content).toContain("help assistant for a campus transport web app called Desti");
 
         // Second message: knowledge pack
         expect(messages[1].role).toBe("system");

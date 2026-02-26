@@ -7,7 +7,7 @@
 
 ## App Overview
 
-Desti is a campus transport app for verified Stetson University students. It connects drivers offering rides with passengers who need them. All users must have a valid @stetson.edu email address to use the platform.
+Desti is a campus transport web app for verified Stetson University students. It connects drivers offering rides with passengers who need them. All users must have a valid @stetson.edu email address to use the platform.
 
 ## How to Create a Ride
 
