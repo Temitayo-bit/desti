@@ -1,5 +1,55 @@
 # Code Explanation
 
+## 2026-02-25 — Milestone 1: Local Chat Gateway (Ollama)
+
+### Overview
+
+Adds a local-only Q&A chatbot gateway backed by Ollama. Two endpoints, no auth, no DB, no actions — pure read-only question-answering over a knowledge pack file.
+
+### Files Changed
+
+#### `chat/knowledge.md` (NEW)
+
+- Markdown knowledge pack loaded at runtime by the chat service.
+- Sections: App Overview, How to Create a Ride, Trip Requests, Bookings, Offers, Editing, Cancellation, Dashboard, FAQ.
+- Product Lead can replace placeholder sections with real policy text.
+
+#### `src/app/api/chat/route.ts` (NEW)
+
+- **Constants (lines 7–10)**: `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `OLLAMA_TIMEOUT_MS` (30s), `MAX_HISTORY` (10).
+- **System prompt (lines 12–22)**: Hardcoded verbatim. Instructs the model to be Q&A only, never claim actions, never invent features, never mention implementation details.
+- **`loadKnowledgePack()` (lines 36–46)**: Reads `chat/knowledge.md` from disk using `fs/promises.readFile`. Caches in memory after first load. Throws if file is missing.
+- **`validateRequest()` (lines 50–82)**: Validates `message` (non-empty string after trim) and optional `history` (array of `{role, content}` pairs). Returns parsed data or error string.
+- **`POST()` handler (lines 92–184)**:
+  1. Parses JSON body; returns 400 on invalid JSON.
+  2. Validates via `validateRequest()`; returns 400 on failure.
+  3. Loads knowledge pack; returns 500 if missing.
+  4. Truncates history to last 10 messages via `history.slice(-MAX_HISTORY)`.
+  5. Assembles messages array: system prompt → knowledge pack (as system message) → truncated history → user message.
+  6. Calls `POST http://127.0.0.1:11434/api/chat` with `stream: false`, `AbortController` timeout at 30s.
+  7. On success: returns `{ answer }` from Ollama's `message.content`.
+  8. On Ollama non-OK status: returns 502.
+  9. On `AbortError` (timeout): returns 504 with clear message.
+  10. On `ECONNREFUSED` / `fetch failed`: returns 503 with `"Model unavailable. Ensure Ollama is running."`.
+  11. On other errors: returns 500.
+
+#### `src/app/api/chat/health/route.ts` (NEW)
+
+- **`GET()` handler**: Returns `{ status: "ok", model: "qwen2.5:7b-instruct" }`. No Ollama dependency check. Lightweight and fast.
+
+#### `src/__tests__/chat.test.ts` (NEW)
+
+- 7 test cases:
+  1. `returns a string answer when Ollama responds successfully`: Mocks fetch, verifies 200 + `answer` field.
+  2. `injects system prompt, knowledge pack, history, and user message into Ollama call`: Inspects the messages array sent to Ollama — checks system prompt text, knowledge pack presence, history entries, and final user message.
+  3. `truncates history to last 10 messages`: Sends 15 history entries, asserts only last 10 appear (total 13 messages = 2 system + 10 history + 1 user).
+  4. `returns 503 when Ollama is unreachable`: Mocks fetch rejection with `TypeError("fetch failed")`, asserts 503 + exact error message.
+  5. `returns 400 when message is missing or empty`: Tests empty string, whitespace-only, and missing `message` field.
+  6. `returns 400 when history is malformed`: Tests history entry with numeric `role`.
+  7. `GET /api/chat/health returns 200 with status ok and model name`: Verifies health endpoint response shape.
+- Uses `vi.resetModules()` between tests to clear the cached knowledge pack.
+- Mocks `fs/promises.readFile` and `globalThis.fetch` independently.
+
 ## 2026-02-25 — GET /api/dashboard — Unified Upcoming Dashboard
 
 ### Overview
@@ -63,7 +113,6 @@ Scope is intentionally limited to read-only aggregation. No create/update/cancel
   - `sorts merged bookings by earliest* ASC, id ASC`: Verifies cross-type merge sorting.
   - `response shape matches the locked contract`: Verifies all top-level and nested keys exist.
 
-
 ## 2026-02-25 — PATCH /api/trip-requests/:tripRequestId — Edit Lock Before Confirmation
 
 ### Overview
@@ -73,6 +122,7 @@ This change adds one backend endpoint:
 - `PATCH /api/trip-requests/:tripRequestId`
 
 The endpoint allows trip request editing only when:
+
 - caller is the owner (`riderUserId` matches auth user)
 - no `CONFIRMED` booking exists for the trip request
 - trip request is `ACTIVE`
@@ -1296,19 +1346,19 @@ Added the transactional logic for Rider acceptance. when a Rider accepts an offe
 #### `prisma/schema.prisma`
 
 - **`Booking` model**:
-    - Made `rideId` optional (nullable).
-    - Added `tripRequestId` (FK to TripRequest, optional).
-    - Added `driverUserId` and `priceCents` to support TripRequest-based bookings.
+  - Made `rideId` optional (nullable).
+  - Added `tripRequestId` (FK to TripRequest, optional).
+  - Added `driverUserId` and `priceCents` to support TripRequest-based bookings.
 - **`TripRequestStatus` enum**:
-    - Added `CLOSED` status.
+  - Added `CLOSED` status.
 - **`TripRequest` model**:
-    - Added `bookings` relation.
+  - Added `bookings` relation.
 
 #### `src/app/api/offers/[offerId]/accept/route.ts`
 
 - **`POST` handler** (Updated):
-    - Wrapped in `prisma.$transaction`.
-    - **Logic**:
+  - Wrapped in `prisma.$transaction`.
+  - **Logic**:
         1. Verify Offer (`PENDING`) and TripRequest (`ACTIVE`).
         2. Update Offer (`ACCEPTED`).
         3. Create Booking (`CONFIRMED`, linked to TripRequest).
@@ -1318,7 +1368,7 @@ Added the transactional logic for Rider acceptance. when a Rider accepts an offe
 #### `src/__tests__/offer-lifecycle.test.ts`
 
 - Updated **Test 5** to verify side effects:
-    - Checks `Booking` created with correct driver/price.
-    - Checks `TripRequest` status is `CLOSED`.
-    - Checks competing offers are `CANCELLED`.
+  - Checks `Booking` created with correct driver/price.
+  - Checks `TripRequest` status is `CLOSED`.
+  - Checks competing offers are `CANCELLED`.
 - Updated **Test 7** to verify double-booking prevention on fresh requests.
