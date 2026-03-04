@@ -161,6 +161,7 @@ model Booking {
   tripRequest TripRequest? @relation(fields: [tripRequestId], references: [id])
   rider       User         @relation(fields: [riderUserId], references: [clerkUserId])
   idempotencyKeys IdempotencyKey[]
+  conversation    Conversation?
 
   // Partial unique index `UNIQUE(rideId, riderUserId) WHERE status = 'CONFIRMED'` 
   // will be added via migration SQL.
@@ -194,9 +195,50 @@ model Offer {
   driver          User             @relation("DriverOffers", fields: [driverUserId], references: [clerkUserId])
   rider           User             @relation("RiderOffers", fields: [riderUserId], references: [clerkUserId])
   idempotencyKeys IdempotencyKey[]
+  conversation    Conversation?
 
   @@index([riderUserId, createdAt, id])
   @@index([driverUserId, createdAt, id])
   @@index([tripRequestId, status])
   @@map("offers")
+}
+
+/// Conversation type discriminator.
+enum ConversationType {
+  BOOKING
+  OFFER
+}
+
+/// A conversation between a rider and driver, anchored to a booking or offer.
+model Conversation {
+  id           String           @id @default(uuid())
+  type         ConversationType
+  bookingId    String?          @unique @map("booking_id")
+  offerId      String?          @unique @map("offer_id")
+  riderUserId  String           @map("rider_user_id")
+  driverUserId String           @map("driver_user_id")
+  createdAt    DateTime         @default(now()) @map("created_at")
+  updatedAt    DateTime         @updatedAt @map("updated_at")
+
+  booking  Booking?  @relation(fields: [bookingId], references: [id])
+  offer    Offer?    @relation(fields: [offerId], references: [id])
+  messages Message[]
+
+  @@index([riderUserId, updatedAt])
+  @@index([driverUserId, updatedAt])
+  @@map("conversations")
+}
+
+/// A single message within a conversation.
+model Message {
+  id             String       @id @default(uuid())
+  conversationId String       @map("conversation_id")
+  senderUserId   String       @map("sender_user_id")
+  body           String
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+
+  @@index([conversationId, createdAt])
+  @@map("messages")
 }

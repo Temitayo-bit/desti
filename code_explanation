@@ -1,5 +1,105 @@
 # Code Explanation
 
+## 2026-03-04 — Minimal Messaging System (MVP 1.5) — Service Layer
+
+### Overview
+
+Adds the database layer and shared service layer for a minimal messaging system. Messaging is allowed only between users who share a relationship through a Booking or Offer. The REST endpoints (SWE II scope) are NOT included here.
+
+### Files Changed
+
+#### `prisma/schema.prisma` (MODIFIED)
+
+- Added `ConversationType` enum: `BOOKING`, `OFFER`.
+- Added `Conversation` model:
+  - `id` — UUID primary key.
+  - `type` — `ConversationType` discriminator.
+  - `bookingId` — Nullable, `@unique`. At most one conversation per booking.
+  - `offerId` — Nullable, `@unique`. At most one conversation per offer.
+  - `riderUserId` / `driverUserId` — Clerk user IDs of the two participants.
+  - `createdAt` / `updatedAt` — Timestamps.
+  - Relations: `booking` (optional FK to `bookings`), `offer` (optional FK to `offers`), `messages` (one-to-many).
+  - Indexes: `[riderUserId, updatedAt]` and `[driverUserId, updatedAt]` for efficient listing.
+  - Maps to `conversations` table.
+- Added `Message` model:
+  - `id` — UUID primary key.
+  - `conversationId` — FK to `conversations`.
+  - `senderUserId` — Clerk user ID of the sender.
+  - `body` — Message text content.
+  - `createdAt` — Timestamp.
+  - Index: `[conversationId, createdAt]` for paginated message retrieval.
+  - Maps to `messages` table.
+- Added reverse relation `conversation Conversation?` to `Booking` model.
+- Added reverse relation `conversation Conversation?` to `Offer` model.
+
+#### `prisma/migrations/20260304172800_add_messaging_models/migration.sql` (NEW)
+
+- Creates `ConversationType` PostgreSQL enum.
+- Creates `conversations` table with primary key, columns, and foreign keys to `bookings` and `offers`.
+- Creates `messages` table with primary key, columns, and foreign key to `conversations`.
+- Creates unique indexes on `conversations.booking_id` and `conversations.offer_id`.
+- Creates composite indexes: `conversations(rider_user_id, updated_at)`, `conversations(driver_user_id, updated_at)`, `messages(conversation_id, created_at)`.
+
+#### `src/services/conversationService.ts` (NEW)
+
+- **`ConversationServiceError` class (lines 28–39)**:
+  - Custom error with `code` (machine-readable string), `statusCode` (HTTP status), and `message`.
+  - Allows the REST layer to map service errors directly to HTTP responses without coupling.
+- **`getOrCreateBookingConversation(bookingId)` (lines 49–119)**:
+  - Fast path: returns existing conversation via `findUnique({ where: { bookingId } })`.
+  - Validates booking exists (404 if not).
+  - Validates `booking.status === "CONFIRMED"` (409 if not).
+  - Resolves the driver: uses `booking.driverUserId` directly, or looks up via `ride.driverUserId` for ride-based bookings.
+  - Creates conversation with `type: "BOOKING"`.
+  - Handles race conditions: catches P2002 unique constraint violation and returns the existing conversation.
+- **`getOrCreateOfferConversation(offerId)` (lines 123–174)**:
+  - Same pattern as booking variant.
+  - Validates offer exists (404) and `offer.status` is `PENDING` or `ACCEPTED` (409 if cancelled).
+  - Creates conversation with `type: "OFFER"`.
+  - Same P2002 race-condition handling.
+- **`listUserConversations(userId)` (lines 178–188)**:
+  - Returns all conversations where user is `riderUserId` or `driverUserId`.
+  - Ordered by `updatedAt DESC` so most recently active conversations appear first.
+- **`getConversationById(conversationId)` (lines 192–198)**:
+  - Simple `findUnique` lookup. Returns `null` if not found.
+- **`verifyConversationParticipant(conversationId, userId)` (lines 202–218)**:
+  - Returns conversation if user is rider or driver participant.
+  - Returns `null` otherwise (route layer maps to 404).
+- **`createMessage(conversationId, senderUserId, body)` (lines 224–283)**:
+  - Fetches conversation with `include: { booking: { select: { status } }, offer: { select: { status } } }`.
+  - Returns 404 if conversation not found or sender is not a participant.
+  - **Send-blocking**: returns 409 if `booking.status === "CANCELLED"` or `offer.status === "CANCELLED"`. Reading is still allowed.
+  - Creates message via `$transaction`: inserts `Message` row and touches `conversation.updatedAt` to reflect recent activity.
+- **`getMessages(conversationId, cursor?, limit?)` (lines 287–314)**:
+  - Cursor-based pagination, newest-first (`createdAt DESC, id DESC`).
+  - Uses `take: limit + 1` sentinel pattern to detect next page.
+  - Clamps limit to `1..50`.
+  - Returns `{ messages, nextCursor }`.
+- **`countRecentMessages(userId, conversationId, minutes)` (lines 318–332)**:
+  - Counts messages by `userId` in conversation within last N minutes.
+  - Used by SWE II to enforce rate limits.
+- **`isPrismaUniqueConstraintError(err)` (lines 336–343)**:
+  - Utility type guard checking for Prisma P2002 error code.
+
+#### `src/helpers/conversationAuth.ts` (NEW)
+
+- **`assertConversationParticipant(conversationId, userId)` (lines 22–42)**:
+  - Fetches conversation by ID.
+  - If conversation does not exist OR user is not `riderUserId`/`driverUserId`, throws `ConversationServiceError` with `statusCode: 404` and `code: "CONVERSATION_NOT_FOUND"`.
+  - **Security**: never returns 403 — non-participants see "not found" to prevent information leakage.
+  - Returns the conversation on success.
+
+#### `src/helpers/messageValidation.ts` (NEW)
+
+- **`validateMessageBody(body)` (lines 24–40)**:
+  - Validates that `body` is a string (rejects non-strings).
+  - Trims leading/trailing whitespace.
+  - Rejects empty strings after trimming.
+  - Rejects messages exceeding 1000 characters after trimming.
+  - Returns discriminated union: `{ valid: true, trimmed }` or `{ valid: false, error }`.
+
+---
+
 ## 2026-02-25 — Milestone 1: Local Chat Gateway (Ollama)
 
 ### Overview
