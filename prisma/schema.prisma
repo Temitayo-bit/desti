@@ -220,8 +220,8 @@ model Conversation {
   createdAt    DateTime         @default(now()) @map("created_at")
   updatedAt    DateTime         @updatedAt @map("updated_at")
 
-  booking  Booking?  @relation(fields: [bookingId], references: [id])
-  offer    Offer?    @relation(fields: [offerId], references: [id])
+  booking  Booking?  @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  offer    Offer?    @relation(fields: [offerId], references: [id], onDelete: Restrict)
   messages Message[]
 
   @@index([riderUserId, updatedAt])
