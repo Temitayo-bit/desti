@@ -2,6 +2,7 @@ import type { Conversation } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { assertConversationParticipant } from "@/helpers/conversationAuth";
 import {
+    ConversationServiceError,
     getOrCreateBookingConversation,
     getOrCreateOfferConversation,
     listUserConversations,
@@ -69,6 +70,41 @@ export async function createOrGetBookingConversationController(
     userId: string,
     bookingId: string
 ): Promise<Conversation> {
+    const booking = await prisma.booking.findUnique({
+        where: { id: bookingId },
+        select: {
+            id: true,
+            riderUserId: true,
+            driverUserId: true,
+            ride: {
+                select: {
+                    driverUserId: true,
+                },
+            },
+        },
+    });
+
+    if (!booking) {
+        throw new ConversationServiceError(
+            "Booking not found.",
+            "BOOKING_NOT_FOUND",
+            404
+        );
+    }
+
+    const driverUserId = booking.driverUserId ?? booking.ride?.driverUserId ?? null;
+    const isParticipant =
+        booking.riderUserId === userId ||
+        (driverUserId !== null && driverUserId === userId);
+
+    if (!isParticipant) {
+        throw new ConversationServiceError(
+            "Booking not found.",
+            "BOOKING_NOT_FOUND",
+            404
+        );
+    }
+
     const conversation = await getOrCreateBookingConversation(bookingId);
     await assertConversationParticipant(conversation.id, userId);
     return conversation;
@@ -81,6 +117,31 @@ export async function createOrGetOfferConversationController(
     userId: string,
     offerId: string
 ): Promise<Conversation> {
+    const offer = await prisma.offer.findUnique({
+        where: { id: offerId },
+        select: {
+            id: true,
+            riderUserId: true,
+            driverUserId: true,
+        },
+    });
+
+    if (!offer) {
+        throw new ConversationServiceError(
+            "Offer not found.",
+            "OFFER_NOT_FOUND",
+            404
+        );
+    }
+
+    if (offer.riderUserId !== userId && offer.driverUserId !== userId) {
+        throw new ConversationServiceError(
+            "Offer not found.",
+            "OFFER_NOT_FOUND",
+            404
+        );
+    }
+
     const conversation = await getOrCreateOfferConversation(offerId);
     await assertConversationParticipant(conversation.id, userId);
     return conversation;

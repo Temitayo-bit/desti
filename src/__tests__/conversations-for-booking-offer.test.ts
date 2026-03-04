@@ -11,11 +11,15 @@ const {
     mockGetOrCreateBookingConversation,
     mockGetOrCreateOfferConversation,
     mockAssertConversationParticipant,
+    mockBookingFindUnique,
+    mockOfferFindUnique,
 } = vi.hoisted(() => ({
     mockRequireStetsonAuth: vi.fn(),
     mockGetOrCreateBookingConversation: vi.fn(),
     mockGetOrCreateOfferConversation: vi.fn(),
     mockAssertConversationParticipant: vi.fn(),
+    mockBookingFindUnique: vi.fn(),
+    mockOfferFindUnique: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({
@@ -38,6 +42,20 @@ vi.mock("@/services/conversationService", async () => {
 vi.mock("@/helpers/conversationAuth", () => ({
     assertConversationParticipant: (...args: unknown[]) =>
         mockAssertConversationParticipant(...args),
+}));
+
+vi.mock("@/lib/prisma", () => ({
+    prisma: {
+        booking: {
+            findUnique: (...args: unknown[]) => mockBookingFindUnique(...args),
+        },
+        offer: {
+            findUnique: (...args: unknown[]) => mockOfferFindUnique(...args),
+        },
+        message: {
+            findFirst: vi.fn(),
+        },
+    },
 }));
 
 function authSuccess(userId = "user_rider_1") {
@@ -67,6 +85,17 @@ describe("POST /api/conversations/for-booking/:bookingId and /for-offer/:offerId
     beforeEach(() => {
         vi.clearAllMocks();
         mockRequireStetsonAuth.mockResolvedValue(authSuccess());
+        mockBookingFindUnique.mockResolvedValue({
+            id: "booking-1",
+            riderUserId: "user_rider_1",
+            driverUserId: "user_driver_1",
+            ride: null,
+        });
+        mockOfferFindUnique.mockResolvedValue({
+            id: "offer-1",
+            riderUserId: "user_rider_1",
+            driverUserId: "user_driver_1",
+        });
     });
 
     it("creates/returns booking conversation when caller is participant", async () => {
@@ -110,15 +139,12 @@ describe("POST /api/conversations/for-booking/:bookingId and /for-offer/:offerId
     });
 
     it("returns 404 when caller is not a participant", async () => {
-        const conversation = makeConversation();
-        mockGetOrCreateBookingConversation.mockResolvedValue(conversation);
-        mockAssertConversationParticipant.mockRejectedValue(
-            new ConversationServiceError(
-                "Conversation not found.",
-                "CONVERSATION_NOT_FOUND",
-                404
-            )
-        );
+        mockBookingFindUnique.mockResolvedValue({
+            id: "booking-1",
+            riderUserId: "some-other-rider",
+            driverUserId: "some-other-driver",
+            ride: null,
+        });
 
         const res = await handlePostConversationForBooking(
             new NextRequest("http://localhost:3000/api/conversations/for-booking/booking-1", {
@@ -128,9 +154,16 @@ describe("POST /api/conversations/for-booking/:bookingId and /for-offer/:offerId
         );
 
         expect(res.status).toBe(404);
+        expect(mockGetOrCreateBookingConversation).not.toHaveBeenCalled();
     });
 
     it("maps service 404 and 409 errors for booking/offer creation", async () => {
+        mockBookingFindUnique.mockResolvedValue({
+            id: "missing",
+            riderUserId: "user_rider_1",
+            driverUserId: "user_driver_1",
+            ride: null,
+        });
         mockGetOrCreateBookingConversation.mockRejectedValue(
             new ConversationServiceError("Booking not found.", "BOOKING_NOT_FOUND", 404)
         );
@@ -142,6 +175,11 @@ describe("POST /api/conversations/for-booking/:bookingId and /for-offer/:offerId
         );
         expect(bookingRes.status).toBe(404);
 
+        mockOfferFindUnique.mockResolvedValue({
+            id: "cancelled",
+            riderUserId: "user_rider_1",
+            driverUserId: "user_driver_1",
+        });
         mockGetOrCreateOfferConversation.mockRejectedValue(
             new ConversationServiceError("Offer cancelled.", "OFFER_CANCELLED", 409)
         );

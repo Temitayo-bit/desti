@@ -1502,11 +1502,15 @@ No direct schema/model edits were made by SWE II; branch integration pulled thos
     - `orderBy: [{ createdAt: "desc" }, { id: "desc" }]`
   - Returns mapped list with required fields + preview.
 - **`createOrGetBookingConversationController(userId, bookingId)`**:
-  - Calls `getOrCreateBookingConversation(bookingId)`.
-  - Enforces participant visibility via `assertConversationParticipant`.
+  - Performs **pre-create authorization** by fetching booking participants using `bookingId` (rider + derived driver).
+  - Returns `404 BOOKING_NOT_FOUND` when caller is not a participant.
+  - Only after authorization, calls `getOrCreateBookingConversation(bookingId)`.
+  - Keeps `assertConversationParticipant` as secondary safety check.
 - **`createOrGetOfferConversationController(userId, offerId)`**:
-  - Calls `getOrCreateOfferConversation(offerId)`.
-  - Enforces participant visibility via `assertConversationParticipant`.
+  - Performs **pre-create authorization** by fetching offer participants using `offerId`.
+  - Returns `404 OFFER_NOT_FOUND` when caller is not a participant.
+  - Only after authorization, calls `getOrCreateOfferConversation(offerId)`.
+  - Keeps `assertConversationParticipant` as secondary safety check.
 
 #### `src/controllers/messageController.ts` (NEW)
 
