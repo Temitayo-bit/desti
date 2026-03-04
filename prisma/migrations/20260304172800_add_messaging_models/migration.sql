@@ -43,3 +43,9 @@ ALTER TABLE "conversations" ADD CONSTRAINT "conversations_offer_id_fkey" FOREIGN
 
 -- AddForeignKey
 ALTER TABLE "messages" ADD CONSTRAINT "messages_conversation_id_fkey" FOREIGN KEY ("conversation_id") REFERENCES "conversations"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddCheckConstraint (type ↔ anchor consistency)
+ALTER TABLE "conversations" ADD CONSTRAINT "conversations_type_anchor_check" CHECK (
+    ("type" = 'BOOKING' AND "booking_id" IS NOT NULL AND "offer_id" IS NULL) OR
+    ("type" = 'OFFER'   AND "offer_id"  IS NOT NULL AND "booking_id" IS NULL)
+);

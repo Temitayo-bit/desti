@@ -311,6 +311,26 @@ export async function createMessage(
         );
     }
 
+    // Validate and sanitise the message body.
+    const MESSAGE_MAX_LENGTH = 1000;
+    const trimmedBody = body.trim();
+
+    if (trimmedBody.length === 0) {
+        throw new ConversationServiceError(
+            "Message body must not be empty.",
+            "INVALID_MESSAGE",
+            400
+        );
+    }
+
+    if (trimmedBody.length > MESSAGE_MAX_LENGTH) {
+        throw new ConversationServiceError(
+            `Message body must not exceed ${MESSAGE_MAX_LENGTH} characters.`,
+            "INVALID_MESSAGE",
+            400
+        );
+    }
+
     // Create the message and touch the conversation's updatedAt so that
     // list ordering reflects recent activity.
     const [message] = await prisma.$transaction([
@@ -318,7 +338,7 @@ export async function createMessage(
             data: {
                 conversationId,
                 senderUserId,
-                body,
+                body: trimmedBody,
             },
         }),
         prisma.conversation.update({
