@@ -78,6 +78,12 @@ Adds the database layer and shared service layer for a minimal messaging system.
 - **`countRecentMessages(userId, conversationId, minutes)` (lines 318–332)**:
   - Counts messages by `userId` in conversation within last N minutes.
   - Used by SWE II to enforce rate limits.
+- **`createMessageWithRateLimit(conversationId, senderUserId, body, options?)` (added)**:
+  - Enforces rate limit and message insert in a **single transaction**.
+  - Uses `SELECT ... FOR UPDATE` on the conversation row to serialize competing sends.
+  - Recomputes in-window count inside the same transaction and throws:
+    - `ConversationServiceError("Rate limit exceeded...", "RATE_LIMIT_EXCEEDED", 429)` when limit is reached.
+  - Performs the message insert + `conversation.updatedAt` touch only when under limit.
 - **`isPrismaUniqueConstraintError(err)` (lines 336–343)**:
   - Utility type guard checking for Prisma P2002 error code.
 
@@ -1472,3 +1478,169 @@ Added the transactional logic for Rider acceptance. when a Rider accepts an offe
   - Checks `TripRequest` status is `CLOSED`.
   - Checks competing offers are `CANCELLED`.
 - Updated **Test 7** to verify double-booking prevention on fresh requests.
+
+## 2026-03-04 — MVP 1.5 Messaging REST Layer (SWE II)
+
+### Overview
+
+Implemented REST messaging endpoints on top of the SWE I messaging service layer.  
+No direct schema/model edits were made by SWE II; branch integration pulled those in unchanged.
+
+### Files Added/Updated
+
+#### `src/controllers/conversationController.ts` (NEW)
+
+- **Imports**:
+  - Uses service-layer functions from `@/services/conversationService`:
+    - `listUserConversations`
+    - `getOrCreateBookingConversation`
+    - `getOrCreateOfferConversation`
+  - Uses `assertConversationParticipant` from `@/helpers/conversationAuth`.
+  - Uses `prisma.message.findFirst` for latest-message preview lookup.
+- **`latestMessageSelect` constant**:
+  - Locks preview fields to `{ id, conversationId, senderUserId, body, createdAt }`.
+- **`ConversationListItem` type**:
+  - Defines response contract for `GET /api/conversations`, including `latestMessage | null`.
+- **`listConversationsController(userId)`**:
+  - Calls `listUserConversations(userId)` (already sorted by `updatedAt DESC` in service).
+  - Performs one `findFirst` latest-message lookup per conversation:
+    - `where: { conversationId }`
+    - `orderBy: [{ createdAt: "desc" }, { id: "desc" }]`
+  - Returns mapped list with required fields + preview.
+- **`createOrGetBookingConversationController(userId, bookingId)`**:
+  - Performs **pre-create authorization** by fetching booking participants using `bookingId` (rider + derived driver).
+  - Returns `404 BOOKING_NOT_FOUND` when caller is not a participant.
+  - Only after authorization, calls `getOrCreateBookingConversation(bookingId)`.
+  - Keeps `assertConversationParticipant` as secondary safety check.
+- **`createOrGetOfferConversationController(userId, offerId)`**:
+  - Performs **pre-create authorization** by fetching offer participants using `offerId`.
+  - Returns `404 OFFER_NOT_FOUND` when caller is not a participant.
+  - Only after authorization, calls `getOrCreateOfferConversation(offerId)`.
+  - Keeps `assertConversationParticipant` as secondary safety check.
+
+#### `src/controllers/messageController.ts` (NEW)
+
+- **Imports**:
+  - Uses `assertConversationParticipant` (privacy rule: non-participants get 404).
+  - Uses `validateMessageBody` helper from SWE I.
+  - Uses `createMessageWithRateLimit` from service layer.
+  - Uses `prisma.message.findMany` for ASC keyset pagination.
+- **Validation/pagination helpers**:
+  - `parseMessageLimit`:
+    - default `20`
+    - strict integer parsing
+    - allowed range `1..50`
+    - throws `ConversationServiceError(..., 400)` on invalid.
+  - `decodeMessageCursor`:
+    - expects base64 JSON `{ createdAt, id }`
+    - validates ISO datetime and UUID
+    - throws `400 INVALID_CURSOR` on malformed cursor.
+  - `encodeMessageCursor`:
+    - emits opaque base64 cursor using last item `{ createdAt, id }`.
+- **`getConversationMessagesController(userId, conversationId, searchParams)`**:
+  - Asserts participant first.
+  - Parses `limit` and `cursor`.
+  - Executes keyset query:
+    - base filter: `conversationId`
+    - cursor predicate:
+      - `(createdAt > cursor.createdAt) OR (createdAt = cursor.createdAt AND id > cursor.id)`
+  - Sorts `createdAt ASC`, `id ASC`.
+  - Uses `take: limit + 1` and computes `nextCursor`.
+  - Returns `{ items, nextCursor }`.
+- **`sendConversationMessageController(userId, conversationId, rawBody)`**:
+  - Asserts participant first.
+  - Validates body is JSON object.
+  - Validates message body via helper:
+    - trim
+    - non-empty
+    - max 1000 chars
+  - Calls `createMessageWithRateLimit(...)` with:
+    - `windowMinutes: 5`
+    - `maxMessages: 20`
+  - Rate-limit check and insert are now atomic (single transactional path).
+
+#### `src/routes/conversations.ts` (NEW)
+
+- **Purpose**:
+  - Central REST route layer used by Next App Router wrappers.
+  - Handles auth guard and HTTP error mapping.
+- **Error utilities**:
+  - `statusToErrorLabel` maps status to stable error label strings.
+  - `toErrorResponse` maps `ConversationServiceError` to JSON `{ error, code, message }`.
+  - Unexpected errors return `500`.
+- **Handlers**:
+  - `handleGetConversations(request)`:
+    - applies `requireStetsonAuth`
+    - returns `{ items }` from `listConversationsController`.
+  - `handleGetConversationMessages(request, conversationId)`:
+    - applies auth
+    - parses URL search params
+    - returns `{ items, nextCursor }`.
+  - `handlePostConversationMessage(request, conversationId)`:
+    - applies auth
+    - validates JSON parse (`400` on invalid JSON)
+    - sends message
+    - returns `201`.
+  - `handlePostConversationForBooking(request, bookingId)`:
+    - applies auth
+    - create/get booking conversation
+    - participant privacy via controller/helper chain.
+  - `handlePostConversationForOffer(request, offerId)`:
+    - same behavior for offer conversations.
+
+#### `src/app/api/conversations/route.ts` (NEW)
+
+- Adds Next.js API entrypoint for `GET /api/conversations`.
+- Thin wrapper that delegates to `handleGetConversations`.
+
+#### `src/app/api/conversations/[id]/messages/route.ts` (NEW)
+
+- Adds `GET` and `POST` entrypoints for `/api/conversations/:id/messages`.
+- Extracts `id` from async params and delegates to route handlers.
+
+#### `src/app/api/conversations/for-booking/[bookingId]/route.ts` (NEW)
+
+- Adds `POST /api/conversations/for-booking/:bookingId`.
+- Delegates directly to `handlePostConversationForBooking`.
+
+#### `src/app/api/conversations/for-offer/[offerId]/route.ts` (NEW)
+
+- Adds `POST /api/conversations/for-offer/:offerId`.
+- Delegates directly to `handlePostConversationForOffer`.
+
+#### `src/__tests__/conversations-list.test.ts` (NEW)
+
+- **Coverage**:
+  - `listConversationsController` returns full conversation item with `latestMessage` object or `null`.
+  - `handleGetConversations` passes through auth errors and skips data calls.
+
+#### `src/__tests__/conversation-messages.test.ts` (NEW)
+
+- **Coverage**:
+  - GET default limit (`20`) and ASC ordering.
+  - GET invalid limit returns `400`.
+  - GET keyset cursor pagination has no duplicate overlap and uses createdAt/id predicate.
+  - GET non-participant returns `404`.
+  - POST send success path.
+  - POST empty/whitespace validation (`400`).
+  - POST >1000 chars validation (`400`).
+  - POST rate limit (`429` at 20 in 5 minutes).
+  - POST non-participant returns `404`.
+
+#### `src/__tests__/conversations-for-booking-offer.test.ts` (NEW)
+
+- **Coverage**:
+  - booking conversation create/get success.
+  - offer conversation create/get success.
+  - non-participant receives `404`.
+  - service `404` and `409` errors are mapped to same HTTP statuses.
+
+### Verification Performed
+
+- `npm test`
+  - New messaging suites passed.
+  - Existing pre-existing integration suite `offer-lifecycle` still requires `DATABASE_URL` and fails in local env (unchanged known issue).
+- `npm test -- src/__tests__/conversations-list.test.ts src/__tests__/conversation-messages.test.ts src/__tests__/conversations-for-booking-offer.test.ts`
+  - All targeted messaging tests passed.
+- `npx tsc --noEmit`
+  - TypeScript compile passed.

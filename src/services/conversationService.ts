@@ -413,6 +413,141 @@ export async function countRecentMessages(
     });
 }
 
+// ── Atomic rate-limited send ───────────────────────────────────────────────
+
+/**
+ * Atomically enforces per-user message rate limits and inserts a message.
+ *
+ * Concurrency strategy:
+ *   1. Lock the conversation row (`FOR UPDATE`) to serialize competing sends.
+ *   2. Recompute count in-window inside the same transaction.
+ *   3. Insert message + touch conversation.updatedAt only if under limit.
+ *
+ * This prevents race conditions where parallel requests could both pass
+ * a separate count check and then exceed the configured limit.
+ */
+export async function createMessageWithRateLimit(
+    conversationId: string,
+    senderUserId: string,
+    body: string,
+    options?: {
+        windowMinutes?: number;
+        maxMessages?: number;
+    }
+): Promise<Message> {
+    const windowMinutes = options?.windowMinutes ?? 5;
+    const maxMessages = options?.maxMessages ?? 20;
+
+    return prisma.$transaction(async (tx) => {
+        // Serialize sends for this conversation to make check+insert atomic.
+        await tx.$queryRaw`
+            SELECT id
+            FROM conversations
+            WHERE id = ${conversationId}
+            FOR UPDATE
+        `;
+
+        // Fetch the conversation with relationship status for send guards.
+        const conversation = await tx.conversation.findUnique({
+            where: { id: conversationId },
+            include: {
+                booking: { select: { status: true } },
+                offer: { select: { status: true } },
+            },
+        });
+
+        if (!conversation) {
+            throw new ConversationServiceError(
+                "Conversation not found.",
+                "CONVERSATION_NOT_FOUND",
+                404
+            );
+        }
+
+        if (
+            conversation.riderUserId !== senderUserId &&
+            conversation.driverUserId !== senderUserId
+        ) {
+            throw new ConversationServiceError(
+                "Conversation not found.",
+                "CONVERSATION_NOT_FOUND",
+                404
+            );
+        }
+
+        if (
+            conversation.type === "BOOKING" &&
+            conversation.booking?.status === "CANCELLED"
+        ) {
+            throw new ConversationServiceError(
+                "Cannot send messages in a cancelled booking conversation.",
+                "BOOKING_CANCELLED",
+                409
+            );
+        }
+
+        if (
+            conversation.type === "OFFER" &&
+            conversation.offer?.status === "CANCELLED"
+        ) {
+            throw new ConversationServiceError(
+                "Cannot send messages in a cancelled offer conversation.",
+                "OFFER_CANCELLED",
+                409
+            );
+        }
+
+        const trimmedBody = body.trim();
+        if (trimmedBody.length === 0) {
+            throw new ConversationServiceError(
+                "Message body must not be empty.",
+                "INVALID_MESSAGE",
+                400
+            );
+        }
+
+        if (trimmedBody.length > 1000) {
+            throw new ConversationServiceError(
+                "Message body must not exceed 1000 characters.",
+                "INVALID_MESSAGE",
+                400
+            );
+        }
+
+        const since = new Date(Date.now() - windowMinutes * 60_000);
+        const sentInWindow = await tx.message.count({
+            where: {
+                conversationId,
+                senderUserId,
+                createdAt: { gte: since },
+            },
+        });
+
+        if (sentInWindow >= maxMessages) {
+            throw new ConversationServiceError(
+                `Rate limit exceeded. Maximum ${maxMessages} messages per ${windowMinutes} minutes.`,
+                "RATE_LIMIT_EXCEEDED",
+                429
+            );
+        }
+
+        const message = await tx.message.create({
+            data: {
+                conversationId,
+                senderUserId,
+                body: trimmedBody,
+            },
+        });
+
+        await tx.conversation.update({
+            where: { id: conversationId },
+            data: { updatedAt: new Date() },
+        });
+
+        return message;
+    });
+}
+
 // ── Utility ─────────────────────────────────────────────────────────────────
 
 function isPrismaUniqueConstraintError(err: unknown): boolean {
