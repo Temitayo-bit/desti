@@ -8,14 +8,12 @@ import { ConversationServiceError } from "@/services/conversationService";
 const {
     mockAssertConversationParticipant,
     mockValidateMessageBody,
-    mockCountRecentMessages,
-    mockCreateMessage,
+    mockCreateMessageWithRateLimit,
     mockMessageFindMany,
 } = vi.hoisted(() => ({
     mockAssertConversationParticipant: vi.fn(),
     mockValidateMessageBody: vi.fn(),
-    mockCountRecentMessages: vi.fn(),
-    mockCreateMessage: vi.fn(),
+    mockCreateMessageWithRateLimit: vi.fn(),
     mockMessageFindMany: vi.fn(),
 }));
 
@@ -34,8 +32,8 @@ vi.mock("@/services/conversationService", async () => {
     );
     return {
         ...actual,
-        countRecentMessages: (...args: unknown[]) => mockCountRecentMessages(...args),
-        createMessage: (...args: unknown[]) => mockCreateMessage(...args),
+        createMessageWithRateLimit: (...args: unknown[]) =>
+            mockCreateMessageWithRateLimit(...args),
     };
 });
 
@@ -67,7 +65,6 @@ describe("Conversation Messages Controller", () => {
         mockAssertConversationParticipant.mockResolvedValue({
             id: CONVERSATION_ID,
         });
-        mockCountRecentMessages.mockResolvedValue(0);
     });
 
     it("GET uses default limit=20 and ASC ordering", async () => {
@@ -179,7 +176,7 @@ describe("Conversation Messages Controller", () => {
             valid: true,
             trimmed: "Hello there",
         });
-        mockCreateMessage.mockResolvedValue(
+        mockCreateMessageWithRateLimit.mockResolvedValue(
             makeMessage({
                 body: "Hello there",
                 id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
@@ -193,15 +190,14 @@ describe("Conversation Messages Controller", () => {
         );
 
         expect(result.body).toBe("Hello there");
-        expect(mockCountRecentMessages).toHaveBeenCalledWith(
-            USER_ID,
-            CONVERSATION_ID,
-            5
-        );
-        expect(mockCreateMessage).toHaveBeenCalledWith(
+        expect(mockCreateMessageWithRateLimit).toHaveBeenCalledWith(
             CONVERSATION_ID,
             USER_ID,
-            "Hello there"
+            "Hello there",
+            {
+                windowMinutes: 5,
+                maxMessages: 20,
+            }
         );
     });
 
@@ -240,7 +236,13 @@ describe("Conversation Messages Controller", () => {
             valid: true,
             trimmed: "allowed content",
         });
-        mockCountRecentMessages.mockResolvedValue(20);
+        mockCreateMessageWithRateLimit.mockRejectedValue(
+            new ConversationServiceError(
+                "Rate limit exceeded. Maximum 20 messages per 5 minutes.",
+                "RATE_LIMIT_EXCEEDED",
+                429
+            )
+        );
 
         await expect(
             sendConversationMessageController(USER_ID, CONVERSATION_ID, {
@@ -250,8 +252,6 @@ describe("Conversation Messages Controller", () => {
             statusCode: 429,
             code: "RATE_LIMIT_EXCEEDED",
         });
-
-        expect(mockCreateMessage).not.toHaveBeenCalled();
     });
 
     it("POST returns 404 for non-participant", async () => {

@@ -78,6 +78,12 @@ Adds the database layer and shared service layer for a minimal messaging system.
 - **`countRecentMessages(userId, conversationId, minutes)` (lines 318–332)**:
   - Counts messages by `userId` in conversation within last N minutes.
   - Used by SWE II to enforce rate limits.
+- **`createMessageWithRateLimit(conversationId, senderUserId, body, options?)` (added)**:
+  - Enforces rate limit and message insert in a **single transaction**.
+  - Uses `SELECT ... FOR UPDATE` on the conversation row to serialize competing sends.
+  - Recomputes in-window count inside the same transaction and throws:
+    - `ConversationServiceError("Rate limit exceeded...", "RATE_LIMIT_EXCEEDED", 429)` when limit is reached.
+  - Performs the message insert + `conversation.updatedAt` touch only when under limit.
 - **`isPrismaUniqueConstraintError(err)` (lines 336–343)**:
   - Utility type guard checking for Prisma P2002 error code.
 
@@ -1517,7 +1523,7 @@ No direct schema/model edits were made by SWE II; branch integration pulled thos
 - **Imports**:
   - Uses `assertConversationParticipant` (privacy rule: non-participants get 404).
   - Uses `validateMessageBody` helper from SWE I.
-  - Uses `countRecentMessages` and `createMessage` from service layer.
+  - Uses `createMessageWithRateLimit` from service layer.
   - Uses `prisma.message.findMany` for ASC keyset pagination.
 - **Validation/pagination helpers**:
   - `parseMessageLimit`:
@@ -1548,10 +1554,10 @@ No direct schema/model edits were made by SWE II; branch integration pulled thos
     - trim
     - non-empty
     - max 1000 chars
-  - Enforces rate limit:
-    - `countRecentMessages(userId, conversationId, 5)`
-    - if `>= 20` → throws `429 RATE_LIMIT_EXCEEDED`.
-  - Sends via `createMessage(...)` (which updates `conversation.updatedAt` transactionally).
+  - Calls `createMessageWithRateLimit(...)` with:
+    - `windowMinutes: 5`
+    - `maxMessages: 20`
+  - Rate-limit check and insert are now atomic (single transactional path).
 
 #### `src/routes/conversations.ts` (NEW)
 

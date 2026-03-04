@@ -4,8 +4,7 @@ import { validateMessageBody } from "@/helpers/messageValidation";
 import { prisma } from "@/lib/prisma";
 import {
     ConversationServiceError,
-    countRecentMessages,
-    createMessage,
+    createMessageWithRateLimit,
 } from "@/services/conversationService";
 
 const UUID_REGEX =
@@ -190,15 +189,8 @@ export async function sendConversationMessageController(
             400
         );
     }
-
-    const sentInWindow = await countRecentMessages(userId, conversationId, 5);
-    if (sentInWindow >= 20) {
-        throw new ConversationServiceError(
-            "Rate limit exceeded. Maximum 20 messages per 5 minutes.",
-            "RATE_LIMIT_EXCEEDED",
-            429
-        );
-    }
-
-    return createMessage(conversationId, userId, validation.trimmed);
+    return createMessageWithRateLimit(conversationId, userId, validation.trimmed, {
+        windowMinutes: 5,
+        maxMessages: 20,
+    });
 }
