@@ -1,4 +1,4 @@
-import { Prisma } from "@/generated/prisma/client";
+import { Prisma } from "@prisma/client";
 import { assertConversationParticipant } from "@/helpers/conversationAuth";
 import { validateMessageBody } from "@/helpers/messageValidation";
 import { prisma } from "@/lib/prisma";

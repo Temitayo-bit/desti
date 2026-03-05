@@ -25,7 +25,7 @@ vi.mock("@/lib/prisma", () => ({
     prisma: mockPrisma,
 }));
 
-vi.mock("@/generated/prisma/client", () => ({
+vi.mock("@prisma/client", () => ({
     DistanceCategory: {
         SHORT: "SHORT",
         MEDIUM: "MEDIUM",

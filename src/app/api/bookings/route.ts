@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireStetsonAuth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { Prisma } from "@/generated/prisma/client";
+import { Prisma } from "@prisma/client";
 
 const SELF_BOOKING_ERROR_CODE = "SELF_BOOKING_NOT_ALLOWED";
 const SELF_BOOKING_ERROR_MESSAGE = "You can’t book your own ride.";

@@ -3,7 +3,10 @@ import path from "path";
 
 const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
-    "/*": ["./src/generated/prisma/**/*"],
+    "/*": [
+      "./node_modules/.prisma/client/**/*",
+      "./node_modules/@prisma/client/**/*",
+    ],
   },
   turbopack: {
     root: path.join(__dirname),
