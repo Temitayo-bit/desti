@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { format } from "date-fns";
 import { DistanceCategory } from "@/generated/prisma/client";
-import { X, Filter } from "lucide-react";
+import { X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ProtectedShell } from "./_components/ProtectedShell";
 
@@ -92,7 +92,6 @@ export default function BrowseRidesPage() {
   } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<string>("All");
-  const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [successState, setSuccessState] = useState<"booking" | "edit" | null>(null);
@@ -206,6 +205,7 @@ export default function BrowseRidesPage() {
 
     return matchesSearch;
   });
+  const quickFilters = ["All", "Today", "Short", "Medium", "Long"] as const;
 
   const formatTimeRange = (earliest: string, latest: string) => {
     try {
@@ -438,56 +438,38 @@ export default function BrowseRidesPage() {
               className="w-full bg-zinc-50 border border-zinc-200 rounded-xl py-3.5 pl-11 pr-4 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all font-medium placeholder:font-normal"
             />
           </div>
+
+          <div className="mt-5 -mx-1 px-1 overflow-x-auto">
+            <div className="flex min-w-max gap-2 pb-1">
+              {quickFilters.map((filterOpt) => (
+                <button
+                  key={filterOpt}
+                  onClick={() => setActiveFilter(filterOpt)}
+                  className={`px-4 py-2 rounded-xl text-sm font-medium transition-all whitespace-nowrap ${activeFilter === filterOpt
+                    ? "bg-emerald-800 text-white shadow-sm"
+                    : "bg-zinc-50 text-zinc-600 hover:bg-zinc-100 border border-zinc-200"
+                    }`}
+                >
+                  {filterOpt}
+                </button>
+              ))}
+              {/* TODO: Implement advanced filtering functionality
+                  - Add modal/dropdown for advanced filter options
+                  - Include filters for: price range, specific departure times, distance category combinations
+                  - Add state management for advanced filter selections
+                  - Update filteredRides logic to apply advanced filters */}
+              <button className="px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap bg-white border border-emerald-800 text-emerald-800 hover:bg-emerald-50 transition-colors flex items-center gap-2">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg>
+                Advanced Filters
+              </button>
+            </div>
+          </div>
         </div>
 
-        {/* Content Layout (Filters + Feed) */}
-        <div className="flex flex-col lg:flex-row gap-6 md:gap-8 items-start relative">
-
-          {/* Mobile Filter Toggle */}
-          <div className="w-full lg:hidden flex justify-between items-center bg-white p-3 rounded-xl border border-zinc-200 shadow-sm">
-            <span className="font-medium text-sm text-zinc-600">{filteredRides.length} rides available</span>
-            <button
-              onClick={() => setMobileFilterOpen(!mobileFilterOpen)}
-              className="flex items-center gap-2 text-emerald-700 font-medium bg-emerald-50 px-3 py-1.5 rounded-lg"
-            >
-              <Filter size={16} /> Filters
-            </button>
-          </div>
-
-          {/* Filters Sidebar (Desktop: sticky left, Mobile: inline collapsible) */}
-          <div className={`
-                w-full lg:w-72 bg-white rounded-2xl p-6 shadow-sm border border-zinc-100 lg:sticky lg:top-8 shrink-0
-                ${mobileFilterOpen ? 'block' : 'hidden lg:block'}
-            `}>
-            <h2 className="font-bold text-lg mb-6">Filters</h2>
-
-            <div className="mb-6">
-              <h3 className="text-sm font-semibold text-zinc-500 mb-3 uppercase tracking-wider">Quick Filters</h3>
-              <div className="flex flex-wrap gap-2">
-                {["All", "Today", "Short", "Medium", "Long"].map((filterOpt) => (
-                  <button
-                    key={filterOpt}
-                    onClick={() => setActiveFilter(filterOpt)}
-                    className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${activeFilter === filterOpt
-                      ? "bg-emerald-800 text-white shadow-sm"
-                      : "bg-zinc-50 text-zinc-600 hover:bg-zinc-100 border border-zinc-200"
-                      }`}
-                  >
-                    {filterOpt}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <button className="w-full py-2.5 px-4 bg-white border border-emerald-800 text-emerald-800 rounded-xl font-medium flex items-center justify-center gap-2 hover:bg-emerald-50 transition-colors">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg>
-              Advanced Filters
-            </button>
-          </div>
-
-          {/* Ride Feed List */}
-          <div className="flex-1 w-full min-w-0 bg-white rounded-2xl p-4 md:p-6 lg:p-8 shadow-sm border border-zinc-100">
-            <p className="text-sm font-medium text-zinc-500 mb-4 md:mb-6 hidden lg:block">
+        {/* Content Layout */}
+        <div className="w-full max-w-5xl mx-auto">
+          <div className="w-full min-w-0 bg-white rounded-2xl p-4 md:p-6 lg:p-8 shadow-sm border border-zinc-100">
+            <p className="text-sm font-medium text-zinc-500 mb-4 md:mb-6 text-center">
               {filteredRides.length} {filteredRides.length === 1 ? 'ride' : 'rides'} available
             </p>
 
@@ -567,7 +549,6 @@ export default function BrowseRidesPage() {
               </div>
             )}
           </div>
-
         </div>
 
       {/* Ride Details Modal Overlay */}
