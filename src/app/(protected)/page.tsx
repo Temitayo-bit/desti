@@ -140,9 +140,13 @@ export default function BrowseRidesPage() {
     // Quick filters logic
     if (activeFilter === "All") return matchesSearch;
     if (activeFilter === "Today") {
-      const today = new Date().toISOString().split('T')[0];
-      const rideDate = new Date(ride.earliestDepartAt).toISOString().split('T')[0];
-      return matchesSearch && (rideDate === today);
+      const now = new Date();
+      const rideDate = new Date(ride.earliestDepartAt);
+      const isSameLocalDate =
+        rideDate.getFullYear() === now.getFullYear() &&
+        rideDate.getMonth() === now.getMonth() &&
+        rideDate.getDate() === now.getDate();
+      return matchesSearch && isSameLocalDate;
     }
     if (activeFilter === "Short") return matchesSearch && ride.distanceCategory === "SHORT";
     if (activeFilter === "Medium") return matchesSearch && ride.distanceCategory === "MEDIUM";
@@ -249,12 +253,13 @@ export default function BrowseRidesPage() {
           method: "DELETE",
         });
 
-        if (res.ok || res.status === 501) {
-          alert("Cancel request sent (TODO: Backend not fully implemented yet).");
+        if (res.ok) {
+          alert("Ride cancelled successfully.");
           setSelectedRide(null);
+        } else if (res.status === 501) {
+          alert("Cancellation not implemented on server.");
         } else {
-          const data = await res.json();
-          alert(`Failed to cancel ride: ${data.message || data.error}`);
+          alert("Failed to cancel ride.");
         }
       } catch (err: unknown) {
         alert("An error occurred while attempting to cancel the ride.");
@@ -325,7 +330,11 @@ export default function BrowseRidesPage() {
           <span className="font-bold text-xl">Desti</span>
         </div>
         <button
+          type="button"
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          aria-label={mobileMenuOpen ? "Close mobile menu" : "Open mobile menu"}
+          aria-expanded={mobileMenuOpen}
+          aria-controls="mobile-navigation-menu"
           className="p-2 -mr-2 text-zinc-600 hover:text-zinc-900"
         >
           {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
@@ -333,7 +342,9 @@ export default function BrowseRidesPage() {
       </div>
 
       {/* Navigation Sidebar (Desktop: Left, Mobile: Slide-over) */}
-      <div className={`
+      <div
+        id="mobile-navigation-menu"
+        className={`
         fixed inset-y-0 left-0 z-30 w-64 bg-white border-r border-zinc-200 transform transition-transform duration-300 ease-in-out
         md:relative md:translate-x-0
         ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
@@ -501,7 +512,10 @@ export default function BrowseRidesPage() {
                 {filteredRides.map((ride) => (
                   <div
                     key={ride.id}
-                    onClick={() => setSelectedRide(ride)}
+                    onClick={() => {
+                      setSelectedRide(ride);
+                      setSelectedSeats(Math.min(1, ride.seatsAvailable));
+                    }}
                     className="group bg-white border border-zinc-200 rounded-2xl p-5 hover:border-emerald-500/50 hover:shadow-md transition-all cursor-pointer relative overflow-hidden"
                   >
                     {/* Distance Badge */}
