@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
     BookingStatus,
     DistanceCategory,
-} from "@/generated/prisma/client";
+} from "@prisma/client";
 import { requireStetsonAuth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 

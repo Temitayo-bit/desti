@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireStetsonAuth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { DistanceCategory, BookingStatus } from "@/generated/prisma/client";
+import { DistanceCategory, BookingStatus } from "@prisma/client";
 
 const VALID_DISTANCE_CATEGORIES: ReadonlySet<string> = new Set(
     Object.values(DistanceCategory)

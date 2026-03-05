@@ -9,7 +9,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { ConversationServiceError } from "@/services/conversationService";
-import type { Conversation } from "@/generated/prisma/client";
+import type { Conversation } from "@prisma/client";
 
 /**
  * Asserts that the given user is a participant (rider or driver) of the

@@ -1,4 +1,4 @@
-import type { Conversation } from "@/generated/prisma/client";
+import type { Conversation } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { assertConversationParticipant } from "@/helpers/conversationAuth";
 import {

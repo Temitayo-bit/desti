@@ -1,4 +1,4 @@
-import { DistanceCategory } from "@/generated/prisma/client";
+import { DistanceCategory } from "@prisma/client";
 
 const VALID_DISTANCE_CATEGORIES: ReadonlySet<string> = new Set(
     Object.values(DistanceCategory)

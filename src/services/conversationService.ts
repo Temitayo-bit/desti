@@ -15,7 +15,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
-import type { Conversation, Message } from "@/generated/prisma/client";
+import type { Conversation, Message } from "@prisma/client";
 
 // ── Custom error class ──────────────────────────────────────────────────────
 
