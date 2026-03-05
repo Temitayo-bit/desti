@@ -164,7 +164,7 @@ export default function BrowseRidesPage() {
       if (d1.toDateString() === d2.toDateString()) {
         // Check if it's today
         if (d1.toDateString() === new Date().toDateString()) {
-          return `Today ${format(d1, 'h:mm')} - ${format(d2, 'h:mm a')}`;
+          return `Today ${format(d1, 'h:mm a')} - ${format(d2, 'h:mm a')}`;
         }
         return `${format(d1, 'MMM d, h:mm')} - ${format(d2, 'h:mm a')}`;
       }
@@ -255,6 +255,7 @@ export default function BrowseRidesPage() {
 
         if (res.ok) {
           alert("Ride cancelled successfully.");
+          setRides((prev) => prev.filter((r) => r.id !== rideId));
           setSelectedRide(null);
         } else if (res.status === 501) {
           alert("Cancellation not implemented on server.");
@@ -513,10 +514,16 @@ export default function BrowseRidesPage() {
                   <div
                     key={ride.id}
                     onClick={() => {
+                      if (ride.seatsAvailable <= 0) return;
                       setSelectedRide(ride);
                       setSelectedSeats(Math.min(1, ride.seatsAvailable));
                     }}
-                    className="group bg-white border border-zinc-200 rounded-2xl p-5 hover:border-emerald-500/50 hover:shadow-md transition-all cursor-pointer relative overflow-hidden"
+                    aria-disabled={ride.seatsAvailable <= 0}
+                    className={`group bg-white border border-zinc-200 rounded-2xl p-5 transition-all relative overflow-hidden ${
+                      ride.seatsAvailable <= 0
+                        ? "opacity-70 cursor-not-allowed"
+                        : "hover:border-emerald-500/50 hover:shadow-md cursor-pointer"
+                    }`}
                   >
                     {/* Distance Badge */}
                     <div className="absolute top-5 right-5 bg-amber-100 text-amber-800 text-xs font-bold px-2.5 py-1 rounded-full border border-amber-200 shadow-sm">
@@ -547,7 +554,7 @@ export default function BrowseRidesPage() {
                         </div>
                       </div>
                       <div className="flex items-baseline gap-1 text-emerald-800">
-                        <span className="font-bold text-xl">${(ride.priceCents / 100).toFixed(0)}</span>
+                        <span className="font-bold text-xl">${(ride.priceCents / 100).toFixed(2)}</span>
                         <ArrowRightIcon />
                       </div>
                     </div>
@@ -573,6 +580,8 @@ export default function BrowseRidesPage() {
                   setSelectedRide(null);
                   setBookingSuccess(false);
                   setSelectedSeats(1);
+                  setIsEditing(false);
+                  setEditFormData({});
                 }}
                 aria-label="Close ride details"
                 className="absolute top-6 right-6 p-2 text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 rounded-full transition-colors z-10"
