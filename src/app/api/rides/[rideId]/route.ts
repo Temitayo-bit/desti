@@ -331,3 +331,19 @@ export async function PATCH(
         );
     }
 }
+
+export async function DELETE(
+    request: NextRequest,
+    { params }: { params: Promise<{ rideId: string }> }
+) {
+    // TODO: Implement the ride cancellation logic
+    // - Ensure the user is the driver
+    // - Check for active bookings
+    // - Mark the ride as cancelled or delete it
+    // - Notify riders
+
+    return NextResponse.json(
+        { message: "TODO: Ride cancellation endpoint is not yet implemented." },
+        { status: 501 }
+    );
+}
