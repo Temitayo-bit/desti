@@ -568,17 +568,16 @@ export default function BrowseRidesPage() {
             ) : (
               <div className="flex flex-col gap-4">
                 {filteredRides.map((ride) => (
-                  <div
+                  <button
+                    type="button"
                     key={ride.id}
                     onClick={() => {
-                      if (ride.seatsAvailable <= 0) return;
                       setSelectedRide(ride);
-                      setSelectedSeats(Math.min(1, ride.seatsAvailable));
+                      setSelectedSeats(ride.seatsAvailable > 0 ? 1 : 0);
                     }}
-                    aria-disabled={ride.seatsAvailable <= 0}
-                    className={`group bg-white border border-zinc-200 rounded-2xl p-5 transition-all relative overflow-hidden ${
+                    className={`group w-full text-left bg-white border border-zinc-200 rounded-2xl p-5 transition-all relative overflow-hidden ${
                       ride.seatsAvailable <= 0
-                        ? "opacity-70 cursor-not-allowed"
+                        ? "opacity-70"
                         : "hover:border-emerald-500/50 hover:shadow-md cursor-pointer"
                     }`}
                   >
@@ -615,7 +614,7 @@ export default function BrowseRidesPage() {
                         <ArrowRightIcon />
                       </div>
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             )}
