@@ -24,10 +24,29 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "autoprefixer": "^10.4.27",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
-    "tailwindcss": "^4",
+    "postcss": "^8.5.8",
+    "tailwindcss": "^4.2.1",
     "typescript": "^5",
     "vitest": "^4.0.18"
-  }
+  },
+  "description": "A full-stack campus transport platform where verified students can post rides, request future trips, and connect through intelligent matching and booking workflows.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Temitayo-bit/desti.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Temitayo-bit/desti/issues"
+  },
+  "homepage": "https://github.com/Temitayo-bit/desti#readme"
 }
