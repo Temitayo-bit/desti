@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { format } from "date-fns";
-import { DistanceCategory } from "@/generated/prisma/client";
+import { DistanceCategory } from "@prisma/client";
 import { X, Filter } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ProtectedShell } from "./_components/ProtectedShell";

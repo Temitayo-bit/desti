@@ -32,7 +32,7 @@ vi.mock("@/lib/prisma", () => ({
 }));
 
 // Mock DistanceCategory enum from generated Prisma client
-vi.mock("@/generated/prisma/client", () => ({
+vi.mock("@prisma/client", () => ({
     DistanceCategory: {
         SHORT: "SHORT",
         MEDIUM: "MEDIUM",

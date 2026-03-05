@@ -21,7 +21,7 @@ vi.mock("@/lib/prisma", () => ({
     prisma: mockPrisma,
 }));
 
-vi.mock("@/generated/prisma/client", () => ({
+vi.mock("@prisma/client", () => ({
     BookingStatus: {
         CONFIRMED: "CONFIRMED",
         CANCELLED: "CANCELLED",
