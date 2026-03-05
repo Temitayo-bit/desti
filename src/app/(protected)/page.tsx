@@ -86,44 +86,59 @@ export default function BrowseRidesPage() {
   const [userBookings, setUserBookings] = useState<Record<string, string>>({}); // rideId -> bookingId
 
   useEffect(() => {
+    const controller = new AbortController();
+
     async function fetchRides() {
       try {
         setLoading(true);
-        const res = await fetch("/api/rides");
+        const res = await fetch("/api/rides", { signal: controller.signal });
         if (!res.ok) throw new Error("Failed to fetch rides");
         const data = await res.json();
-        setRides(data.items || []);
+        if (!controller.signal.aborted) {
+          setRides(data.items || []);
+        }
       } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") return;
         console.error("Error fetching rides:", err);
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
       }
     }
 
     async function fetchUser() {
       try {
-        const res = await fetch("/api/me");
+        const res = await fetch("/api/me", { signal: controller.signal });
         if (res.ok) {
           const data = await res.json();
-          setCurrentUser(data);
+          if (!controller.signal.aborted) {
+            setCurrentUser(data);
+          }
         }
       } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") return;
         console.error("Error fetching user:", err);
       }
     }
 
     async function fetchUserBookings() {
       try {
-        const res = await fetch("/api/bookings/mine?status=CONFIRMED");
+        const res = await fetch("/api/bookings/mine?status=CONFIRMED", {
+          signal: controller.signal,
+        });
         if (res.ok) {
           const data = await res.json();
           const mapping: Record<string, string> = {};
           data.items?.forEach((b: any) => {
             if (b.rideId) mapping[b.rideId] = b.id;
           });
-          setUserBookings(mapping);
+          if (!controller.signal.aborted) {
+            setUserBookings(mapping);
+          }
         }
       } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") return;
         console.error("Error fetching user bookings:", err);
       }
     }
@@ -131,7 +146,26 @@ export default function BrowseRidesPage() {
     fetchRides();
     fetchUser();
     fetchUserBookings();
+
+    return () => {
+      controller.abort();
+    };
   }, []);
+
+  useEffect(() => {
+    if (!selectedRide) return;
+
+    if (selectedRide.seatsAvailable <= 0) {
+      if (selectedSeats !== 0) {
+        setSelectedSeats(0);
+      }
+      return;
+    }
+
+    if (selectedSeats < 1 || selectedSeats > selectedRide.seatsAvailable) {
+      setSelectedSeats(Math.min(Math.max(selectedSeats, 1), selectedRide.seatsAvailable));
+    }
+  }, [selectedRide, selectedSeats]);
 
   // Filter rides based on search query (client-side as requested if no API)
   const filteredRides = rides.filter((ride) => {
@@ -166,7 +200,7 @@ export default function BrowseRidesPage() {
         if (d1.toDateString() === new Date().toDateString()) {
           return `Today ${format(d1, 'h:mm a')} - ${format(d2, 'h:mm a')}`;
         }
-        return `${format(d1, 'MMM d, h:mm')} - ${format(d2, 'h:mm a')}`;
+        return `${format(d1, 'MMM d, h:mm a')} - ${format(d2, 'h:mm a')}`;
       }
       return `${format(d1, 'MMM d, h:mm a')} - ${format(d2, 'MMM d, h:mm a')}`;
     } catch {
@@ -180,6 +214,17 @@ export default function BrowseRidesPage() {
 
   const handleBookRide = async (rideId: string) => {
     try {
+      const rideForBooking = rides.find((r) => r.id === rideId) ?? selectedRide;
+      if (!rideForBooking || rideForBooking.seatsAvailable <= 0) {
+        alert("No seats available for this ride.");
+        return;
+      }
+
+      const seatsToBook = Math.min(
+        Math.max(selectedSeats, 1),
+        rideForBooking.seatsAvailable
+      );
+
       const res = await fetch("/api/bookings", {
         method: "POST",
         headers: {
@@ -188,13 +233,25 @@ export default function BrowseRidesPage() {
         },
         body: JSON.stringify({
           rideId: rideId,
-          seatsBooked: selectedSeats,
+          seatsBooked: seatsToBook,
         }),
       });
 
       if (res.ok) {
         const booking = await res.json();
         setUserBookings(prev => ({ ...prev, [rideId]: booking.id }));
+        setRides((prev) =>
+          prev.map((r) =>
+            r.id === rideId
+              ? { ...r, seatsAvailable: Math.max(0, r.seatsAvailable - seatsToBook) }
+              : r
+          )
+        );
+        setSelectedRide((prev) =>
+          prev && prev.id === rideId
+            ? { ...prev, seatsAvailable: Math.max(0, prev.seatsAvailable - seatsToBook) }
+            : prev
+        );
         setBookingSuccess(true);
         setTimeout(() => {
           setSelectedRide(null);
@@ -854,6 +911,10 @@ export default function BrowseRidesPage() {
                             Cancel My Booking
                           </button>
                         </div>
+                      ) : selectedRide.seatsAvailable <= 0 ? (
+                        <div className="bg-amber-50 text-amber-800 px-4 py-2 rounded-xl text-sm font-medium border border-amber-200">
+                          Sold out: no seats remaining for this ride.
+                        </div>
                       ) : (
                         <div className="flex items-center gap-4">
                           <div className="flex items-center gap-2">
@@ -864,7 +925,14 @@ export default function BrowseRidesPage() {
                               id="seatSelect"
                               title="Number of seats to book"
                               value={selectedSeats}
-                              onChange={(e) => setSelectedSeats(parseInt(e.target.value))}
+                              onChange={(e) =>
+                                setSelectedSeats(
+                                  Math.min(
+                                    Math.max(parseInt(e.target.value, 10) || 1, 1),
+                                    selectedRide.seatsAvailable
+                                  )
+                                )
+                              }
                               className="bg-zinc-50 border border-zinc-200 text-zinc-900 rounded-xl px-3 py-2.5 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all font-medium min-w-[4rem]"
                             >
                               {Array.from({ length: selectedRide.seatsAvailable }, (_, i) => i + 1).map((num) => (
@@ -873,7 +941,13 @@ export default function BrowseRidesPage() {
                             </select>
                           </div>
                           <button
-                            onClick={() => handleBookRide(selectedRide.id)}
+                            onClick={() => {
+                              if (selectedRide.seatsAvailable <= 0) {
+                                alert("No seats available for this ride.");
+                                return;
+                              }
+                              handleBookRide(selectedRide.id);
+                            }}
                             className="px-8 py-2.5 bg-emerald-800 hover:bg-emerald-900 text-white font-medium rounded-xl shadow-sm transition-colors text-lg whitespace-nowrap"
                           >
                             Book Ride
