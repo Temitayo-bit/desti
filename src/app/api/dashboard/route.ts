@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { requireStetsonAuth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
@@ -70,9 +70,11 @@ const offerSummarySelect = {
  * Each list is capped at 5 items.
  * Counts reflect the full untruncated totals.
  */
-export async function GET() {
+export async function GET(request?: NextRequest) {
     try {
-        const auth = await requireStetsonAuth();
+        const auth = await requireStetsonAuth(
+            request ?? { method: "GET", pathname: "/api/dashboard" }
+        );
         if (auth.error) return auth.error;
 
         const userId = auth.user.clerkUserId;

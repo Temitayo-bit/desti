@@ -32,7 +32,7 @@ export async function PATCH(
     { params }: { params: Promise<{ rideId: string }> }
 ) {
     try {
-        const auth = await requireStetsonAuth();
+        const auth = await requireStetsonAuth(request);
         if (auth.error) return auth.error;
 
         const resolvedParams = await params;

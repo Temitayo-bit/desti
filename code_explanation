@@ -1,5 +1,121 @@
 # Code Explanation
 
+## First-time Onboarding Gate — POST onboarding + Guard (Chat D)
+
+### Overview
+
+Implements backend onboarding enforcement and onboarding submission:
+- New endpoint: `POST /api/user/onboarding`
+- Centralized guard gating in `requireStetsonAuth`
+- Explicit exemptions while onboarding is incomplete:
+  - `GET /api/me`
+  - `POST /api/user/onboarding`
+
+### Files Changed
+
+#### `src/lib/auth.ts` (MODIFIED)
+
+- **Line 3**: Added `prisma` import to load local user onboarding state during auth.
+- **Lines 24–33**: Added `AuthRequestContext` and `RouteMethodPath` types to pass request method/path context into the guard.
+- **Lines 35–38**: Added centralized `ONBOARDING_EXEMPT_ROUTES` list with only:
+  - `GET /api/me`
+  - `POST /api/user/onboarding`
+- **Lines 40–45**: Added `normalizePathname()` to handle trailing slashes so route exemption matching is stable.
+- **Lines 47–71**: Added `resolveMethodAndPath()` to derive method/path from either:
+  - a real `Request`, or
+  - direct `{ method, pathname }` context.
+- **Lines 73–79**: Added `isOnboardingExempt()` to check the centralized exemption list.
+- **Lines 97–99**: Updated `requireStetsonAuth` signature to accept optional request/context:
+  - `context?: Request | AuthRequestContext`
+- **Lines 134–137**: Resolved request method/path and computed exemption in one place.
+- **Lines 138–157**: Optimized onboarding gate check to only query Prisma when the route is not exempt:
+  - `prisma.user.findUnique({ select: { onboardingComplete: true } })` now runs only inside `if (!onboardingExempt)`.
+  - avoids unnecessary DB reads for `GET /api/me` and `POST /api/user/onboarding`.
+- **Lines 144–156**: Enforced onboarding gate for non-exempt protected endpoints:
+  - returns `403`
+  - with `code: "ONBOARDING_REQUIRED"`
+  - with a clear message
+- **Lines 100–132 and 158–164**: Existing Clerk session + verified `@stetson.edu` checks and success payload remain unchanged.
+
+#### `src/app/api/user/onboarding/route.ts` (NEW)
+
+- **Lines 5–9**: Added locked enum value sets for validation:
+  - `YEAR_VALUES`: `FRESHMAN | SOPHOMORE | JUNIOR | SENIOR`
+  - `GENDER_VALUES`: `MALE | FEMALE | OTHER | PREFER_NOT_TO_SAY`
+- **Lines 11–21**: Added local interfaces for field-level validation output and parsed payload shape.
+- **Lines 23–117**: Added strict request body validator:
+  - body must be a JSON object
+  - unknown keys are rejected via whitelist check against `name`, `age`, `yearAtStetson`, `gender`
+  - `name` trimmed length `2..80`
+  - `age` integer `16..100`
+  - `yearAtStetson` enum check
+  - `gender` enum check
+  - returns field-level `issues[]`
+- **Lines 124–239**: Wrapped the full handler flow in `try/catch` to provide a top-level error boundary.
+  - catches unexpected errors from auth, Prisma, and other runtime throws
+  - logs original error with `console.error`
+  - returns stable `500` response payload
+- **Lines 126–127**: Auth guard usage with request context:
+  - `const auth = await requireStetsonAuth(request);`
+  - route is exempt from onboarding gate by centralized guard config.
+- **Lines 129–140**: JSON parse guard for malformed body -> `400`.
+- **Lines 142–152**: Validation failure path -> `400` with:
+  - `error: "Bad Request"`
+  - `message: "Validation failed."`
+  - `fieldErrors` array.
+- **Lines 156–169**: User bootstrap/upsert behavior:
+  - ensures local user row exists for `clerkUserId`
+  - syncs email to verified Stetson email.
+- **Lines 171–180**: Write-once enforcement pre-check:
+  - if already onboarded -> `409`
+  - code `ONBOARDING_ALREADY_COMPLETED`
+  - no overwrite.
+- **Lines 182–195**: Atomic write-once update using `updateMany` with guard:
+  - `where: { clerkUserId, onboardingComplete: false }`
+  - updates `name`, `age`, `yearAtStetson`, `gender`
+  - sets `onboardingComplete: true`.
+- **Lines 197–206**: Secondary write-once race check:
+  - if update count is `0`, return `409` (already onboarded).
+- **Lines 208–222**: Fetches updated user profile fields after successful onboarding.
+- **Lines 224–238**: Returns profile payload on success, and `500` payload on unexpected errors.
+
+#### `src/app/api/me/route.ts` (MODIFIED)
+
+- **Line 1**: Added `NextRequest` import.
+- **Line 13**: Changed handler signature to `GET(request?: NextRequest)` for both route-runtime use and test compatibility.
+- **Lines 15–17**: Auth call now passes request context with explicit fallback:
+  - actual request when present
+  - otherwise `{ method: "GET", pathname: "/api/me" }`
+  - keeps `/api/me` explicitly exempt under centralized gate.
+- Remaining user upsert and response shape are unchanged.
+
+#### `src/app/api/dashboard/route.ts` (MODIFIED)
+
+- **Line 1**: Added `NextRequest` import.
+- **Line 73**: Changed handler signature to `GET(request?: NextRequest)` to preserve current tests.
+- **Lines 75–77**: Auth call now passes request context with fallback:
+  - actual request when present
+  - otherwise `{ method: "GET", pathname: "/api/dashboard" }`
+  - ensures dashboard remains a protected endpoint gated by onboarding.
+- All dashboard query and response logic remains unchanged.
+
+#### Request-context wiring updates (MODIFIED)
+
+- Updated all protected route call sites to pass `request` into `requireStetsonAuth(request)` so centralized exemption/gating can evaluate the current method/path correctly.
+- Updated files and lines:
+  - `src/routes/conversations.ts` lines 48, 66, 89, 124, 145
+  - `src/app/api/bookings/route.ts` line 21
+  - `src/app/api/bookings/mine/route.ts` line 48
+  - `src/app/api/bookings/[bookingId]/cancel/route.ts` line 29
+  - `src/app/api/offers/mine/route.ts` line 50
+  - `src/app/api/offers/[offerId]/accept/route.ts` line 15
+  - `src/app/api/offers/[offerId]/cancel/route.ts` line 15
+  - `src/app/api/rides/route.ts` lines 53, 348
+  - `src/app/api/rides/[rideId]/route.ts` line 35
+  - `src/app/api/trip-requests/route.ts` lines 52, 337
+  - `src/app/api/trip-requests/[tripRequestId]/route.ts` line 46
+  - `src/app/api/trip-requests/[tripRequestId]/offers/route.ts` line 72
+
 ## First-time Onboarding Gate — Schema + /me (Chat C)
 
 ### Overview

@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { requireStetsonAuth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -10,9 +10,11 @@ import { prisma } from "@/lib/prisma";
  * - Looks up or creates a local user record (idempotent via upsert)
  * - Returns: { clerkUserId, primaryVerifiedEmail, created, localUser }
  */
-export async function GET() {
+export async function GET(request?: NextRequest) {
     // 1. Enforce auth + authorization
-    const auth = await requireStetsonAuth();
+    const auth = await requireStetsonAuth(
+        request ?? { method: "GET", pathname: "/api/me" }
+    );
     if (auth.error) return auth.error;
 
     const { clerkUserId, primaryStetsonEmail } = auth.user;

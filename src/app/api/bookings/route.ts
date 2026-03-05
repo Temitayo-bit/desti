@@ -18,7 +18,7 @@ const SELF_BOOKING_ERROR_MESSAGE = "You can’t book your own ride.";
 export async function POST(request: NextRequest) {
     try {
         // 1. Auth Guard
-        const auth = await requireStetsonAuth();
+        const auth = await requireStetsonAuth(request);
         if (auth.error) return auth.error;
         const riderUserId = auth.user.clerkUserId;
 

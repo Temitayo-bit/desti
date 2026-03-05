@@ -69,7 +69,7 @@ export async function POST(
         const { tripRequestId } = await params;
 
         // 1. Auth guard
-        const auth = await requireStetsonAuth();
+        const auth = await requireStetsonAuth(request);
         if (auth.error) return auth.error;
         const driverUserId = auth.user.clerkUserId;
 
