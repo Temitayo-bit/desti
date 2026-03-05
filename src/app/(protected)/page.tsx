@@ -4,8 +4,9 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { format } from "date-fns";
 import { DistanceCategory } from "@/generated/prisma/client";
-import { Menu, X, Filter } from "lucide-react";
+import { X, Filter } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { ProtectedShell } from "./_components/ProtectedShell";
 
 // --- Types ---
 type RideStatus = "ACTIVE";
@@ -26,6 +27,20 @@ interface RideSummary {
   status: RideStatus;
   createdAt: string;
   updatedAt: string;
+}
+
+interface EditRideFormData {
+  originText?: string;
+  destinationText?: string;
+  earliestDepartAt?: string;
+  latestDepartAt?: string;
+  seatsTotal?: number;
+  priceDollars?: string;
+}
+
+interface ConfirmedBookingSummary {
+  id: string;
+  rideId: string | null;
 }
 
 // --- Icons ---
@@ -64,7 +79,7 @@ export default function BrowseRidesPage() {
   const [rides, setRides] = useState<RideSummary[]>([]);
   const [selectedRide, setSelectedRide] = useState<RideSummary | null>(null);
   const [isEditing, setIsEditing] = useState(false);
-  const [editFormData, setEditFormData] = useState<Partial<RideSummary>>({});
+  const [editFormData, setEditFormData] = useState<EditRideFormData>({});
   const [currentUser, setCurrentUser] = useState<{
     clerkUserId: string;
     primaryVerifiedEmail: string;
@@ -77,11 +92,10 @@ export default function BrowseRidesPage() {
   } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<string>("All");
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [bookingSuccess, setBookingSuccess] = useState(false);
+  const [successState, setSuccessState] = useState<"booking" | "edit" | null>(null);
   const [selectedSeats, setSelectedSeats] = useState(1);
   const [userBookings, setUserBookings] = useState<Record<string, string>>({}); // rideId -> bookingId
 
@@ -128,10 +142,14 @@ export default function BrowseRidesPage() {
           signal: controller.signal,
         });
         if (res.ok) {
-          const data = await res.json();
+          const data = (await res.json()) as {
+            items?: ConfirmedBookingSummary[];
+          };
           const mapping: Record<string, string> = {};
-          data.items?.forEach((b: any) => {
-            if (b.rideId) mapping[b.rideId] = b.id;
+          data.items?.forEach((booking) => {
+            if (booking.rideId) {
+              mapping[booking.rideId] = booking.id;
+            }
           });
           if (!controller.signal.aborted) {
             setUserBookings(mapping);
@@ -252,10 +270,10 @@ export default function BrowseRidesPage() {
             ? { ...prev, seatsAvailable: Math.max(0, prev.seatsAvailable - seatsToBook) }
             : prev
         );
-        setBookingSuccess(true);
+        setSuccessState("booking");
         setTimeout(() => {
           setSelectedRide(null);
-          setBookingSuccess(false);
+          setSuccessState(null);
         }, 2500);
         // In a real app we'd refresh the rides list here
       } else {
@@ -333,13 +351,22 @@ export default function BrowseRidesPage() {
       earliestDepartAt: format(new Date(selectedRide.earliestDepartAt), "yyyy-MM-dd'T'HH:mm"),
       latestDepartAt: format(new Date(selectedRide.latestDepartAt), "yyyy-MM-dd'T'HH:mm"),
       seatsTotal: selectedRide.seatsTotal,
-      priceCents: selectedRide.priceCents
+      priceDollars: (selectedRide.priceCents / 100).toFixed(2),
     });
     setIsEditing(true);
   };
 
   const handleEditSubmit = async () => {
     if (!selectedRide) return;
+
+    const parsedPriceDollars =
+      editFormData.priceDollars !== undefined
+        ? Number(editFormData.priceDollars)
+        : NaN;
+    if (!Number.isFinite(parsedPriceDollars) || parsedPriceDollars < 0) {
+      alert("Price/Seat must be a valid non-negative dollar amount.");
+      return;
+    }
 
     try {
       setSubmitting(true);
@@ -352,7 +379,7 @@ export default function BrowseRidesPage() {
           earliestDepartAt: editFormData.earliestDepartAt ? new Date(editFormData.earliestDepartAt).toISOString() : undefined,
           latestDepartAt: editFormData.latestDepartAt ? new Date(editFormData.latestDepartAt).toISOString() : undefined,
           seatsTotal: editFormData.seatsTotal,
-          priceCents: editFormData.priceCents
+          priceCents: Math.round(parsedPriceDollars * 100),
         })
       });
 
@@ -367,7 +394,11 @@ export default function BrowseRidesPage() {
       setSelectedRide(updatedRide);
       setRides(prev => prev.map(r => r.id === updatedRide.id ? updatedRide : r));
       setIsEditing(false);
-      alert("Ride updated successfully!");
+      setSuccessState("edit");
+      setTimeout(() => {
+        setSelectedRide(null);
+        setSuccessState(null);
+      }, 2500);
 
     } catch (err: unknown) {
       alert(`Error updating ride: ${err instanceof Error ? err.message : String(err)}`);
@@ -377,93 +408,7 @@ export default function BrowseRidesPage() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-50 font-sans text-zinc-900 flex flex-col md:flex-row">
-
-      {/* Mobile Header Bar */}
-      <div className="md:hidden flex items-center justify-between p-4 bg-white border-b border-zinc-200 sticky top-0 z-20">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-emerald-700 text-white rounded-md flex items-center justify-center font-bold text-lg">
-            D
-          </div>
-          <span className="font-bold text-xl">Desti</span>
-        </div>
-        <button
-          type="button"
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          aria-label={mobileMenuOpen ? "Close mobile menu" : "Open mobile menu"}
-          aria-expanded={mobileMenuOpen}
-          aria-controls="mobile-navigation-menu"
-          className="p-2 -mr-2 text-zinc-600 hover:text-zinc-900"
-        >
-          {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
-        </button>
-      </div>
-
-      {/* Navigation Sidebar (Desktop: Left, Mobile: Slide-over) */}
-      <div
-        id="mobile-navigation-menu"
-        className={`
-        fixed inset-y-0 left-0 z-30 w-64 bg-white border-r border-zinc-200 transform transition-transform duration-300 ease-in-out
-        md:relative md:translate-x-0
-        ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
-      `}>
-        <div className="p-6 h-full flex flex-col">
-          {/* Logo area - hidden on mobile since it's in the header */}
-          <div className="hidden md:flex items-center gap-3 mb-10">
-            <div className="w-10 h-10 bg-emerald-700 text-white rounded-lg flex items-center justify-center font-bold text-xl shadow-sm">
-              D
-            </div>
-            <span className="font-bold text-2xl tracking-tight">Desti</span>
-          </div>
-
-          <nav className="flex-1 space-y-2">
-            <Link href="#" className="flex items-center gap-3 px-4 py-3 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100/80 rounded-xl font-medium transition-colors pointer-events-none opacity-60">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"></rect><path d="M3 9h18"></path><path d="M9 21V9"></path></svg>
-              Dashboard
-            </Link>
-            <Link href="/" className="flex items-center gap-3 px-4 py-3 bg-emerald-50 text-emerald-700 rounded-xl font-medium transition-colors">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
-              Browse Rides
-            </Link>
-            <Link href="#" className="flex items-center gap-3 px-4 py-3 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100/80 rounded-xl font-medium transition-colors">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>
-              Post Ride
-            </Link>
-            <Link href="#" className="flex items-center gap-3 px-4 py-3 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100/80 rounded-xl font-medium transition-colors">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-              Requests
-            </Link>
-            <Link href="#" className="flex items-center gap-3 px-4 py-3 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100/80 rounded-xl font-medium transition-colors">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-              Messages
-            </Link>
-            <Link href="#" className="flex items-center gap-3 px-4 py-3 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100/80 rounded-xl font-medium transition-colors">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-              Profile
-            </Link>
-          </nav>
-
-          <div className="mt-8 pt-6 border-t border-zinc-100">
-            <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 text-blue-700 rounded-lg text-sm font-medium w-fit">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none" className="text-blue-600">
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-              </svg>
-              Stetson Verified
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Overlay for mobile menus */}
-      {(mobileMenuOpen) && (
-        <div
-          className="fixed inset-0 bg-black/20 z-20 md:hidden"
-          onClick={() => setMobileMenuOpen(false)}
-        />
-      )}
-
-      {/* Main Content Area */}
-      <main className="flex-1 w-full max-w-7xl mx-auto p-4 md:p-8 flex flex-col gap-6 md:gap-8 min-w-0 relative">
+    <ProtectedShell activeNav="browse">
 
         {/* Top Header Section */}
         <div className="bg-white rounded-2xl p-6 md:p-8 shadow-sm border border-zinc-100">
@@ -472,10 +417,13 @@ export default function BrowseRidesPage() {
               <h1 className="text-2xl md:text-3xl font-bold tracking-tight mb-2">Browse Available Rides</h1>
               <p className="text-zinc-500">Find rides from verified Stetson students</p>
             </div>
-            <button className="bg-emerald-800 hover:bg-emerald-900 text-white px-5 py-2.5 rounded-xl font-medium flex items-center justify-center gap-2 transition-colors whitespace-nowrap shadow-sm">
+            <Link
+              href="/post-ride"
+              className="bg-emerald-800 hover:bg-emerald-900 text-white px-5 py-2.5 rounded-xl font-medium flex items-center justify-center gap-2 transition-colors whitespace-nowrap shadow-sm"
+            >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
               Post a Ride
-            </button>
+            </Link>
           </div>
 
           <div className="relative">
@@ -621,7 +569,6 @@ export default function BrowseRidesPage() {
           </div>
 
         </div>
-      </main>
 
       {/* Ride Details Modal Overlay */}
       {selectedRide && (
@@ -634,7 +581,7 @@ export default function BrowseRidesPage() {
               <button
                 onClick={() => {
                   setSelectedRide(null);
-                  setBookingSuccess(false);
+                  setSuccessState(null);
                   setSelectedSeats(1);
                   setIsEditing(false);
                   setEditFormData({});
@@ -646,7 +593,7 @@ export default function BrowseRidesPage() {
               </button>
 
               <AnimatePresence mode="wait">
-                {bookingSuccess ? (
+                {successState ? (
                   <motion.div
                     key="success"
                     initial={{ opacity: 0, scale: 0.9 }}
@@ -669,8 +616,14 @@ export default function BrowseRidesPage() {
                         <motion.polyline points="20 6 9 17 4 12" />
                       </motion.svg>
                     </motion.div>
-                    <h2 className="text-3xl font-bold text-zinc-900">Ride Confirmed!</h2>
-                    <p className="text-zinc-500 max-w-sm">Your seat has been successfully booked. The driver has been notified.</p>
+                    <h2 className="text-3xl font-bold text-zinc-900">
+                      {successState === "edit" ? "Ride Updated!" : "Ride Confirmed!"}
+                    </h2>
+                    <p className="text-zinc-500 max-w-sm">
+                      {successState === "edit"
+                        ? "Your ride details were saved successfully."
+                        : "Your seat has been successfully booked. The driver has been notified."}
+                    </p>
                   </motion.div>
                 ) : isEditing ? (
                   <motion.div key="edit" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
@@ -759,16 +712,16 @@ export default function BrowseRidesPage() {
                         </div>
                         <div>
                           <label htmlFor="editPrice" className="flex items-center gap-2 mb-2 text-emerald-800 font-semibold">
-                            <span className="font-bold text-lg leading-none">$</span> Price/Seat (cents)
+                            <span className="font-bold text-lg leading-none">$</span> Price/Seat
                           </label>
                           <input
                             id="editPrice"
                             type="number"
-                            title="Price per Seat (cents)"
-                            placeholder="Price in cents"
-                            min="0" step="1"
-                            value={editFormData.priceCents || 0}
-                            onChange={(e) => setEditFormData({ ...editFormData, priceCents: parseInt(e.target.value) || 0 })}
+                            title="Price per Seat (dollars)"
+                            placeholder="Price in dollars"
+                            min="0" step="0.01"
+                            value={editFormData.priceDollars || ""}
+                            onChange={(e) => setEditFormData({ ...editFormData, priceDollars: e.target.value })}
                             className="w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-3 text-zinc-900 outline-none"
                           />
                         </div>
@@ -880,7 +833,7 @@ export default function BrowseRidesPage() {
                         <>
                           <button
                             onClick={startEditing}
-                            className="px-5 py-2.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 font-medium rounded-xl transition-colors"
+                            className="px-5 py-2.5 bg-emerald-800 hover:bg-emerald-900 text-white font-medium rounded-xl transition-colors"
                           >
                             Edit Ride
                           </button>
@@ -962,6 +915,6 @@ export default function BrowseRidesPage() {
         </div>
       )}
 
-    </div>
+    </ProtectedShell>
   );
 }
