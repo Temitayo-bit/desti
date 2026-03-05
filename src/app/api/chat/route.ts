@@ -4,7 +4,7 @@ import { join } from "path";
 
 /* ── Constants ────────────────────────────────────────────────────────────── */
 
-const OLLAMA_BASE_URL = "http://127.0.0.1:11434";
+const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434";
 const OLLAMA_MODEL = "qwen2.5:7b-instruct";
 const OLLAMA_TIMEOUT_MS = 30_000;
 const MAX_HISTORY = 10;
