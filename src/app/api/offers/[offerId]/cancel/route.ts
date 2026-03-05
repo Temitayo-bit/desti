@@ -12,7 +12,7 @@ export async function POST(
         const { offerId } = await params.params;
 
         // 1. Auth Guard
-        const auth = await requireStetsonAuth();
+        const auth = await requireStetsonAuth(request);
         if (auth.error) return auth.error;
         const userId = auth.user.clerkUserId;
 

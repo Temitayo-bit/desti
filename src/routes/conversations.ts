@@ -45,10 +45,8 @@ function toErrorResponse(error: unknown): NextResponse {
  * GET /api/conversations
  */
 export async function handleGetConversations(request: NextRequest) {
-    const auth = await requireStetsonAuth();
+    const auth = await requireStetsonAuth(request);
     if (auth.error) return auth.error;
-
-    void request; // parity with route wrapper signature
 
     try {
         const items = await listConversationsController(auth.user.clerkUserId);
@@ -65,7 +63,7 @@ export async function handleGetConversationMessages(
     request: NextRequest,
     conversationId: string
 ) {
-    const auth = await requireStetsonAuth();
+    const auth = await requireStetsonAuth(request);
     if (auth.error) return auth.error;
 
     try {
@@ -88,7 +86,7 @@ export async function handlePostConversationMessage(
     request: NextRequest,
     conversationId: string
 ) {
-    const auth = await requireStetsonAuth();
+    const auth = await requireStetsonAuth(request);
     if (auth.error) return auth.error;
 
     let rawBody: unknown;
@@ -123,10 +121,8 @@ export async function handlePostConversationForBooking(
     request: NextRequest,
     bookingId: string
 ) {
-    const auth = await requireStetsonAuth();
+    const auth = await requireStetsonAuth(request);
     if (auth.error) return auth.error;
-
-    void request; // parity with route wrapper signature
 
     try {
         const conversation = await createOrGetBookingConversationController(
@@ -146,10 +142,8 @@ export async function handlePostConversationForOffer(
     request: NextRequest,
     offerId: string
 ) {
-    const auth = await requireStetsonAuth();
+    const auth = await requireStetsonAuth(request);
     if (auth.error) return auth.error;
-
-    void request; // parity with route wrapper signature
 
     try {
         const conversation = await createOrGetOfferConversationController(

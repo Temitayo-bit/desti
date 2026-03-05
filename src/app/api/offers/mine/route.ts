@@ -47,7 +47,7 @@ type OfferMineItem = Prisma.OfferGetPayload<{
  */
 export async function GET(request: NextRequest) {
     try {
-        const auth = await requireStetsonAuth();
+        const auth = await requireStetsonAuth(request);
         if (auth.error) return auth.error;
 
         const userId = auth.user.clerkUserId;

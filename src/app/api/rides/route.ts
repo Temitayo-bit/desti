@@ -50,7 +50,7 @@ type RideSummary = Prisma.RideGetPayload<{ select: typeof rideSummarySelect }>;
  */
 export async function GET(request: NextRequest) {
     try {
-        const auth = await requireStetsonAuth();
+        const auth = await requireStetsonAuth(request);
         if (auth.error) return auth.error;
 
         const now = new Date();
@@ -345,7 +345,7 @@ function validateRideBody(body: Record<string, unknown>): {
 export async function POST(request: NextRequest) {
     try {
         // 1. Auth guard — derive driverUserId from authenticated user
-        const auth = await requireStetsonAuth();
+        const auth = await requireStetsonAuth(request);
         if (auth.error) return auth.error;
 
         const driverUserId = auth.user.clerkUserId;

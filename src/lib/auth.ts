@@ -1,5 +1,6 @@
 import { currentUser } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
 
 /**
  * Represents a successfully authenticated and authorized user.
@@ -20,6 +21,63 @@ export type AuthResult =
     | { user: AuthedUser; error?: never }
     | { error: NextResponse; user?: never };
 
+interface AuthRequestContext {
+    request?: Request;
+    method?: string;
+    pathname?: string;
+}
+
+interface RouteMethodPath {
+    method: string;
+    pathname: string;
+}
+
+const ONBOARDING_EXEMPT_ROUTES: readonly RouteMethodPath[] = [
+    { method: "GET", pathname: "/api/me" },
+    { method: "POST", pathname: "/api/user/onboarding" },
+];
+
+function normalizePathname(pathname: string): string {
+    if (pathname.length > 1 && pathname.endsWith("/")) {
+        return pathname.slice(0, -1);
+    }
+    return pathname;
+}
+
+function resolveMethodAndPath(
+    context?: AuthRequestContext
+): { method: string | null; pathname: string | null } {
+    if (context?.request) {
+        try {
+            const url = new URL(context.request.url);
+            return {
+                method: context.request.method.toUpperCase(),
+                pathname: normalizePathname(url.pathname),
+            };
+        } catch {
+            return {
+                method: context.request.method.toUpperCase(),
+                pathname: null,
+            };
+        }
+    }
+
+    return {
+        method: context?.method ? context.method.toUpperCase() : null,
+        pathname: context?.pathname
+            ? normalizePathname(context.pathname)
+            : null,
+    };
+}
+
+function isOnboardingExempt(method: string | null, pathname: string | null): boolean {
+    if (!method || !pathname) return false;
+
+    return ONBOARDING_EXEMPT_ROUTES.some(
+        (route) => route.method === method && route.pathname === pathname
+    );
+}
+
 /**
  * Reusable backend auth guard.
  *
@@ -36,7 +94,9 @@ export type AuthResult =
  * const { clerkUserId, primaryStetsonEmail } = auth.user;
  * ```
  */
-export async function requireStetsonAuth(): Promise<AuthResult> {
+export async function requireStetsonAuth(
+    context?: Request | AuthRequestContext
+): Promise<AuthResult> {
     // Step 1: Check for authenticated Clerk session
     const user = await currentUser();
 
@@ -65,6 +125,30 @@ export async function requireStetsonAuth(): Promise<AuthResult> {
                     error: "Forbidden",
                     message:
                         "Access restricted to verified @stetson.edu email addresses.",
+                },
+                { status: 403 }
+            ),
+        };
+    }
+
+    const authContext: AuthRequestContext =
+        context instanceof Request ? { request: context } : context ?? {};
+    const { method, pathname } = resolveMethodAndPath(authContext);
+    const onboardingExempt = isOnboardingExempt(method, pathname);
+
+    const localUser = await prisma.user.findUnique({
+        where: { clerkUserId: user.id },
+        select: { onboardingComplete: true },
+    });
+
+    if (!onboardingExempt && localUser?.onboardingComplete !== true) {
+        return {
+            error: NextResponse.json(
+                {
+                    error: "Forbidden",
+                    code: "ONBOARDING_REQUIRED",
+                    message:
+                        "Complete onboarding before accessing this endpoint.",
                 },
                 { status: 403 }
             ),
