@@ -135,24 +135,25 @@ export async function requireStetsonAuth(
         context instanceof Request ? { request: context } : context ?? {};
     const { method, pathname } = resolveMethodAndPath(authContext);
     const onboardingExempt = isOnboardingExempt(method, pathname);
+    if (!onboardingExempt) {
+        const localUser = await prisma.user.findUnique({
+            where: { clerkUserId: user.id },
+            select: { onboardingComplete: true },
+        });
 
-    const localUser = await prisma.user.findUnique({
-        where: { clerkUserId: user.id },
-        select: { onboardingComplete: true },
-    });
-
-    if (!onboardingExempt && localUser?.onboardingComplete !== true) {
-        return {
-            error: NextResponse.json(
-                {
-                    error: "Forbidden",
-                    code: "ONBOARDING_REQUIRED",
-                    message:
-                        "Complete onboarding before accessing this endpoint.",
-                },
-                { status: 403 }
-            ),
-        };
+        if (localUser?.onboardingComplete !== true) {
+            return {
+                error: NextResponse.json(
+                    {
+                        error: "Forbidden",
+                        code: "ONBOARDING_REQUIRED",
+                        message:
+                            "Complete onboarding before accessing this endpoint.",
+                    },
+                    { status: 403 }
+                ),
+            };
+        }
     }
 
     // Step 3: Return the authenticated user object

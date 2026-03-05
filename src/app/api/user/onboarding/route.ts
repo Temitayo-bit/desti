@@ -20,6 +20,13 @@ interface ParsedOnboardingBody {
     gender: GenderValue;
 }
 
+const ALLOWED_ONBOARDING_FIELDS = new Set([
+    "name",
+    "age",
+    "yearAtStetson",
+    "gender",
+]);
+
 function validateOnboardingBody(rawBody: unknown): {
     parsed: ParsedOnboardingBody | null;
     issues: ValidationIssue[];
@@ -38,6 +45,15 @@ function validateOnboardingBody(rawBody: unknown): {
 
     const body = rawBody as Record<string, unknown>;
     const issues: ValidationIssue[] = [];
+
+    for (const key of Object.keys(body)) {
+        if (!ALLOWED_ONBOARDING_FIELDS.has(key)) {
+            issues.push({
+                field: key,
+                message: `Unexpected field: ${key}.`,
+            });
+        }
+    }
 
     const rawName = body.name;
     const name = typeof rawName === "string" ? rawName.trim() : "";
@@ -106,107 +122,118 @@ function validateOnboardingBody(rawBody: unknown): {
  * Write-once onboarding profile endpoint for first-time users.
  */
 export async function POST(request: NextRequest) {
-    const auth = await requireStetsonAuth(request);
-    if (auth.error) return auth.error;
-
-    let rawBody: unknown;
     try {
-        rawBody = await request.json();
-    } catch {
+        const auth = await requireStetsonAuth(request);
+        if (auth.error) return auth.error;
+
+        let rawBody: unknown;
+        try {
+            rawBody = await request.json();
+        } catch {
+            return NextResponse.json(
+                {
+                    error: "Bad Request",
+                    message: "Request body must be valid JSON.",
+                },
+                { status: 400 }
+            );
+        }
+
+        const validation = validateOnboardingBody(rawBody);
+        if (!validation.parsed) {
+            return NextResponse.json(
+                {
+                    error: "Bad Request",
+                    message: "Validation failed.",
+                    fieldErrors: validation.issues,
+                },
+                { status: 400 }
+            );
+        }
+
+        const { clerkUserId, primaryStetsonEmail } = auth.user;
+
+        const bootstrappedUser = await prisma.user.upsert({
+            where: { clerkUserId },
+            update: {
+                email: primaryStetsonEmail,
+            },
+            create: {
+                clerkUserId,
+                email: primaryStetsonEmail,
+                onboardingComplete: false,
+            },
+            select: {
+                onboardingComplete: true,
+            },
+        });
+
+        if (bootstrappedUser.onboardingComplete) {
+            return NextResponse.json(
+                {
+                    error: "Conflict",
+                    code: "ONBOARDING_ALREADY_COMPLETED",
+                    message: "Onboarding has already been completed.",
+                },
+                { status: 409 }
+            );
+        }
+
+        const updateResult = await prisma.user.updateMany({
+            where: {
+                clerkUserId,
+                onboardingComplete: false,
+            },
+            data: {
+                name: validation.parsed.name,
+                age: validation.parsed.age,
+                yearAtStetson: validation.parsed.yearAtStetson,
+                gender: validation.parsed.gender,
+                onboardingComplete: true,
+                email: primaryStetsonEmail,
+            },
+        });
+
+        if (updateResult.count === 0) {
+            return NextResponse.json(
+                {
+                    error: "Conflict",
+                    code: "ONBOARDING_ALREADY_COMPLETED",
+                    message: "Onboarding has already been completed.",
+                },
+                { status: 409 }
+            );
+        }
+
+        const localUser = await prisma.user.findUniqueOrThrow({
+            where: { clerkUserId },
+            select: {
+                id: true,
+                clerkUserId: true,
+                email: true,
+                name: true,
+                yearAtStetson: true,
+                gender: true,
+                age: true,
+                onboardingComplete: true,
+                createdAt: true,
+                updatedAt: true,
+            },
+        });
+
+        return NextResponse.json({
+            clerkUserId: localUser.clerkUserId,
+            primaryVerifiedEmail: localUser.email,
+            localUser,
+        });
+    } catch (error) {
+        console.error("[POST /api/user/onboarding] Unexpected error:", error);
         return NextResponse.json(
             {
-                error: "Bad Request",
-                message: "Request body must be valid JSON.",
+                error: "Internal Server Error",
+                message: "An unexpected error occurred.",
             },
-            { status: 400 }
+            { status: 500 }
         );
     }
-
-    const validation = validateOnboardingBody(rawBody);
-    if (!validation.parsed) {
-        return NextResponse.json(
-            {
-                error: "Bad Request",
-                message: "Validation failed.",
-                fieldErrors: validation.issues,
-            },
-            { status: 400 }
-        );
-    }
-
-    const { clerkUserId, primaryStetsonEmail } = auth.user;
-
-    const bootstrappedUser = await prisma.user.upsert({
-        where: { clerkUserId },
-        update: {
-            email: primaryStetsonEmail,
-        },
-        create: {
-            clerkUserId,
-            email: primaryStetsonEmail,
-            onboardingComplete: false,
-        },
-        select: {
-            onboardingComplete: true,
-        },
-    });
-
-    if (bootstrappedUser.onboardingComplete) {
-        return NextResponse.json(
-            {
-                error: "Conflict",
-                code: "ONBOARDING_ALREADY_COMPLETED",
-                message: "Onboarding has already been completed.",
-            },
-            { status: 409 }
-        );
-    }
-
-    const updateResult = await prisma.user.updateMany({
-        where: {
-            clerkUserId,
-            onboardingComplete: false,
-        },
-        data: {
-            name: validation.parsed.name,
-            age: validation.parsed.age,
-            yearAtStetson: validation.parsed.yearAtStetson,
-            gender: validation.parsed.gender,
-            onboardingComplete: true,
-            email: primaryStetsonEmail,
-        },
-    });
-
-    if (updateResult.count === 0) {
-        return NextResponse.json(
-            {
-                error: "Conflict",
-                code: "ONBOARDING_ALREADY_COMPLETED",
-                message: "Onboarding has already been completed.",
-            },
-            { status: 409 }
-        );
-    }
-
-    const localUser = await prisma.user.findUniqueOrThrow({
-        where: { clerkUserId },
-        select: {
-            id: true,
-            clerkUserId: true,
-            email: true,
-            name: true,
-            yearAtStetson: true,
-            gender: true,
-            age: true,
-            onboardingComplete: true,
-            createdAt: true,
-            updatedAt: true,
-        },
-    });
-
-    return NextResponse.json({
-        clerkUserId: localUser.clerkUserId,
-        primaryVerifiedEmail: localUser.email,
-        localUser,
-    });
 }
