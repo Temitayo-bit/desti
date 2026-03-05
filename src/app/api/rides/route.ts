@@ -41,6 +41,11 @@ const rideSummarySelect = {
 
 type RideSummary = Prisma.RideGetPayload<{ select: typeof rideSummarySelect }>;
 
+/**
+ * TODO: Optimize frontend by including the current user's booking status for each ride.
+ * e.g., Return { ...ride, myBookingId: string | null }
+ */
+
 // ── GET /api/rides ───────────────────────────────────────────────────────────
 
 /**
