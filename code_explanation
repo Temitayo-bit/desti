@@ -1,5 +1,49 @@
 # Code Explanation
 
+## First-time Onboarding Gate — Schema + /me (Chat C)
+
+### Overview
+
+Adds the data model and `/me` endpoint changes needed for first-time user onboarding. Users are created with `onboardingComplete=false` and null profile fields. The onboarding POST endpoint and gating middleware are owned by Chat D.
+
+### Files Changed
+
+#### `prisma/schema.prisma` (MODIFIED)
+
+- Added `YearAtStetson` enum (lines 44–49): `FRESHMAN`, `SOPHOMORE`, `JUNIOR`, `SENIOR`.
+- Added `Gender` enum (lines 52–57): `MALE`, `FEMALE`, `OTHER`, `PREFER_NOT_TO_SAY`.
+- Extended `User` model (lines 23–28) with onboarding profile fields:
+  - `name` — nullable `String?`, maps to `name` column. Stores user's display name.
+  - `yearAtStetson` — nullable `YearAtStetson?`, maps to `year_at_stetson`. Academic year classification.
+  - `gender` — nullable `Gender?`. Gender identity selection.
+  - `age` — nullable `Int?`. User's age.
+  - `onboardingComplete` — non-nullable `Boolean`, defaults to `false` at DB level, maps to `onboarding_complete`. Gates access to protected features (enforced by Chat D's middleware).
+
+#### `prisma/migrations/20260305020400_add_onboarding_fields/migration.sql` (NEW)
+
+- Creates `YearAtStetson` PostgreSQL enum with 4 values.
+- Creates `Gender` PostgreSQL enum with 4 values.
+- Alters `users` table to add 5 columns:
+  - `name TEXT` (nullable)
+  - `year_at_stetson "YearAtStetson"` (nullable)
+  - `gender "Gender"` (nullable)
+  - `age INTEGER` (nullable)
+  - `onboarding_complete BOOLEAN NOT NULL DEFAULT false`
+- Non-destructive: all nullable columns + boolean default ensure existing rows are unaffected.
+
+#### `src/app/api/me/route.ts` (MODIFIED)
+
+- Updated response payload in `localUser` object (lines 49–53) to include 5 new fields:
+  - `name: localUser.name` — returns `null` until onboarding completes.
+  - `yearAtStetson: localUser.yearAtStetson` — returns `null` until onboarding completes.
+  - `gender: localUser.gender` — returns `null` until onboarding completes.
+  - `age: localUser.age` — returns `null` until onboarding completes.
+  - `onboardingComplete: localUser.onboardingComplete` — returns `false` for new/non-onboarded users.
+- No changes to auth guard, upsert logic, or bootstrap behavior. The existing upsert creates the user row with DB defaults (null profile fields, `onboardingComplete=false`).
+- Endpoint remains accessible regardless of `onboardingComplete` status (no gating here).
+
+---
+
 ## 2026-03-04 — Minimal Messaging System (MVP 1.5) — Service Layer
 
 ### Overview

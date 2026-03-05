@@ -19,6 +19,14 @@ model User {
   id          String   @id @default(uuid())
   clerkUserId String   @unique @map("clerk_user_id")
   email       String
+
+  // ── Onboarding profile fields (nullable until onboarding completes) ────
+  name               String?        @map("name")
+  yearAtStetson      YearAtStetson?  @map("year_at_stetson")
+  gender             Gender?
+  age                Int?
+  onboardingComplete Boolean        @default(false) @map("onboarding_complete")
+
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
@@ -30,6 +38,22 @@ model User {
   riderOffers   Offer[]       @relation("RiderOffers")
 
   @@map("users")
+}
+
+/// Year classification at Stetson University.
+enum YearAtStetson {
+  FRESHMAN
+  SOPHOMORE
+  JUNIOR
+  SENIOR
+}
+
+/// Gender identity options for onboarding.
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+  PREFER_NOT_TO_SAY
 }
 
 /// Distance category for a ride or trip request.
