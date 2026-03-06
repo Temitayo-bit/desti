@@ -1,0 +1,116 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+    requestChatAnswer,
+    toChatHistory,
+    type ChatWidgetMessage,
+} from "@/lib/chat-widget";
+
+const originalFetch = globalThis.fetch;
+
+describe("chat widget helper", () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    afterEach(() => {
+        globalThis.fetch = originalFetch;
+    });
+
+    it("maps widget messages into API history format", () => {
+        const messages: ChatWidgetMessage[] = [
+            {
+                id: "1",
+                role: "user",
+                content: "How do I post a ride?",
+            },
+            {
+                id: "2",
+                role: "assistant",
+                content: "Use the Post Rides page.",
+            },
+        ];
+
+        expect(toChatHistory(messages)).toEqual([
+            {
+                role: "user",
+                content: "How do I post a ride?",
+            },
+            {
+                role: "assistant",
+                content: "Use the Post Rides page.",
+            },
+        ]);
+    });
+
+    it("posts the current message and history to /api/chat", async () => {
+        const fetchMock = vi.fn().mockResolvedValue({
+            ok: true,
+            json: async () => ({
+                answer: "Open Post Rides from the left navigation.",
+            }),
+        });
+        globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+        const answer = await requestChatAnswer({
+            message: "How do I post a ride?",
+            history: [
+                {
+                    role: "user",
+                    content: "Hi",
+                },
+            ],
+        });
+
+        expect(answer).toBe("Open Post Rides from the left navigation.");
+        expect(fetchMock).toHaveBeenCalledWith(
+            "/api/chat",
+            expect.objectContaining({
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    message: "How do I post a ride?",
+                    history: [
+                        {
+                            role: "user",
+                            content: "Hi",
+                        },
+                    ],
+                }),
+            })
+        );
+    });
+
+    it("surfaces API error payloads", async () => {
+        globalThis.fetch = vi.fn().mockResolvedValue({
+            ok: false,
+            json: async () => ({
+                error: "Model unavailable. Ensure Ollama is running.",
+            }),
+        }) as typeof globalThis.fetch;
+
+        await expect(
+            requestChatAnswer({
+                message: "Hello",
+                history: [],
+            })
+        ).rejects.toThrow("Model unavailable. Ensure Ollama is running.");
+    });
+
+    it("rejects malformed success payloads", async () => {
+        globalThis.fetch = vi.fn().mockResolvedValue({
+            ok: true,
+            json: async () => ({
+                answer: "",
+            }),
+        }) as typeof globalThis.fetch;
+
+        await expect(
+            requestChatAnswer({
+                message: "Hello",
+                history: [],
+            })
+        ).rejects.toThrow("Chat service returned an invalid response.");
+    });
+});
