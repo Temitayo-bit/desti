@@ -4,14 +4,14 @@ import { NextRequest } from "next/server";
 const {
     mockRequireStetsonAuth,
     mockListUserConversations,
-    mockMessageFindFirst,
+    mockMessageFindMany,
     mockUserFindMany,
     mockBookingFindMany,
     mockOfferFindMany,
 } = vi.hoisted(() => ({
     mockRequireStetsonAuth: vi.fn(),
     mockListUserConversations: vi.fn(),
-    mockMessageFindFirst: vi.fn(),
+    mockMessageFindMany: vi.fn(),
     mockUserFindMany: vi.fn(),
     mockBookingFindMany: vi.fn(),
     mockOfferFindMany: vi.fn(),
@@ -34,7 +34,7 @@ vi.mock("@/services/conversationService", async () => {
 vi.mock("@/lib/prisma", () => ({
     prisma: {
         message: {
-            findFirst: (...args: unknown[]) => mockMessageFindFirst(...args),
+            findMany: (...args: unknown[]) => mockMessageFindMany(...args),
         },
         user: {
             findMany: (...args: unknown[]) => mockUserFindMany(...args),
@@ -65,6 +65,7 @@ describe("Conversations List", () => {
         vi.clearAllMocks();
         mockRequireStetsonAuth.mockResolvedValue(authSuccess());
         mockListUserConversations.mockResolvedValue([]);
+        mockMessageFindMany.mockResolvedValue([]);
         mockUserFindMany.mockResolvedValue([]);
         mockBookingFindMany.mockResolvedValue([]);
         mockOfferFindMany.mockResolvedValue([]);
@@ -112,16 +113,15 @@ describe("Conversations List", () => {
                 email: "mike.driver@stetson.edu",
             },
         ]);
-        mockMessageFindFirst
-            .mockResolvedValueOnce({
+        mockMessageFindMany.mockResolvedValue([
+            {
                 id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                 conversationId: c1.id,
                 senderUserId: c1.driverUserId,
                 body: "On my way.",
                 createdAt: new Date("2030-01-01T10:01:00.000Z"),
-            })
-            .mockResolvedValueOnce(null)
-            .mockResolvedValueOnce(null);
+            },
+        ]);
         mockBookingFindMany.mockResolvedValue([
             {
                 id: "booking-1",
@@ -188,7 +188,7 @@ describe("Conversations List", () => {
                 latestMessage: null,
             })
         );
-        expect(mockMessageFindFirst).toHaveBeenCalledTimes(3);
+        expect(mockMessageFindMany).toHaveBeenCalledTimes(1);
         expect(mockUserFindMany).toHaveBeenCalledWith(
             expect.objectContaining({
                 where: {
@@ -247,15 +247,15 @@ describe("Conversations List", () => {
                 email: "john@stetson.edu",
             },
         ]);
-        mockMessageFindFirst
-            .mockResolvedValueOnce(null)
-            .mockResolvedValueOnce({
+        mockMessageFindMany.mockResolvedValue([
+            {
                 id: "msg-1",
                 conversationId: olderWithMessage.id,
                 senderUserId: "user_driver_1",
                 body: "Existing thread message",
                 createdAt: new Date("2030-01-01T10:05:00.000Z"),
-            });
+            },
+        ]);
 
         const items = await listConversationsController("user_rider_1");
 

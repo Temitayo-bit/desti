@@ -17,7 +17,7 @@ const {
     mockConversationFindUnique,
     mockConversationFindFirst,
     mockConversationFindMany,
-    mockMessageFindFirst,
+    mockMessageFindMany,
 } = vi.hoisted(() => ({
     mockRequireStetsonAuth: vi.fn(),
     mockGetOrCreateBookingConversation: vi.fn(),
@@ -29,7 +29,7 @@ const {
     mockConversationFindUnique: vi.fn(),
     mockConversationFindFirst: vi.fn(),
     mockConversationFindMany: vi.fn(),
-    mockMessageFindFirst: vi.fn(),
+    mockMessageFindMany: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({
@@ -69,7 +69,7 @@ vi.mock("@/lib/prisma", () => ({
             findMany: (...args: unknown[]) => mockConversationFindMany(...args),
         },
         message: {
-            findFirst: (...args: unknown[]) => mockMessageFindFirst(...args),
+            findMany: (...args: unknown[]) => mockMessageFindMany(...args),
         },
     },
 }));
@@ -112,7 +112,7 @@ describe("POST /api/conversations/for-booking/:bookingId and /for-offer/:offerId
         mockConversationFindUnique.mockResolvedValue(null);
         mockConversationFindFirst.mockResolvedValue(null);
         mockConversationFindMany.mockResolvedValue([]);
-        mockMessageFindFirst.mockResolvedValue(null);
+        mockMessageFindMany.mockResolvedValue([]);
         mockOfferFindUnique.mockResolvedValue({
             id: "offer-1",
             riderUserId: "user_rider_1",
@@ -275,12 +275,28 @@ describe("POST /api/conversations/for-booking/:bookingId and /for-offer/:offerId
             "offer-accepted-1"
         );
         expect(mockGetOrCreateBookingConversation).not.toHaveBeenCalled();
-        expect(mockConversationFindMany).toHaveBeenCalledTimes(1);
+        expect(mockConversationFindMany).not.toHaveBeenCalled();
         expect(mockConversationFindFirst).toHaveBeenCalledWith(
             expect.objectContaining({
                 where: expect.objectContaining({
                     riderUserId: "user_rider_1",
                     driverUserId: "user_driver_1",
+                    OR: expect.arrayContaining([
+                        expect.objectContaining({
+                            booking: {
+                                is: {
+                                    tripRequestId: "trip-request-1",
+                                },
+                            },
+                        }),
+                        expect.objectContaining({
+                            offer: {
+                                is: {
+                                    tripRequestId: "trip-request-1",
+                                },
+                            },
+                        }),
+                    ]),
                 }),
             })
         );
@@ -319,12 +335,28 @@ describe("POST /api/conversations/for-booking/:bookingId and /for-offer/:offerId
         expect(json.id).toBe(bookingConversation.id);
         expect(mockGetOrCreateOfferConversation).not.toHaveBeenCalled();
         expect(mockGetOrCreateBookingConversation).not.toHaveBeenCalled();
-        expect(mockConversationFindMany).toHaveBeenCalledTimes(1);
+        expect(mockConversationFindMany).not.toHaveBeenCalled();
         expect(mockConversationFindFirst).toHaveBeenCalledWith(
             expect.objectContaining({
                 where: expect.objectContaining({
                     riderUserId: "user_rider_1",
                     driverUserId: "user_driver_1",
+                    OR: expect.arrayContaining([
+                        expect.objectContaining({
+                            booking: {
+                                is: {
+                                    tripRequestId: "trip-request-1",
+                                },
+                            },
+                        }),
+                        expect.objectContaining({
+                            offer: {
+                                is: {
+                                    tripRequestId: "trip-request-1",
+                                },
+                            },
+                        }),
+                    ]),
                 }),
             })
         );
@@ -369,12 +401,28 @@ describe("POST /api/conversations/for-booking/:bookingId and /for-offer/:offerId
         expect(mockGetOrCreateOfferConversation).not.toHaveBeenCalled();
         expect(mockGetOrCreateBookingConversation).not.toHaveBeenCalled();
         expect(mockOfferFindFirst).not.toHaveBeenCalled();
-        expect(mockConversationFindMany).toHaveBeenCalledTimes(1);
+        expect(mockConversationFindMany).not.toHaveBeenCalled();
         expect(mockConversationFindFirst).toHaveBeenCalledWith(
             expect.objectContaining({
                 where: expect.objectContaining({
                     riderUserId: "user_rider_1",
                     driverUserId: "user_driver_1",
+                    OR: expect.arrayContaining([
+                        expect.objectContaining({
+                            booking: {
+                                is: {
+                                    tripRequestId: "trip-request-1",
+                                },
+                            },
+                        }),
+                        expect.objectContaining({
+                            offer: {
+                                is: {
+                                    tripRequestId: "trip-request-1",
+                                },
+                            },
+                        }),
+                    ]),
                 }),
             })
         );

@@ -16,26 +16,26 @@ datasource db {
 
 /// Local user record — linked to Clerk via clerkUserId.
 model User {
-  id          String   @id @default(uuid())
-  clerkUserId String   @unique @map("clerk_user_id")
+  id          String @id @default(uuid())
+  clerkUserId String @unique @map("clerk_user_id")
   email       String
 
   // ── Onboarding profile fields (nullable until onboarding completes) ────
   name               String?        @map("name")
-  yearAtStetson      YearAtStetson?  @map("year_at_stetson")
+  yearAtStetson      YearAtStetson? @map("year_at_stetson")
   gender             Gender?
   age                Int?
   onboardingComplete Boolean        @default(false) @map("onboarding_complete")
 
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   rides        Ride[]        @relation("DriverRides")
   tripRequests TripRequest[] @relation("RiderTripRequests")
   bookings     Booking[]
 
-  driverOffers  Offer[]       @relation("DriverOffers")
-  riderOffers   Offer[]       @relation("RiderOffers")
+  driverOffers Offer[] @relation("DriverOffers")
+  riderOffers  Offer[] @relation("RiderOffers")
 
   @@map("users")
 }
@@ -83,23 +83,22 @@ enum BookingStatus {
 
 /// Discriminator for the idempotency key table.
 
-
 /// A trip request posted by a rider.
 model TripRequest {
-  id               String            @id @default(uuid())
-  riderUserId      String            @map("rider_user_id")
-  originText       String            @map("origin_text")
-  destinationText  String            @map("destination_text")
-  earliestDesiredAt DateTime         @map("earliest_desired_at")
-  latestDesiredAt   DateTime         @map("latest_desired_at")
-  distanceCategory DistanceCategory  @map("distance_category")
-  seatsNeeded      Int               @map("seats_needed")
-  pickupInstructions   String?           @map("pickup_instructions")
-  dropoffInstructions  String?           @map("dropoff_instructions")
-  preferredDepartAt    DateTime?         @map("preferred_depart_at")
-  status               TripRequestStatus @default(ACTIVE)
-  createdAt        DateTime          @default(now()) @map("created_at")
-  updatedAt        DateTime          @updatedAt @map("updated_at")
+  id                  String            @id @default(uuid())
+  riderUserId         String            @map("rider_user_id")
+  originText          String            @map("origin_text")
+  destinationText     String            @map("destination_text")
+  earliestDesiredAt   DateTime          @map("earliest_desired_at")
+  latestDesiredAt     DateTime          @map("latest_desired_at")
+  distanceCategory    DistanceCategory  @map("distance_category")
+  seatsNeeded         Int               @map("seats_needed")
+  pickupInstructions  String?           @map("pickup_instructions")
+  dropoffInstructions String?           @map("dropoff_instructions")
+  preferredDepartAt   DateTime?         @map("preferred_depart_at")
+  status              TripRequestStatus @default(ACTIVE)
+  createdAt           DateTime          @default(now()) @map("created_at")
+  updatedAt           DateTime          @updatedAt @map("updated_at")
 
   rider           User             @relation("RiderTripRequests", fields: [riderUserId], references: [clerkUserId])
   idempotencyKeys IdempotencyKey[]
@@ -141,22 +140,22 @@ enum IdempotencyEntityType {
 
 /// A ride offered by a driver.
 model Ride {
-  id               String           @id @default(uuid())
-  driverUserId     String           @map("driver_user_id")
-  originText       String           @map("origin_text")
-  destinationText  String           @map("destination_text")
-  earliestDepartAt DateTime         @map("earliest_depart_at")
-  latestDepartAt   DateTime         @map("latest_depart_at")
-  distanceCategory DistanceCategory @map("distance_category")
-  priceCents       Int              @map("price_cents")
-  seatsTotal       Int              @map("seats_total")
-  seatsAvailable   Int              @map("seats_available")
-  pickupInstructions   String?          @map("pickup_instructions")
-  dropoffInstructions  String?          @map("dropoff_instructions")
-  preferredDepartAt    DateTime?        @map("preferred_depart_at")
-  status               RideStatus       @default(ACTIVE)
-  createdAt        DateTime         @default(now()) @map("created_at")
-  updatedAt        DateTime         @updatedAt @map("updated_at")
+  id                  String           @id @default(uuid())
+  driverUserId        String           @map("driver_user_id")
+  originText          String           @map("origin_text")
+  destinationText     String           @map("destination_text")
+  earliestDepartAt    DateTime         @map("earliest_depart_at")
+  latestDepartAt      DateTime         @map("latest_depart_at")
+  distanceCategory    DistanceCategory @map("distance_category")
+  priceCents          Int              @map("price_cents")
+  seatsTotal          Int              @map("seats_total")
+  seatsAvailable      Int              @map("seats_available")
+  pickupInstructions  String?          @map("pickup_instructions")
+  dropoffInstructions String?          @map("dropoff_instructions")
+  preferredDepartAt   DateTime?        @map("preferred_depart_at")
+  status              RideStatus       @default(ACTIVE)
+  createdAt           DateTime         @default(now()) @map("created_at")
+  updatedAt           DateTime         @updatedAt @map("updated_at")
 
   driver          User             @relation("DriverRides", fields: [driverUserId], references: [clerkUserId])
   bookings        Booking[]
@@ -166,34 +165,31 @@ model Ride {
   @@map("rides")
 }
 
-
-
 /// A booking made by a rider for a ride.
 model Booking {
-  id           String        @id @default(uuid())
-  rideId       String?       @map("ride_id")
-  tripRequestId String?      @map("trip_request_id")
-  driverUserId String?       @map("driver_user_id")
-  riderUserId  String        @map("rider_user_id")
-  seatsBooked  Int           @map("seats_booked")
-  priceCents   Int?          @map("price_cents")
-  status       BookingStatus @default(CONFIRMED)
-  createdAt    DateTime      @default(now()) @map("created_at")
-  updatedAt    DateTime      @updatedAt @map("updated_at")
+  id            String        @id @default(uuid())
+  rideId        String?       @map("ride_id")
+  tripRequestId String?       @map("trip_request_id")
+  driverUserId  String?       @map("driver_user_id")
+  riderUserId   String        @map("rider_user_id")
+  seatsBooked   Int           @map("seats_booked")
+  priceCents    Int?          @map("price_cents")
+  status        BookingStatus @default(CONFIRMED)
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
 
-  ride        Ride?        @relation(fields: [rideId], references: [id])
-  tripRequest TripRequest? @relation(fields: [tripRequestId], references: [id])
-  rider       User         @relation(fields: [riderUserId], references: [clerkUserId])
+  ride            Ride?            @relation(fields: [rideId], references: [id])
+  tripRequest     TripRequest?     @relation(fields: [tripRequestId], references: [id])
+  rider           User             @relation(fields: [riderUserId], references: [clerkUserId])
   idempotencyKeys IdempotencyKey[]
   conversation    Conversation?
 
   // Partial unique index `UNIQUE(rideId, riderUserId) WHERE status = 'CONFIRMED'` 
   // will be added via migration SQL.
   @@index([riderUserId, status, createdAt])
+  @@index([tripRequestId, status, createdAt, id])
   @@map("bookings")
 }
-
-
 
 /// Offer status.
 enum OfferStatus {
@@ -255,11 +251,11 @@ model Conversation {
 
 /// A single message within a conversation.
 model Message {
-  id             String       @id @default(uuid())
-  conversationId String       @map("conversation_id")
-  senderUserId   String       @map("sender_user_id")
+  id             String   @id @default(uuid())
+  conversationId String   @map("conversation_id")
+  senderUserId   String   @map("sender_user_id")
   body           String
-  createdAt      DateTime     @default(now()) @map("created_at")
+  createdAt      DateTime @default(now()) @map("created_at")
 
   conversation Conversation @relation(fields: [conversationId], references: [id])
 
