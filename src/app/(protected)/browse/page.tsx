@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { format } from "date-fns";
 import type { DistanceCategory } from "@prisma/client";
@@ -99,6 +99,8 @@ export default function BrowseRidesPage() {
   const [successState, setSuccessState] = useState<"booking" | "edit" | null>(null);
   const [selectedSeats, setSelectedSeats] = useState(1);
   const [userBookings, setUserBookings] = useState<Record<string, string>>({}); // rideId -> bookingId
+  const closeRideDialogButtonRef = useRef<HTMLButtonElement | null>(null);
+  const lastFocusedElementRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -186,6 +188,14 @@ export default function BrowseRidesPage() {
     }
   }, [selectedRide, selectedSeats]);
 
+  useEffect(() => {
+    if (!selectedRide) return;
+
+    window.requestAnimationFrame(() => {
+      closeRideDialogButtonRef.current?.focus();
+    });
+  }, [selectedRide]);
+
   // Filter rides based on search query (client-side as requested if no API)
   const filteredRides = rides.filter((ride) => {
     const matchesSearch = ride.destinationText.toLowerCase().includes(searchQuery.toLowerCase());
@@ -230,6 +240,22 @@ export default function BrowseRidesPage() {
 
   const toTitleCase = (str: string) => {
     return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+  };
+
+  const closeRideModal = () => {
+    setSelectedRide(null);
+    setSuccessState(null);
+    setSelectedSeats(1);
+    setIsEditing(false);
+    setEditFormData({});
+
+    const previouslyFocusedElement = lastFocusedElementRef.current;
+    if (previouslyFocusedElement) {
+      window.requestAnimationFrame(() => {
+        previouslyFocusedElement.focus();
+      });
+    }
+    lastFocusedElementRef.current = null;
   };
 
   const handleBookRide = async (rideId: string) => {
@@ -279,8 +305,7 @@ export default function BrowseRidesPage() {
         );
         setSuccessState("booking");
         setTimeout(() => {
-          setSelectedRide(null);
-          setSuccessState(null);
+          closeRideModal();
         }, 2500);
         // In a real app we'd refresh the rides list here
       } else {
@@ -341,7 +366,7 @@ export default function BrowseRidesPage() {
         if (res.ok) {
           alert("Ride cancelled successfully.");
           setRides((prev) => prev.filter((r) => r.id !== rideId));
-          setSelectedRide(null);
+          closeRideModal();
         } else if (res.status === 501) {
           alert("Cancellation not implemented on server.");
         } else {
@@ -369,14 +394,18 @@ export default function BrowseRidesPage() {
   const handleEditSubmit = async () => {
     if (!selectedRide) return;
 
-    const parsedPriceDollars =
-      editFormData.priceDollars !== undefined
-        ? Number(editFormData.priceDollars)
-        : NaN;
+    const normalizedPriceInput = editFormData.priceDollars?.trim() ?? "";
+    if (normalizedPriceInput.length === 0) {
+      alert("Price/Seat is required.");
+      return;
+    }
+
+    const parsedPriceDollars = Number(normalizedPriceInput);
     if (!Number.isFinite(parsedPriceDollars) || parsedPriceDollars < 0) {
       alert("Price/Seat must be a valid non-negative dollar amount.");
       return;
     }
+    const parsedPriceCents = Math.round(parsedPriceDollars * 100);
 
     try {
       setSubmitting(true);
@@ -389,7 +418,7 @@ export default function BrowseRidesPage() {
           earliestDepartAt: editFormData.earliestDepartAt ? new Date(editFormData.earliestDepartAt).toISOString() : undefined,
           latestDepartAt: editFormData.latestDepartAt ? new Date(editFormData.latestDepartAt).toISOString() : undefined,
           seatsTotal: editFormData.seatsTotal,
-          priceCents: Math.round(parsedPriceDollars * 100),
+          priceCents: parsedPriceCents,
         })
       });
 
@@ -406,8 +435,7 @@ export default function BrowseRidesPage() {
       setIsEditing(false);
       setSuccessState("edit");
       setTimeout(() => {
-        setSelectedRide(null);
-        setSuccessState(null);
+        closeRideModal();
       }, 2500);
 
     } catch (err: unknown) {
@@ -518,6 +546,9 @@ export default function BrowseRidesPage() {
                     type="button"
                     key={ride.id}
                     onClick={() => {
+                      const activeElement = document.activeElement;
+                      lastFocusedElementRef.current =
+                        activeElement instanceof HTMLElement ? activeElement : null;
                       setSelectedRide(ride);
                       setSelectedSeats(ride.seatsAvailable > 0 ? 1 : 0);
                     }}
@@ -571,18 +602,16 @@ export default function BrowseRidesPage() {
       {selectedRide && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/40 backdrop-blur-sm">
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="rideDetailsTitle"
             className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col relative"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="p-6 md:p-8 flex-1">
               <button
-                onClick={() => {
-                  setSelectedRide(null);
-                  setSuccessState(null);
-                  setSelectedSeats(1);
-                  setIsEditing(false);
-                  setEditFormData({});
-                }}
+                ref={closeRideDialogButtonRef}
+                onClick={closeRideModal}
                 aria-label="Close ride details"
                 className="absolute top-6 right-6 p-2 text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 rounded-full transition-colors z-10"
               >
@@ -613,7 +642,7 @@ export default function BrowseRidesPage() {
                         <motion.polyline points="20 6 9 17 4 12" />
                       </motion.svg>
                     </motion.div>
-                    <h2 className="text-3xl font-bold text-zinc-900">
+                    <h2 id="rideDetailsTitle" className="text-3xl font-bold text-zinc-900">
                       {successState === "edit" ? "Ride Updated!" : "Ride Confirmed!"}
                     </h2>
                     <p className="text-zinc-500 max-w-sm">
@@ -624,7 +653,7 @@ export default function BrowseRidesPage() {
                   </motion.div>
                 ) : isEditing ? (
                   <motion.div key="edit" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                    <h2 className="text-2xl font-bold mb-8 pr-12 text-zinc-900">Edit Ride</h2>
+                    <h2 id="rideDetailsTitle" className="text-2xl font-bold mb-8 pr-12 text-zinc-900">Edit Ride</h2>
                     {/* --- EDIT MODE --- */}
                     <div className="space-y-6">
                       {/* Origin & Destination */}
@@ -744,7 +773,7 @@ export default function BrowseRidesPage() {
                   </motion.div>
                 ) : (
                   <motion.div key="view" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                    <h2 className="text-2xl font-bold mb-8 pr-12 text-zinc-900">Ride Details</h2>
+                    <h2 id="rideDetailsTitle" className="text-2xl font-bold mb-8 pr-12 text-zinc-900">Ride Details</h2>
                     {/* --- VIEW MODE --- */}
                     <div className="space-y-6">
                       {/* Origin & Destination */}
