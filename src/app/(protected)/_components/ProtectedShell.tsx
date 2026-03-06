@@ -84,6 +84,14 @@ export function ProtectedShell({ activeNav, children }: ProtectedShellProps) {
             </Link>
             <div className={placeholderNavLinkClass()} tabIndex={-1} aria-disabled="true">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M2 12h20" />
+                <path d="m12 2 4 4-4 4" />
+                <path d="m12 14-4 4 4 4" />
+              </svg>
+              Browse TripRequests
+            </div>
+            <div className={placeholderNavLinkClass()} tabIndex={-1} aria-disabled="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 3v18" />
                 <path d="M3 12h18" />
               </svg>
@@ -97,7 +105,7 @@ export function ProtectedShell({ activeNav, children }: ProtectedShellProps) {
               </svg>
               Post Rides
             </Link>
-            <div className={placeholderNavLinkClass()} tabIndex={-1} aria-disabled="true">
+            <Link href="/post-trip-request" className={navLinkClass(activeNav === "postTripRequest")}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                 <polyline points="14 2 14 8 20 8" />
@@ -106,7 +114,7 @@ export function ProtectedShell({ activeNav, children }: ProtectedShellProps) {
                 <polyline points="10 9 9 9 8 9" />
               </svg>
               Post TripRequest
-            </div>
+            </Link>
             <div className={placeholderNavLinkClass()} tabIndex={-1} aria-disabled="true">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M8 2v4" />
