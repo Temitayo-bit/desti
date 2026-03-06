@@ -15,6 +15,7 @@ describe("dashboard helpers", () => {
             driverUserId: null,
             status: "CONFIRMED",
             seatsBooked: 2,
+            priceCents: 2500,
             createdAt: "2026-03-05T12:00:00.000Z",
             ride: {
                 id: "ride-1",
@@ -44,13 +45,14 @@ describe("dashboard helpers", () => {
         expect(normalized.driverName).toBeNull();
     });
 
-    it("normalizes trip-request bookings with graceful price fallback", () => {
+    it("normalizes trip-request bookings with booking-level price", () => {
         const booking: DashboardBookingItem = {
             id: "booking-trip",
             riderUserId: "rider-2",
             driverUserId: "driver-2",
             status: "CONFIRMED",
             seatsBooked: 1,
+            priceCents: 3000,
             createdAt: "2026-03-05T12:00:00.000Z",
             tripRequest: {
                 id: "trip-1",
@@ -70,7 +72,7 @@ describe("dashboard helpers", () => {
         expect(normalized.destinationText).toBe("Jacksonville");
         expect(normalized.startsAt).toBe("2026-03-14T19:00:00.000Z");
         expect(normalized.endsAt).toBe("2026-03-14T21:00:00.000Z");
-        expect(normalized.priceCents).toBeNull();
+        expect(normalized.priceCents).toBe(3000);
         expect(normalized.riderUserId).toBe("rider-2");
         expect(normalized.driverUserId).toBe("driver-2");
         expect(normalized.totalSeatsBooked).toBe(1);
@@ -84,13 +86,13 @@ describe("dashboard helpers", () => {
             driverUserId: "driver-9",
             status: "CONFIRMED" as const,
             seatsBooked: 1,
+            priceCents: 1000,
             totalSeatsBooked: 3,
             originText: "A",
             destinationText: "B",
             startsAt: "2026-03-10T13:00:00.000Z",
             endsAt: "2026-03-10T15:00:00.000Z",
             distanceCategory: "SHORT" as const,
-            priceCents: 1000,
             driverName: null,
         };
 

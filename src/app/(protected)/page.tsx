@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
 import { X } from "lucide-react";
 import { ProtectedShell } from "./_components/ProtectedShell";
@@ -129,7 +129,7 @@ const CarIcon = () => (
 
 function formatPrice(priceCents: number | null): string | null {
   if (priceCents === null) return null;
-  return `$ ${Math.round(priceCents / 100)}`;
+  return `$ ${(priceCents / 100).toFixed(2)}`;
 }
 
 function formatTimeRange(startIso: string, endIso: string): string {
@@ -222,7 +222,7 @@ function OfferCard({
             {formatRelativeTime(offer.createdAt)}
           </p>
         </div>
-        <p className="text-2xl font-bold tracking-tight text-emerald-600">$ {Math.round(offer.priceCents / 100)}</p>
+        <p className="text-2xl font-bold tracking-tight text-emerald-600">{formatPrice(offer.priceCents)}</p>
       </div>
 
       {children}
@@ -239,6 +239,8 @@ export default function DashboardPage() {
   const [selectedTrip, setSelectedTrip] = useState<NormalizedDashboardBooking | null>(null);
   const [actionNotice, setActionNotice] = useState<ActionNotice>(null);
   const [pendingActions, setPendingActions] = useState<Record<string, string>>({});
+  const tripDialogRef = useRef<HTMLDivElement | null>(null);
+  const closeTripButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const refreshDashboard = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent ?? false;
@@ -297,6 +299,14 @@ export default function DashboardPage() {
     void fetchViewer();
     return () => controller.abort();
   }, []);
+
+  useEffect(() => {
+    if (!selectedTrip) return;
+    closeTripButtonRef.current?.focus();
+    if (!closeTripButtonRef.current) {
+      tripDialogRef.current?.focus();
+    }
+  }, [selectedTrip]);
 
   async function runOfferAction(
     offerId: string,
@@ -590,18 +600,24 @@ export default function DashboardPage() {
           <div
             className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col relative"
             onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="trip-details-title"
+            tabIndex={-1}
+            ref={tripDialogRef}
           >
             <div className="p-6 md:p-8 flex-1">
               <button
                 onClick={() => setSelectedTrip(null)}
                 aria-label="Close trip details"
                 className="absolute top-6 right-6 p-2 text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 rounded-full transition-colors z-10"
+                ref={closeTripButtonRef}
               >
                 <X size={20} />
               </button>
 
               <div className="mb-8 pr-12 flex items-center justify-between gap-3">
-                <h2 className="text-2xl font-bold text-zinc-900">Trip Details</h2>
+                <h2 id="trip-details-title" className="text-2xl font-bold text-zinc-900">Trip Details</h2>
                 <span className="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-blue-700">
                   CONFIRMED
                 </span>
@@ -661,9 +677,7 @@ export default function DashboardPage() {
                       <span className="font-bold text-lg leading-none">$</span> Price
                     </div>
                     <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-4 text-zinc-800 font-medium text-lg">
-                      {selectedTrip.priceCents !== null
-                        ? `$${(selectedTrip.priceCents / 100).toFixed(2)}`
-                        : "TBD"}
+                      {formatPrice(selectedTrip.priceCents) ?? "TBD"}
                     </div>
                   </div>
                 </div>

@@ -47,6 +47,7 @@ export interface DashboardBookingBase {
     driverUserId: string | null;
     status: "CONFIRMED" | "CANCELLED";
     seatsBooked: number;
+    priceCents: number | null;
     createdAt: string;
 }
 
@@ -128,7 +129,7 @@ export function normalizeDashboardBooking(booking: DashboardBookingItem): Normal
             startsAt: booking.ride.earliestDepartAt,
             endsAt: booking.ride.latestDepartAt,
             distanceCategory: booking.ride.distanceCategory,
-            priceCents: booking.ride.priceCents,
+            priceCents: booking.priceCents ?? booking.ride.priceCents,
             // TODO: Include driver name in GET /api/dashboard bookings payload from users table.
             driverName: null,
         };
@@ -146,8 +147,7 @@ export function normalizeDashboardBooking(booking: DashboardBookingItem): Normal
         startsAt: booking.tripRequest.earliestDesiredAt,
         endsAt: booking.tripRequest.latestDesiredAt,
         distanceCategory: booking.tripRequest.distanceCategory,
-        // TODO: Include guaranteed booking price in GET /api/dashboard trip-request booking payload.
-        priceCents: null,
+        priceCents: booking.priceCents,
         // TODO: Include driver name in GET /api/dashboard bookings payload from users table.
         driverName: null,
     };

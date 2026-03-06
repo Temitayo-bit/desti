@@ -94,6 +94,8 @@ export default function BrowseRidesPage() {
   const [activeFilter, setActiveFilter] = useState<string>("All");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [bookingInProgress, setBookingInProgress] = useState(false);
+  const [bookingIdempotencyKey, setBookingIdempotencyKey] = useState<string | null>(null);
   const [successState, setSuccessState] = useState<"booking" | "edit" | null>(null);
   const [selectedSeats, setSelectedSeats] = useState(1);
   const [userBookings, setUserBookings] = useState<Record<string, string>>({}); // rideId -> bookingId
@@ -231,23 +233,28 @@ export default function BrowseRidesPage() {
   };
 
   const handleBookRide = async (rideId: string) => {
+    if (bookingInProgress) return;
+
+    const rideForBooking = rides.find((r) => r.id === rideId) ?? selectedRide;
+    if (!rideForBooking || rideForBooking.seatsAvailable <= 0) {
+      alert("No seats available for this ride.");
+      return;
+    }
+
+    const seatsToBook = Math.min(
+      Math.max(selectedSeats, 1),
+      rideForBooking.seatsAvailable
+    );
+    const idempotencyKey = crypto.randomUUID();
+    setBookingInProgress(true);
+    setBookingIdempotencyKey(idempotencyKey);
+
     try {
-      const rideForBooking = rides.find((r) => r.id === rideId) ?? selectedRide;
-      if (!rideForBooking || rideForBooking.seatsAvailable <= 0) {
-        alert("No seats available for this ride.");
-        return;
-      }
-
-      const seatsToBook = Math.min(
-        Math.max(selectedSeats, 1),
-        rideForBooking.seatsAvailable
-      );
-
       const res = await fetch("/api/bookings", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Idempotency-Key": crypto.randomUUID(),
+          "Idempotency-Key": idempotencyKey,
         },
         body: JSON.stringify({
           rideId: rideId,
@@ -282,6 +289,9 @@ export default function BrowseRidesPage() {
       }
     } catch (err: unknown) {
       alert(`Error booking ride: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setBookingInProgress(false);
+      setBookingIdempotencyKey(null);
     }
   };
 
@@ -453,12 +463,18 @@ export default function BrowseRidesPage() {
                   {filterOpt}
                 </button>
               ))}
-              {/* TODO: Implement advanced filtering functionality
+              {/* TODO: Implement Advanced Filters button state (showAdvancedFilters)
+                  and integrate advancedFilters selections into filteredRides logic.
                   - Add modal/dropdown for advanced filter options
                   - Include filters for: price range, specific departure times, distance category combinations
                   - Add state management for advanced filter selections
                   - Update filteredRides logic to apply advanced filters */}
-              <button className="px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap bg-white border border-emerald-800 text-emerald-800 hover:bg-emerald-50 transition-colors flex items-center gap-2">
+              <button
+                type="button"
+                disabled
+                aria-disabled="true"
+                className="px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap bg-zinc-100 border border-zinc-300 text-zinc-400 cursor-not-allowed transition-colors flex items-center gap-2"
+              >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg>
                 Advanced Filters
               </button>
@@ -881,9 +897,10 @@ export default function BrowseRidesPage() {
                               }
                               handleBookRide(selectedRide.id);
                             }}
-                            className="px-8 py-2.5 bg-emerald-800 hover:bg-emerald-900 text-white font-medium rounded-xl shadow-sm transition-colors text-lg whitespace-nowrap"
+                            disabled={bookingInProgress}
+                            className="px-8 py-2.5 bg-emerald-800 hover:bg-emerald-900 text-white font-medium rounded-xl shadow-sm transition-colors text-lg whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed"
                           >
-                            Book Ride
+                            {bookingInProgress && bookingIdempotencyKey ? "Booking..." : "Book Ride"}
                           </button>
                         </div>
                       )}
