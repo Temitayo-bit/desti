@@ -214,6 +214,9 @@ function formatPrice(priceCents: number): string {
   return `$${(priceCents / 100).toFixed(2)}`;
 }
 
+const FOCUSABLE_SELECTOR =
+  'a[href], area[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), iframe, object, embed, [contenteditable="true"], [tabindex]:not([tabindex="-1"])';
+
 async function fetchMyTripRequests(
   signal?: AbortSignal,
 ): Promise<TripRequestSummary[]> {
@@ -271,6 +274,7 @@ export default function MyTripRequestsPage() {
   const [activeFilter, setActiveFilter] =
     useState<MyTripRequestsQuickFilter>("All");
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<Error | null>(null);
   const [refreshingData, setRefreshingData] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [pendingOfferActions, setPendingOfferActions] =
@@ -278,11 +282,13 @@ export default function MyTripRequestsPage() {
   const [actionNotice, setActionNotice] = useState<ActionNotice>(null);
   const [successState, setSuccessState] = useState<"edit" | null>(null);
   const closeTripRequestDialogButtonRef = useRef<HTMLButtonElement | null>(null);
+  const tripRequestDialogRef = useRef<HTMLDivElement | null>(null);
   const lastFocusedElementRef = useRef<HTMLElement | null>(null);
 
   const loadPageData = useCallback(
     async (options?: { signal?: AbortSignal; silent?: boolean }) => {
       const { signal, silent = false } = options ?? {};
+      setLoadError(null);
 
       if (silent) {
         setRefreshingData(true);
@@ -307,10 +313,16 @@ export default function MyTripRequestsPage() {
             null
           );
         });
+        setLoadError(null);
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") {
           return;
         }
+        setLoadError(
+          error instanceof Error
+            ? error
+            : new Error("Failed to load trip request data."),
+        );
         console.error("Error loading my trip requests data:", error);
       } finally {
         if (!signal?.aborted) {
@@ -330,14 +342,6 @@ export default function MyTripRequestsPage() {
     void loadPageData({ signal: controller.signal });
     return () => controller.abort();
   }, [loadPageData]);
-
-  useEffect(() => {
-    if (!selectedTripRequest) return;
-
-    window.requestAnimationFrame(() => {
-      closeTripRequestDialogButtonRef.current?.focus();
-    });
-  }, [selectedTripRequest]);
 
   useEffect(() => {
     if (!actionNotice) {
@@ -389,7 +393,7 @@ export default function MyTripRequestsPage() {
     return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
   };
 
-  const closeTripRequestModal = () => {
+  const closeTripRequestModal = useCallback(() => {
     setSelectedTripRequest(null);
     setSuccessState(null);
     setIsEditing(false);
@@ -397,7 +401,6 @@ export default function MyTripRequestsPage() {
     setEditFieldErrors({});
     setEditSubmitError(null);
     setActionNotice(null);
-    setPendingOfferActions({});
 
     const previouslyFocusedElement = lastFocusedElementRef.current;
     if (previouslyFocusedElement) {
@@ -406,7 +409,75 @@ export default function MyTripRequestsPage() {
       });
     }
     lastFocusedElementRef.current = null;
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedTripRequest) return;
+
+    function getFocusableElements(): HTMLElement[] {
+      const dialog = tripRequestDialogRef.current;
+      if (!dialog) return [];
+
+      return Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
+    }
+
+    window.requestAnimationFrame(() => {
+      const focusable = getFocusableElements();
+      if (focusable.length > 0) {
+        focusable[0].focus();
+      } else {
+        tripRequestDialogRef.current?.focus();
+      }
+    });
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeTripRequestModal();
+        return;
+      }
+
+      if (event.key !== "Tab") {
+        return;
+      }
+
+      const dialog = tripRequestDialogRef.current;
+      if (!dialog) {
+        return;
+      }
+
+      const focusable = getFocusableElements();
+      if (focusable.length === 0) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+
+      const firstFocusable = focusable[0];
+      const lastFocusable = focusable[focusable.length - 1];
+      const activeElement = document.activeElement;
+      const isInsideDialog =
+        activeElement instanceof HTMLElement && dialog.contains(activeElement);
+
+      if (event.shiftKey) {
+        if (!isInsideDialog || activeElement === firstFocusable) {
+          event.preventDefault();
+          lastFocusable.focus();
+        }
+        return;
+      }
+
+      if (!isInsideDialog || activeElement === lastFocusable) {
+        event.preventDefault();
+        firstFocusable.focus();
+      }
+    }
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [selectedTripRequest, closeTripRequestModal]);
 
   const startEditing = () => {
     if (!selectedTripRequest || selectedTripRequest.status !== "ACTIVE") return;
@@ -695,6 +766,39 @@ export default function MyTripRequestsPage() {
                 ></div>
               ))}
             </div>
+          ) : loadError ? (
+            <div className="text-center py-16 px-4">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="text-red-500"
+                >
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="12" y1="8" x2="12" y2="12"></line>
+                  <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+              </div>
+              <h3 className="text-lg font-bold text-zinc-900 mb-1">
+                Unable to load trip requests
+              </h3>
+              <p className="text-zinc-500 max-w-sm mx-auto">
+                {loadError.message || "Something went wrong while loading your data."}
+              </p>
+              <button
+                type="button"
+                onClick={() => void loadPageData()}
+                className="mt-4 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white px-5 py-2.5 font-medium transition-colors"
+              >
+                Retry
+              </button>
+            </div>
           ) : filteredTripRequests.length === 0 ? (
             <div className="text-center py-16 px-4">
               <div className="w-16 h-16 bg-zinc-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -885,6 +989,8 @@ export default function MyTripRequestsPage() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="tripRequestDetailsTitle"
+            ref={tripRequestDialogRef}
+            tabIndex={-1}
             className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col relative"
             onClick={(event) => event.stopPropagation()}
           >
