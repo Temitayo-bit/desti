@@ -21,6 +21,7 @@ const rideSummarySelect = {
 
 const rideInBookingSelect = {
     id: true,
+    driverUserId: true,
     originText: true,
     destinationText: true,
     earliestDepartAt: true,
@@ -28,6 +29,8 @@ const rideInBookingSelect = {
     preferredDepartAt: true,
     distanceCategory: true,
     priceCents: true,
+    seatsTotal: true,
+    seatsAvailable: true,
     status: true,
 } satisfies Prisma.RideSelect;
 
@@ -121,25 +124,36 @@ export async function GET(request?: NextRequest) {
             // ── Confirmed ride-based bookings: count ─────────────────────
             prisma.booking.count({
                 where: {
-                    riderUserId: userId,
                     status: "CONFIRMED",
                     rideId: { not: null },
                     ride: { latestDepartAt: { gt: now } },
+                    OR: [
+                        { riderUserId: userId },
+                        // Include driver-side confirmations for ride bookings.
+                        { ride: { driverUserId: userId } },
+                    ],
                 },
             }),
 
             // ── Confirmed ride-based bookings: list (max 5) ──────────────
             prisma.booking.findMany({
                 where: {
-                    riderUserId: userId,
                     status: "CONFIRMED",
                     rideId: { not: null },
                     ride: { latestDepartAt: { gt: now } },
+                    OR: [
+                        { riderUserId: userId },
+                        // Include driver-side confirmations for ride bookings.
+                        { ride: { driverUserId: userId } },
+                    ],
                 },
                 select: {
                     id: true,
+                    riderUserId: true,
+                    driverUserId: true,
                     status: true,
                     seatsBooked: true,
+                    priceCents: true,
                     createdAt: true,
                     ride: { select: rideInBookingSelect },
                 },
@@ -153,25 +167,36 @@ export async function GET(request?: NextRequest) {
             // ── Confirmed triprequest-based bookings: count ──────────────
             prisma.booking.count({
                 where: {
-                    riderUserId: userId,
                     status: "CONFIRMED",
                     tripRequestId: { not: null },
                     tripRequest: { latestDesiredAt: { gt: now } },
+                    OR: [
+                        { riderUserId: userId },
+                        // Include driver-side confirmations for offer->booking flows.
+                        { driverUserId: userId },
+                    ],
                 },
             }),
 
             // ── Confirmed triprequest-based bookings: list (max 5) ───────
             prisma.booking.findMany({
                 where: {
-                    riderUserId: userId,
                     status: "CONFIRMED",
                     tripRequestId: { not: null },
                     tripRequest: { latestDesiredAt: { gt: now } },
+                    OR: [
+                        { riderUserId: userId },
+                        // Include driver-side confirmations for offer->booking flows.
+                        { driverUserId: userId },
+                    ],
                 },
                 select: {
                     id: true,
+                    riderUserId: true,
+                    driverUserId: true,
                     status: true,
                     seatsBooked: true,
+                    priceCents: true,
                     createdAt: true,
                     tripRequest: { select: tripRequestSummarySelect },
                 },

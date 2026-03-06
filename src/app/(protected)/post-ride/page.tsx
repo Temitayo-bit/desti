@@ -98,7 +98,6 @@ export default function PostRidePage() {
     }
 
     const timeoutId = window.setTimeout(() => {
-      // TODO: Redirect to dashboard once dashboard landing flow is implemented.
       router.push("/");
     }, 2500);
 

@@ -83,8 +83,9 @@ export async function GET(request: NextRequest) {
         const andClauses: Prisma.RideWhereInput[] = [
             { status: "ACTIVE" },
             { latestDepartAt: { gt: now } },
-            { earliestDepartAt: { gte: earliestAfter } },
         ];
+
+        andClauses.push({ earliestDepartAt: { gte: earliestAfter } });
 
         if (latestBefore) {
             andClauses.push({ latestDepartAt: { lte: latestBefore } });
