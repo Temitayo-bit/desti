@@ -187,6 +187,7 @@ model Booking {
   // Partial unique index `UNIQUE(rideId, riderUserId) WHERE status = 'CONFIRMED'` 
   // will be added via migration SQL.
   @@index([riderUserId, status, createdAt])
+  @@index([rideId, status, createdAt, id])
   @@index([tripRequestId, status, createdAt, id])
   @@map("bookings")
 }
