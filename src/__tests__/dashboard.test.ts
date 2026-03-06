@@ -273,12 +273,20 @@ describe("GET /api/dashboard", () => {
         expect(rideBookingWhere.status).toBe("CONFIRMED");
         expect(rideBookingWhere.rideId).toEqual({ not: null });
         expect(rideBookingWhere.ride.latestDepartAt.gt).toBeInstanceOf(Date);
+        expect(rideBookingWhere.OR).toEqual([
+            { riderUserId: USER_ID },
+            { ride: { driverUserId: USER_ID } },
+        ]);
 
         // TripRequest-based booking count (second booking.count call)
         const trBookingWhere = mockPrisma.booking.count.mock.calls[1][0].where;
         expect(trBookingWhere.status).toBe("CONFIRMED");
         expect(trBookingWhere.tripRequestId).toEqual({ not: null });
         expect(trBookingWhere.tripRequest.latestDesiredAt.gt).toBeInstanceOf(Date);
+        expect(trBookingWhere.OR).toEqual([
+            { riderUserId: USER_ID },
+            { driverUserId: USER_ID },
+        ]);
     });
 
     it("passes stale-offer filter (tripRequest.latestDesiredAt > now) to offer queries", async () => {
