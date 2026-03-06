@@ -4,7 +4,16 @@ import { useState } from "react";
 import Link from "next/link";
 import { Menu, X } from "lucide-react";
 
-type ProtectedNavKey = "dashboard" | "browse" | "myRides" | "postRide" | "postTripRequest" | "myTripRequests" | "messages" | "profile";
+type ProtectedNavKey =
+  | "dashboard"
+  | "browse"
+  | "browseTripRequests"
+  | "myRides"
+  | "postRide"
+  | "postTripRequest"
+  | "myTripRequests"
+  | "messages"
+  | "profile";
 
 interface ProtectedShellProps {
   activeNav: ProtectedNavKey;
@@ -82,21 +91,14 @@ export function ProtectedShell({ activeNav, children }: ProtectedShellProps) {
               </svg>
               Browse Rides
             </Link>
-            <div className={placeholderNavLinkClass()} tabIndex={-1} aria-disabled="true">
+            <Link href="/browse-trip-requests" className={navLinkClass(activeNav === "browseTripRequests")}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M2 12h20" />
                 <path d="m12 2 4 4-4 4" />
                 <path d="m12 14-4 4 4 4" />
               </svg>
               Browse TripRequests
-            </div>
-            <div className={placeholderNavLinkClass()} tabIndex={-1} aria-disabled="true">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 3v18" />
-                <path d="M3 12h18" />
-              </svg>
-              My Rides
-            </div>
+            </Link>
             <Link href="/post-ride" className={navLinkClass(activeNav === "postRide")}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="10" />
@@ -115,6 +117,13 @@ export function ProtectedShell({ activeNav, children }: ProtectedShellProps) {
               </svg>
               Post TripRequest
             </Link>
+            <div className={placeholderNavLinkClass()} tabIndex={-1} aria-disabled="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 3v18" />
+                <path d="M3 12h18" />
+              </svg>
+              My Rides
+            </div>
             <div className={placeholderNavLinkClass()} tabIndex={-1} aria-disabled="true">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M8 2v4" />

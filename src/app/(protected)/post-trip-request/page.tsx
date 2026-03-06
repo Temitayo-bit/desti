@@ -97,8 +97,7 @@ export default function PostTripRequestPage() {
     }
 
     const timeoutId = window.setTimeout(() => {
-      // TODO: Redirect to My Trip Requests page once it is available.
-      router.push("/");
+      router.push("/post-trip-request");
     }, 2500);
 
     return () => window.clearTimeout(timeoutId);
