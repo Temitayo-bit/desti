@@ -16,6 +16,8 @@ const {
     mockOfferFindFirst,
     mockConversationFindUnique,
     mockConversationFindFirst,
+    mockConversationFindMany,
+    mockMessageFindFirst,
 } = vi.hoisted(() => ({
     mockRequireStetsonAuth: vi.fn(),
     mockGetOrCreateBookingConversation: vi.fn(),
@@ -26,6 +28,8 @@ const {
     mockOfferFindFirst: vi.fn(),
     mockConversationFindUnique: vi.fn(),
     mockConversationFindFirst: vi.fn(),
+    mockConversationFindMany: vi.fn(),
+    mockMessageFindFirst: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({
@@ -62,9 +66,10 @@ vi.mock("@/lib/prisma", () => ({
         conversation: {
             findUnique: (...args: unknown[]) => mockConversationFindUnique(...args),
             findFirst: (...args: unknown[]) => mockConversationFindFirst(...args),
+            findMany: (...args: unknown[]) => mockConversationFindMany(...args),
         },
         message: {
-            findFirst: vi.fn(),
+            findFirst: (...args: unknown[]) => mockMessageFindFirst(...args),
         },
     },
 }));
@@ -106,6 +111,8 @@ describe("POST /api/conversations/for-booking/:bookingId and /for-offer/:offerId
         mockOfferFindFirst.mockResolvedValue(null);
         mockConversationFindUnique.mockResolvedValue(null);
         mockConversationFindFirst.mockResolvedValue(null);
+        mockConversationFindMany.mockResolvedValue([]);
+        mockMessageFindFirst.mockResolvedValue(null);
         mockOfferFindUnique.mockResolvedValue({
             id: "offer-1",
             riderUserId: "user_rider_1",
@@ -160,7 +167,7 @@ describe("POST /api/conversations/for-booking/:bookingId and /for-offer/:offerId
             bookingId: "booking-existing",
             offerId: null,
         });
-        mockConversationFindFirst.mockResolvedValue(pairConversation);
+        mockConversationFindMany.mockResolvedValue([pairConversation]);
         mockAssertConversationParticipant.mockResolvedValue(pairConversation);
 
         const res = await handlePostConversationForOffer(
@@ -240,6 +247,8 @@ describe("POST /api/conversations/for-booking/:bookingId and /for-offer/:offerId
             driverUserId: "user_driver_1",
             ride: null,
         });
+        mockConversationFindMany.mockResolvedValueOnce([]);
+        mockConversationFindFirst.mockResolvedValueOnce(null);
         mockOfferFindFirst.mockResolvedValue({
             id: "offer-accepted-1",
         });
@@ -266,6 +275,15 @@ describe("POST /api/conversations/for-booking/:bookingId and /for-offer/:offerId
             "offer-accepted-1"
         );
         expect(mockGetOrCreateBookingConversation).not.toHaveBeenCalled();
+        expect(mockConversationFindMany).toHaveBeenCalledTimes(1);
+        expect(mockConversationFindFirst).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: expect.objectContaining({
+                    riderUserId: "user_rider_1",
+                    driverUserId: "user_driver_1",
+                }),
+            })
+        );
     });
 
     it("reuses existing booking conversation when present", async () => {
@@ -276,6 +294,8 @@ describe("POST /api/conversations/for-booking/:bookingId and /for-offer/:offerId
             driverUserId: "user_driver_1",
             ride: null,
         });
+        mockConversationFindMany.mockResolvedValueOnce([]);
+        mockConversationFindFirst.mockResolvedValueOnce(null);
         mockOfferFindFirst.mockResolvedValue({
             id: "offer-accepted-1",
         });
@@ -299,6 +319,15 @@ describe("POST /api/conversations/for-booking/:bookingId and /for-offer/:offerId
         expect(json.id).toBe(bookingConversation.id);
         expect(mockGetOrCreateOfferConversation).not.toHaveBeenCalled();
         expect(mockGetOrCreateBookingConversation).not.toHaveBeenCalled();
+        expect(mockConversationFindMany).toHaveBeenCalledTimes(1);
+        expect(mockConversationFindFirst).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: expect.objectContaining({
+                    riderUserId: "user_rider_1",
+                    driverUserId: "user_driver_1",
+                }),
+            })
+        );
     });
 
     it("reuses canonical trip-request conversation before accepted-offer fallback", async () => {
@@ -309,7 +338,8 @@ describe("POST /api/conversations/for-booking/:bookingId and /for-offer/:offerId
             driverUserId: "user_driver_1",
             ride: null,
         });
-        mockConversationFindFirst.mockResolvedValue(
+        mockConversationFindMany.mockResolvedValueOnce([]);
+        mockConversationFindFirst.mockResolvedValueOnce(
             makeConversation({
                 id: "canonical-conversation-id",
                 type: "OFFER",
@@ -339,5 +369,14 @@ describe("POST /api/conversations/for-booking/:bookingId and /for-offer/:offerId
         expect(mockGetOrCreateOfferConversation).not.toHaveBeenCalled();
         expect(mockGetOrCreateBookingConversation).not.toHaveBeenCalled();
         expect(mockOfferFindFirst).not.toHaveBeenCalled();
+        expect(mockConversationFindMany).toHaveBeenCalledTimes(1);
+        expect(mockConversationFindFirst).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: expect.objectContaining({
+                    riderUserId: "user_rider_1",
+                    driverUserId: "user_driver_1",
+                }),
+            })
+        );
     });
 });

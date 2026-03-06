@@ -56,6 +56,8 @@ interface ConversationMessagesResponse {
     nextCursor?: string | null;
 }
 
+const MAX_HISTORY_PAGES = 100;
+
 function toEpoch(value: string): number {
     const parsed = new Date(value).getTime();
     return Number.isNaN(parsed) ? 0 : parsed;
@@ -161,10 +163,14 @@ export default function MessagesPage() {
     const messagesRef = useRef<ConversationMessageItem[]>([]);
     const threadRequestIdRef = useRef(0);
     const pollingInFlightRef = useRef(false);
+    const selectedConversationIdRef = useRef<string | null>(null);
 
     useEffect(() => {
         messagesRef.current = messages;
     }, [messages]);
+    useEffect(() => {
+        selectedConversationIdRef.current = selectedConversationId;
+    }, [selectedConversationId]);
 
     const selectedConversation = useMemo(
         () =>
@@ -284,8 +290,9 @@ export default function MessagesPage() {
         async (conversationId: string): Promise<ConversationMessageItem[]> => {
             let cursor: string | null = null;
             let allMessages: ConversationMessageItem[] = [];
+            const seenCursors = new Set<string>();
 
-            for (;;) {
+            for (let page = 0; page < MAX_HISTORY_PAGES; page += 1) {
                 const search = new URLSearchParams({ limit: "50" });
                 if (cursor) {
                     search.set("cursor", cursor);
@@ -306,11 +313,18 @@ export default function MessagesPage() {
                 const payload =
                     (await response.json()) as ConversationMessagesResponse;
                 allMessages = appendUniqueMessages(allMessages, payload.items ?? []);
-                cursor = payload.nextCursor ?? null;
+                const nextCursor = payload.nextCursor ?? null;
 
-                if (!cursor) {
+                if (!nextCursor) {
                     break;
                 }
+
+                if (seenCursors.has(nextCursor)) {
+                    break;
+                }
+
+                seenCursors.add(nextCursor);
+                cursor = nextCursor;
             }
 
             return allMessages;
@@ -365,6 +379,8 @@ export default function MessagesPage() {
         const pollForNewMessages = async () => {
             if (pollingInFlightRef.current || loadingThread) return;
             pollingInFlightRef.current = true;
+            const pollConversationId = selectedConversationId;
+            const pollRequestId = threadRequestIdRef.current;
 
             try {
                 const lastMessage = messagesRef.current.at(-1);
@@ -384,10 +400,16 @@ export default function MessagesPage() {
                     (await response.json()) as ConversationMessagesResponse;
                 const incoming = payload.items ?? [];
                 if (incoming.length === 0) return;
+                if (
+                    threadRequestIdRef.current !== pollRequestId ||
+                    selectedConversationIdRef.current !== pollConversationId
+                ) {
+                    return;
+                }
 
                 setMessages((previous) => appendUniqueMessages(previous, incoming));
                 updateConversationPreview(
-                    selectedConversationId,
+                    pollConversationId,
                     incoming[incoming.length - 1]
                 );
             } finally {
@@ -415,6 +437,8 @@ export default function MessagesPage() {
         event.preventDefault();
 
         if (!selectedConversationId || sendingMessage) return;
+        const targetConversationId = selectedConversationId;
+        const sendRequestId = threadRequestIdRef.current;
 
         const trimmed = composerText.trim();
         if (!trimmed) {
@@ -432,7 +456,7 @@ export default function MessagesPage() {
             setSendError(null);
 
             const response = await fetch(
-                `/api/conversations/${selectedConversationId}/messages`,
+                `/api/conversations/${targetConversationId}/messages`,
                 {
                     method: "POST",
                     headers: {
@@ -450,10 +474,17 @@ export default function MessagesPage() {
 
             const createdMessage =
                 (await response.json()) as ConversationMessageItem;
+            if (
+                threadRequestIdRef.current !== sendRequestId ||
+                selectedConversationIdRef.current !== targetConversationId
+            ) {
+                return;
+            }
+
             setMessages((previous) =>
                 appendUniqueMessages(previous, [createdMessage])
             );
-            updateConversationPreview(selectedConversationId, createdMessage);
+            updateConversationPreview(targetConversationId, createdMessage);
             setComposerText("");
         } catch (error: unknown) {
             const message =

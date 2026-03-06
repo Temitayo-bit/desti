@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { requireStetsonAuth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import type { ConfirmedBookingSummary } from "@/types/booking";
 
 const tripRequestSummarySelect = {
     id: true,
@@ -41,15 +42,6 @@ type TripRequestSummaryItem = Prisma.TripRequestGetPayload<{
 type ConfirmedTripRequestBookingItem = Prisma.BookingGetPayload<{
     select: typeof confirmedTripRequestBookingSelect;
 }>;
-
-interface ConfirmedBookingSummary {
-    id: string;
-    riderUserId: string;
-    driverUserId: string | null;
-    seatsBooked: number;
-    startsAt: string;
-    endsAt: string;
-}
 
 /**
  * GET /api/trip-requests/mine

@@ -16,6 +16,122 @@ const latestMessageSelect = {
     createdAt: true,
 } as const;
 
+type LatestConversationMessage = {
+    id: string;
+    conversationId: string;
+    senderUserId: string;
+    body: string;
+    createdAt: Date;
+};
+
+type ConversationCandidateEntry = {
+    conversation: Conversation;
+    latestMessage: LatestConversationMessage | null;
+};
+
+function isConversationEntryPreferred<T extends ConversationCandidateEntry>(
+    candidate: T,
+    existing: T
+): boolean {
+    const candidateHasMessage = Boolean(candidate.latestMessage);
+    const existingHasMessage = Boolean(existing.latestMessage);
+
+    if (candidateHasMessage && !existingHasMessage) {
+        return true;
+    }
+
+    if (!candidateHasMessage && existingHasMessage) {
+        return false;
+    }
+
+    if (candidate.latestMessage && existing.latestMessage) {
+        const candidateTime = candidate.latestMessage.createdAt.getTime();
+        const existingTime = existing.latestMessage.createdAt.getTime();
+
+        if (candidateTime !== existingTime) {
+            return candidateTime > existingTime;
+        }
+
+        if (candidate.latestMessage.id !== existing.latestMessage.id) {
+            return candidate.latestMessage.id > existing.latestMessage.id;
+        }
+    }
+
+    const candidateUpdatedTime = candidate.conversation.updatedAt.getTime();
+    const existingUpdatedTime = existing.conversation.updatedAt.getTime();
+    if (candidateUpdatedTime !== existingUpdatedTime) {
+        return candidateUpdatedTime > existingUpdatedTime;
+    }
+
+    return candidate.conversation.id > existing.conversation.id;
+}
+
+function selectCanonicalConversationEntry<T extends ConversationCandidateEntry>(
+    entries: T[]
+): T | null {
+    if (entries.length === 0) {
+        return null;
+    }
+
+    let canonical = entries[0];
+    for (let index = 1; index < entries.length; index += 1) {
+        const entry = entries[index];
+        if (isConversationEntryPreferred(entry, canonical)) {
+            canonical = entry;
+        }
+    }
+
+    return canonical;
+}
+
+async function loadLatestConversationMessages(
+    conversations: Conversation[]
+): Promise<(LatestConversationMessage | null)[]> {
+    return Promise.all(
+        conversations.map((conversation) =>
+            prisma.message.findFirst({
+                where: { conversationId: conversation.id },
+                orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+                select: latestMessageSelect,
+            })
+        )
+    );
+}
+
+async function getCanonicalConversationForPair(
+    riderUserId: string,
+    driverUserId: string
+): Promise<Conversation | null> {
+    const pairConversations = await prisma.conversation.findMany({
+        where: {
+            OR: [
+                {
+                    riderUserId,
+                    driverUserId,
+                },
+                {
+                    riderUserId: driverUserId,
+                    driverUserId: riderUserId,
+                },
+            ],
+        },
+    });
+
+    if (pairConversations.length === 0) {
+        return null;
+    }
+
+    const latestMessages = await loadLatestConversationMessages(pairConversations);
+    const entries: ConversationCandidateEntry[] = pairConversations.map(
+        (conversation, index) => ({
+            conversation,
+            latestMessage: latestMessages[index],
+        })
+    );
+
+    return selectCanonicalConversationEntry(entries)?.conversation ?? null;
+}
+
 export interface ConversationListItem {
     id: string;
     type: Conversation["type"];
@@ -45,15 +161,7 @@ export async function listConversationsController(
 ): Promise<ConversationListItem[]> {
     const conversations = await listUserConversations(userId);
 
-    const latestMessages = await Promise.all(
-        conversations.map((conversation) =>
-            prisma.message.findFirst({
-                where: { conversationId: conversation.id },
-                orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-                select: latestMessageSelect,
-            })
-        )
-    );
+    const latestMessages = await loadLatestConversationMessages(conversations);
 
     const entries = conversations.map((conversation, index) => {
         const counterpartUserId =
@@ -78,46 +186,7 @@ export async function listConversationsController(
             continue;
         }
 
-        const entryHasMessage = Boolean(entry.latestMessage);
-        const existingHasMessage = Boolean(existing.latestMessage);
-
-        if (entryHasMessage && !existingHasMessage) {
-            canonicalByCounterpart.set(entry.counterpartUserId, entry);
-            continue;
-        }
-
-        if (!entryHasMessage && existingHasMessage) {
-            continue;
-        }
-
-        if (entry.latestMessage && existing.latestMessage) {
-            const entryTime = entry.latestMessage.createdAt.getTime();
-            const existingTime = existing.latestMessage.createdAt.getTime();
-            if (entryTime > existingTime) {
-                canonicalByCounterpart.set(entry.counterpartUserId, entry);
-                continue;
-            }
-
-            if (
-                entryTime === existingTime &&
-                entry.latestMessage.id > existing.latestMessage.id
-            ) {
-                canonicalByCounterpart.set(entry.counterpartUserId, entry);
-                continue;
-            }
-        }
-
-        const entryUpdatedTime = entry.conversation.updatedAt.getTime();
-        const existingUpdatedTime = existing.conversation.updatedAt.getTime();
-        if (entryUpdatedTime > existingUpdatedTime) {
-            canonicalByCounterpart.set(entry.counterpartUserId, entry);
-            continue;
-        }
-
-        if (
-            entryUpdatedTime === existingUpdatedTime &&
-            entry.conversation.id > existing.conversation.id
-        ) {
+        if (isConversationEntryPreferred(entry, existing)) {
             canonicalByCounterpart.set(entry.counterpartUserId, entry);
         }
     }
@@ -356,22 +425,10 @@ export async function createOrGetBookingConversationController(
     }
 
     if (driverUserId) {
-        const canonicalPairConversation = await prisma.conversation.findFirst({
-            where: {
-                OR: [
-                    {
-                        riderUserId: booking.riderUserId,
-                        driverUserId,
-                    },
-                    {
-                        riderUserId: driverUserId,
-                        driverUserId: booking.riderUserId,
-                    },
-                ],
-            },
-            orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
-        });
-
+        const canonicalPairConversation = await getCanonicalConversationForPair(
+            booking.riderUserId,
+            driverUserId
+        );
         if (canonicalPairConversation) {
             await assertConversationParticipant(canonicalPairConversation.id, userId);
             return canonicalPairConversation;
@@ -479,21 +536,10 @@ export async function createOrGetOfferConversationController(
         );
     }
 
-    const canonicalPairConversation = await prisma.conversation.findFirst({
-        where: {
-            OR: [
-                {
-                    riderUserId: offer.riderUserId,
-                    driverUserId: offer.driverUserId,
-                },
-                {
-                    riderUserId: offer.driverUserId,
-                    driverUserId: offer.riderUserId,
-                },
-            ],
-        },
-        orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
-    });
+    const canonicalPairConversation = await getCanonicalConversationForPair(
+        offer.riderUserId,
+        offer.driverUserId
+    );
 
     if (canonicalPairConversation) {
         await assertConversationParticipant(canonicalPairConversation.id, userId);

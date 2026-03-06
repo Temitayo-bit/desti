@@ -190,6 +190,22 @@ describe("GET /api/rides/mine", () => {
 
     expect(json.items[0].confirmedBookings).toHaveLength(2);
     expect(json.items[1].confirmedBookings).toEqual([]);
+    expect(json.items[0].confirmedBookings[0]).toEqual(
+      expect.objectContaining({
+        id: "booking-1",
+        riderUserId: "rider_1",
+        driverUserId: "driver_owner_1",
+        seatsBooked: 2,
+        startsAt: expect.any(String),
+        endsAt: expect.any(String),
+      }),
+    );
+    expect(Number.isNaN(Date.parse(json.items[0].confirmedBookings[0].startsAt))).toBe(
+      false,
+    );
+    expect(Number.isNaN(Date.parse(json.items[0].confirmedBookings[0].endsAt))).toBe(
+      false,
+    );
 
     const bookingFindManyArg = mockPrisma.booking.findMany.mock.calls[0][0];
     expect(bookingFindManyArg.where.status).toBe("CONFIRMED");
@@ -199,5 +215,9 @@ describe("GET /api/rides/mine", () => {
     expect(bookingFindManyArg.where.ride).toEqual({
       latestDepartAt: { gt: expect.any(Date) },
     });
+    expect(bookingFindManyArg.orderBy).toEqual([
+      { createdAt: "asc" },
+      { id: "asc" },
+    ]);
   });
 });
