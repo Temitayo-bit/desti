@@ -244,7 +244,26 @@ export default function MyRidesPage() {
       alert("Price/Seat must be a valid non-negative dollar amount.");
       return;
     }
-    const parsedPriceCents = Math.round(parsedPriceDollars * 100);
+
+    const parts = normalizedPriceInput.split(".");
+    if (parts.length > 2) {
+      alert("Price/Seat must be a valid non-negative dollar amount.");
+      return;
+    }
+
+    const rawDollarsPart = parts[0] ?? "0";
+    const rawCentsPart = parts[1] ?? "";
+    const dollarsPart = rawDollarsPart === "" ? "0" : rawDollarsPart;
+
+    if (!/^\d+$/.test(dollarsPart) || !/^\d*$/.test(rawCentsPart)) {
+      alert("Price/Seat must be a valid non-negative dollar amount.");
+      return;
+    }
+
+    const centsPart = `${rawCentsPart}00`.slice(0, 2);
+    const parsedPriceCents =
+      Number.parseInt(dollarsPart, 10) * 100 +
+      Number.parseInt(centsPart, 10);
 
     try {
       setSubmitting(true);
