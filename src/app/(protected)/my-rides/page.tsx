@@ -2,14 +2,29 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import type { DistanceCategory } from "@prisma/client";
-import { X } from "lucide-react";
+import { MessageCircle, X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ProtectedShell } from "../_components/ProtectedShell";
 import { filterMyRides, type MyRidesQuickFilter } from "@/lib/my-rides";
+import { openBookingConversationThread } from "@/lib/booking-conversation";
 
 type RideStatus = "ACTIVE";
+type ActionNotice =
+  | { type: "success"; text: string }
+  | { type: "error"; text: string }
+  | null;
+
+interface ConfirmedBookingSummary {
+  id: string;
+  riderUserId: string;
+  driverUserId: string | null;
+  seatsBooked: number;
+  startsAt: string;
+  endsAt: string;
+}
 
 interface RideSummary {
   id: string;
@@ -28,6 +43,7 @@ interface RideSummary {
   status: RideStatus;
   createdAt: string;
   updatedAt: string;
+  confirmedBookings: ConfirmedBookingSummary[];
 }
 
 interface EditRideFormData {
@@ -110,6 +126,7 @@ const ArrowRightIcon = () => (
 );
 
 export default function MyRidesPage() {
+  const router = useRouter();
   const [rides, setRides] = useState<RideSummary[]>([]);
   const [selectedRide, setSelectedRide] = useState<RideSummary | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -119,6 +136,9 @@ export default function MyRidesPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [successState, setSuccessState] = useState<"edit" | null>(null);
+  const [actionNotice, setActionNotice] = useState<ActionNotice>(null);
+  const [openingConversationBookingId, setOpeningConversationBookingId] =
+    useState<string | null>(null);
   const closeRideDialogButtonRef = useRef<HTMLButtonElement | null>(null);
   const lastFocusedElementRef = useRef<HTMLElement | null>(null);
 
@@ -138,7 +158,12 @@ export default function MyRidesPage() {
 
         const payload = (await response.json()) as { items?: RideSummary[] };
         if (!controller.signal.aborted) {
-          setRides(payload.items ?? []);
+          setRides(
+            (payload.items ?? []).map((ride) => ({
+              ...ride,
+              confirmedBookings: ride.confirmedBookings ?? [],
+            })),
+          );
         }
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") {
@@ -289,10 +314,19 @@ export default function MyRidesPage() {
         throw new Error(errorData?.message ?? "Failed to update ride");
       }
 
-      const updatedRide = (await response.json()) as RideSummary;
-      setSelectedRide(updatedRide);
+      const updatedRide = (await response.json()) as Omit<
+        RideSummary,
+        "confirmedBookings"
+      >;
+      const mergedUpdatedRide: RideSummary = {
+        ...updatedRide,
+        confirmedBookings: selectedRide.confirmedBookings,
+      };
+      setSelectedRide(mergedUpdatedRide);
       setRides((prev) =>
-        prev.map((ride) => (ride.id === updatedRide.id ? updatedRide : ride)),
+        prev.map((ride) =>
+          ride.id === mergedUpdatedRide.id ? mergedUpdatedRide : ride,
+        ),
       );
       setIsEditing(false);
       setSuccessState("edit");
@@ -335,6 +369,20 @@ export default function MyRidesPage() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const openBookingMessages = async (bookingId: string) => {
+    setActionNotice(null);
+    setOpeningConversationBookingId(bookingId);
+
+    const result = await openBookingConversationThread(bookingId);
+    if (!result.ok) {
+      setActionNotice({ type: "error", text: result.message });
+      setOpeningConversationBookingId(null);
+      return;
+    }
+
+    router.push(result.href);
   };
 
   return (
@@ -415,6 +463,17 @@ export default function MyRidesPage() {
           <p className="text-sm font-medium text-zinc-500 mb-4 md:mb-6 text-center">
             {filteredRides.length} {filteredRides.length === 1 ? "ride" : "rides"} posted
           </p>
+          {actionNotice ? (
+            <div
+              className={`mb-4 rounded-xl border px-4 py-3 text-sm font-medium ${
+                actionNotice.type === "success"
+                  ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                  : "border-red-300 bg-red-50 text-red-700"
+              }`}
+            >
+              {actionNotice.text}
+            </div>
+          ) : null}
 
           {loading ? (
             <div className="flex flex-col gap-4">
@@ -460,55 +519,103 @@ export default function MyRidesPage() {
           ) : (
             <div className="flex flex-col gap-4">
               {filteredRides.map((ride) => (
-                <button
-                  type="button"
+                <article
                   key={ride.id}
-                  onClick={() => {
-                    const activeElement = document.activeElement;
-                    lastFocusedElementRef.current =
-                      activeElement instanceof HTMLElement ? activeElement : null;
-                    setSelectedRide(ride);
-                  }}
-                  className="group w-full text-left bg-white border border-zinc-200 rounded-2xl p-5 transition-all relative overflow-hidden hover:border-emerald-500/50 hover:shadow-md cursor-pointer"
+                  className="w-full text-left bg-white border border-zinc-200 rounded-2xl p-5 transition-all relative overflow-hidden hover:border-emerald-500/50 hover:shadow-md"
                 >
-                  <div className="absolute top-5 right-5 bg-amber-100 text-amber-800 text-xs font-bold px-2.5 py-1 rounded-full border border-amber-200 shadow-sm">
-                    {toTitleCase(ride.distanceCategory)}
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const activeElement = document.activeElement;
+                      lastFocusedElementRef.current =
+                        activeElement instanceof HTMLElement ? activeElement : null;
+                      setSelectedRide(ride);
+                    }}
+                    className="group w-full text-left cursor-pointer"
+                  >
+                    <div className="absolute top-5 right-5 bg-amber-100 text-amber-800 text-xs font-bold px-2.5 py-1 rounded-full border border-amber-200 shadow-sm">
+                      {toTitleCase(ride.distanceCategory)}
+                    </div>
 
-                  <div className="pr-20">
-                    <div className="flex items-start gap-3 mb-1">
-                      <div className="mt-1">
-                        <MapPinIcon />
-                      </div>
-                      <div>
-                        <h3 className="font-bold text-lg leading-tight text-zinc-900 group-hover:text-emerald-800 transition-colors">
-                          {ride.destinationText}
-                        </h3>
-                        <p className="text-sm text-zinc-500 mt-0.5">
-                          from {ride.originText}
-                        </p>
+                    <div className="pr-20">
+                      <div className="flex items-start gap-3 mb-1">
+                        <div className="mt-1">
+                          <MapPinIcon />
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-lg leading-tight text-zinc-900 group-hover:text-emerald-800 transition-colors">
+                            {ride.destinationText}
+                          </h3>
+                          <p className="text-sm text-zinc-500 mt-0.5">
+                            from {ride.originText}
+                          </p>
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="mt-5 flex items-end justify-between">
-                    <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-zinc-600 font-medium">
-                      <div className="flex items-center gap-1.5">
-                        <ClockIcon />
-                        {formatTimeRange(ride.earliestDepartAt, ride.latestDepartAt)}
+                    <div className="mt-5 flex items-end justify-between">
+                      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-zinc-600 font-medium">
+                        <div className="flex items-center gap-1.5">
+                          <ClockIcon />
+                          {formatTimeRange(ride.earliestDepartAt, ride.latestDepartAt)}
+                        </div>
+                        <div className="flex items-center gap-1.5 bg-zinc-100 px-2 py-0.5 rounded-md">
+                          <UsersIcon />
+                          {ride.seatsAvailable}{" "}
+                          {ride.seatsAvailable === 1 ? "seat" : "seats"} available
+                        </div>
                       </div>
-                      <div className="flex items-center gap-1.5 bg-zinc-100 px-2 py-0.5 rounded-md">
-                        <UsersIcon />
-                        {ride.seatsAvailable}{" "}
-                        {ride.seatsAvailable === 1 ? "seat" : "seats"} available
+                      <div className="flex items-baseline gap-1 text-emerald-800">
+                        <span className="font-bold text-xl">${(ride.priceCents / 100).toFixed(2)}</span>
+                        <ArrowRightIcon />
                       </div>
                     </div>
-                    <div className="flex items-baseline gap-1 text-emerald-800">
-                      <span className="font-bold text-xl">${(ride.priceCents / 100).toFixed(2)}</span>
-                      <ArrowRightIcon />
+                  </button>
+
+                  {ride.confirmedBookings.length > 0 ? (
+                    <div className="mt-4 border-t border-zinc-200 pt-4">
+                      <p className="mb-3 text-sm font-semibold text-zinc-900">
+                        Confirmed bookings ({ride.confirmedBookings.length})
+                      </p>
+                      <div className="space-y-2">
+                        {ride.confirmedBookings.map((booking) => {
+                          const openingConversation =
+                            openingConversationBookingId === booking.id;
+                          return (
+                            <div
+                              key={booking.id}
+                              className="rounded-xl border border-zinc-200 bg-zinc-50 p-3"
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="space-y-1">
+                                  <p className="text-sm font-semibold text-zinc-900">
+                                    Booking #{booking.id.slice(0, 8)}
+                                  </p>
+                                  <p className="text-xs text-zinc-600">
+                                    {booking.seatsBooked}{" "}
+                                    {booking.seatsBooked === 1 ? "seat" : "seats"} ·{" "}
+                                    {formatTimeRange(booking.startsAt, booking.endsAt)}
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  disabled={openingConversation}
+                                  onClick={() =>
+                                    void openBookingMessages(booking.id)
+                                  }
+                                  className="inline-flex items-center gap-1 rounded-lg border border-zinc-300 px-2.5 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  <MessageCircle size={14} />
+                                  {openingConversation ? "Opening..." : "Message"}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                </button>
+                  ) : null}
+                </article>
               ))}
             </div>
           )}

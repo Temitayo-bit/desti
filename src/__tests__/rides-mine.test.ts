@@ -5,6 +5,9 @@ const { mockRequireStetsonAuth, mockPrisma } = vi.hoisted(() => {
     ride: {
       findMany: vi.fn(),
     },
+    booking: {
+      findMany: vi.fn(),
+    },
   };
 
   return {
@@ -65,6 +68,7 @@ describe("GET /api/rides/mine", () => {
     vi.clearAllMocks();
     mockRequireStetsonAuth.mockResolvedValue(successAuth());
     mockPrisma.ride.findMany.mockResolvedValue([]);
+    mockPrisma.booking.findMany.mockResolvedValue([]);
   });
 
   it("returns auth error and skips Prisma when auth fails", async () => {
@@ -139,7 +143,81 @@ describe("GET /api/rides/mine", () => {
         dropoffInstructions: ride.dropoffInstructions,
         preferredDepartAt: ride.preferredDepartAt,
         status: ride.status,
+        confirmedBookings: [],
       }),
     );
+  });
+
+  it("attaches upcoming confirmed bookings grouped by ride", async () => {
+    const rideA = fakeRide({
+      id: "aaaa1111-1111-4111-8111-111111111111",
+      earliestDepartAt: new Date("2030-01-02T10:00:00.000Z"),
+      latestDepartAt: new Date("2030-01-02T11:00:00.000Z"),
+    });
+    const rideB = fakeRide({
+      id: "bbbb2222-2222-4222-8222-222222222222",
+      earliestDepartAt: new Date("2030-01-03T10:00:00.000Z"),
+      latestDepartAt: new Date("2030-01-03T11:00:00.000Z"),
+    });
+    mockPrisma.ride.findMany.mockResolvedValue([rideA, rideB]);
+    mockPrisma.booking.findMany.mockResolvedValue([
+      {
+        id: "booking-1",
+        rideId: rideA.id,
+        riderUserId: "rider_1",
+        driverUserId: "driver_owner_1",
+        seatsBooked: 2,
+        ride: {
+          earliestDepartAt: rideA.earliestDepartAt,
+          latestDepartAt: rideA.latestDepartAt,
+        },
+      },
+      {
+        id: "booking-2",
+        rideId: rideA.id,
+        riderUserId: "rider_2",
+        driverUserId: "driver_owner_1",
+        seatsBooked: 1,
+        ride: {
+          earliestDepartAt: rideA.earliestDepartAt,
+          latestDepartAt: rideA.latestDepartAt,
+        },
+      },
+    ]);
+
+    const res = await GET(makeRequest() as never);
+    const json = await res.json();
+
+    expect(json.items[0].confirmedBookings).toHaveLength(2);
+    expect(json.items[1].confirmedBookings).toEqual([]);
+    expect(json.items[0].confirmedBookings[0]).toEqual(
+      expect.objectContaining({
+        id: "booking-1",
+        riderUserId: "rider_1",
+        driverUserId: "driver_owner_1",
+        seatsBooked: 2,
+        startsAt: expect.any(String),
+        endsAt: expect.any(String),
+      }),
+    );
+    expect(Number.isNaN(Date.parse(json.items[0].confirmedBookings[0].startsAt))).toBe(
+      false,
+    );
+    expect(Number.isNaN(Date.parse(json.items[0].confirmedBookings[0].endsAt))).toBe(
+      false,
+    );
+
+    const bookingFindManyArg = mockPrisma.booking.findMany.mock.calls[0][0];
+    expect(bookingFindManyArg.where.status).toBe("CONFIRMED");
+    expect(bookingFindManyArg.where.rideId).toEqual({
+      in: [rideA.id, rideB.id],
+    });
+    expect(bookingFindManyArg.where.ride).toEqual({
+      latestDepartAt: { gt: expect.any(Date) },
+    });
+    expect(bookingFindManyArg.orderBy).toEqual([
+      { createdAt: "asc" },
+      { id: "asc" },
+    ]);
   });
 });

@@ -5,6 +5,9 @@ const { mockRequireStetsonAuth, mockPrisma } = vi.hoisted(() => {
     tripRequest: {
       findMany: vi.fn(),
     },
+    booking: {
+      findMany: vi.fn(),
+    },
   };
 
   return {
@@ -63,6 +66,7 @@ describe("GET /api/trip-requests/mine", () => {
     vi.clearAllMocks();
     mockRequireStetsonAuth.mockResolvedValue(successAuth());
     mockPrisma.tripRequest.findMany.mockResolvedValue([]);
+    mockPrisma.booking.findMany.mockResolvedValue([]);
   });
 
   it("returns auth error and skips Prisma when auth fails", async () => {
@@ -140,7 +144,50 @@ describe("GET /api/trip-requests/mine", () => {
         dropoffInstructions: tripRequest.dropoffInstructions,
         preferredDepartAt: tripRequest.preferredDepartAt,
         status: tripRequest.status,
+        confirmedBookings: [],
       }),
     );
+  });
+
+  it("attaches upcoming confirmed bookings grouped by trip request", async () => {
+    const trA = fakeTripRequest({
+      id: "trip-a",
+      earliestDesiredAt: new Date("2030-01-02T10:00:00.000Z"),
+      latestDesiredAt: new Date("2030-01-02T11:00:00.000Z"),
+    });
+    const trB = fakeTripRequest({
+      id: "trip-b",
+      earliestDesiredAt: new Date("2030-01-03T10:00:00.000Z"),
+      latestDesiredAt: new Date("2030-01-03T11:00:00.000Z"),
+    });
+    mockPrisma.tripRequest.findMany.mockResolvedValue([trA, trB]);
+    mockPrisma.booking.findMany.mockResolvedValue([
+      {
+        id: "booking-1",
+        tripRequestId: trA.id,
+        riderUserId: "rider_owner_1",
+        driverUserId: "driver_1",
+        seatsBooked: 2,
+        tripRequest: {
+          earliestDesiredAt: trA.earliestDesiredAt,
+          latestDesiredAt: trA.latestDesiredAt,
+        },
+      },
+    ]);
+
+    const res = await GET(makeRequest() as never);
+    const json = await res.json();
+
+    expect(json.items[0].confirmedBookings).toHaveLength(1);
+    expect(json.items[1].confirmedBookings).toEqual([]);
+
+    const bookingFindManyArg = mockPrisma.booking.findMany.mock.calls[0][0];
+    expect(bookingFindManyArg.where.status).toBe("CONFIRMED");
+    expect(bookingFindManyArg.where.tripRequestId).toEqual({
+      in: [trA.id, trB.id],
+    });
+    expect(bookingFindManyArg.where.tripRequest).toEqual({
+      latestDesiredAt: { gt: expect.any(Date) },
+    });
   });
 });

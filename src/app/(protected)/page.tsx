@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
-import { X } from "lucide-react";
+import { MessageCircle, X } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { ProtectedShell } from "./_components/ProtectedShell";
 import {
   type DashboardOfferSummary,
@@ -14,6 +15,7 @@ import {
   normalizeDashboardBooking,
   toDistanceLabel,
 } from "@/lib/dashboard";
+import { openBookingConversationThread } from "@/lib/booking-conversation";
 
 const CARD_CLASS =
   "bg-white border border-zinc-200 rounded-2xl p-4 md:p-6 shadow-sm";
@@ -231,6 +233,7 @@ function OfferCard({
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -239,6 +242,7 @@ export default function DashboardPage() {
   const [selectedTrip, setSelectedTrip] = useState<NormalizedDashboardBooking | null>(null);
   const [actionNotice, setActionNotice] = useState<ActionNotice>(null);
   const [pendingActions, setPendingActions] = useState<Record<string, string>>({});
+  const [openingConversationBookingId, setOpeningConversationBookingId] = useState<string | null>(null);
   const tripDialogRef = useRef<HTMLDivElement | null>(null);
   const closeTripButtonRef = useRef<HTMLButtonElement | null>(null);
 
@@ -340,6 +344,20 @@ export default function DashboardPage() {
     }
   }
 
+  async function openBookingMessages(bookingId: string) {
+    setActionNotice(null);
+    setOpeningConversationBookingId(bookingId);
+
+    const result = await openBookingConversationThread(bookingId);
+    if (!result.ok) {
+      setActionNotice({ type: "error", text: result.message });
+      setOpeningConversationBookingId(null);
+      return;
+    }
+
+    router.push(result.href);
+  }
+
   const summary = dashboard?.summary;
   const normalizedBookings = useMemo(() => {
     const bookings = (dashboard?.upcoming.bookings ?? []) as DashboardBookingItem[];
@@ -406,6 +424,18 @@ export default function DashboardPage() {
             </div>
 
             <section className="space-y-4">
+              {actionNotice ? (
+                <div
+                  className={`rounded-2xl border px-4 py-3 text-sm font-medium ${
+                    actionNotice.type === "success"
+                      ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                      : "border-red-300 bg-red-50 text-red-700"
+                  }`}
+                >
+                  {actionNotice.text}
+                </div>
+              ) : null}
+
               <div className="flex items-center justify-between gap-4">
                 <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-zinc-900">Your Upcoming Trips</h2>
                 {/* TODO: Wire this to a dedicated bookings list route when available. */}
@@ -426,11 +456,10 @@ export default function DashboardPage() {
                 <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
                   {normalizedBookings.map((booking) => {
                     const bookingPrice = formatPrice(booking.priceCents);
+                    const openingConversation = openingConversationBookingId === booking.id;
                     return (
-                      <button
+                      <article
                         key={booking.id}
-                        type="button"
-                        onClick={() => setSelectedTrip(booking)}
                         className={`${CARD_CLASS} w-full text-left transition-all hover:border-emerald-500/50 hover:shadow-md`}
                       >
                         <div className="mb-5 flex items-start justify-between gap-3">
@@ -444,35 +473,56 @@ export default function DashboardPage() {
                               </div>
                             </div>
                           </div>
-                          <span className={statusPill("blue")}>CONFIRMED</span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void openBookingMessages(booking.id);
+                              }}
+                              disabled={openingConversation}
+                              className="inline-flex items-center gap-1 rounded-xl border border-zinc-300 px-2.5 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
+                              aria-label="Open messages for booking"
+                            >
+                              <MessageCircle size={14} />
+                              {openingConversation ? "Opening..." : "Message"}
+                            </button>
+                            <span className={statusPill("blue")}>CONFIRMED</span>
+                          </div>
                         </div>
 
-                        <div className="space-y-2 text-zinc-600">
-                          <p className="flex items-center gap-2 text-sm tracking-tight">
-                            <CalendarIcon />
-                            {formatTimeRange(booking.startsAt, booking.endsAt)}
-                          </p>
-                          {booking.driverName ? (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedTrip(booking)}
+                          className="w-full text-left"
+                        >
+                          <div className="space-y-2 text-zinc-600">
+                            <p className="flex items-center gap-2 text-sm tracking-tight">
+                              <CalendarIcon />
+                              {formatTimeRange(booking.startsAt, booking.endsAt)}
+                            </p>
+                            {booking.driverName ? (
+                              <p className="flex items-center gap-2 text-sm tracking-tight">
+                                <UsersIcon />
+                                Driver: {booking.driverName}
+                              </p>
+                            ) : null}
                             <p className="flex items-center gap-2 text-sm tracking-tight">
                               <UsersIcon />
-                              Driver: {booking.driverName}
+                              {getSeatDisplayText(booking, viewerUserId)}
                             </p>
-                          ) : null}
-                          <p className="flex items-center gap-2 text-sm tracking-tight">
-                            <UsersIcon />
-                            {getSeatDisplayText(booking, viewerUserId)}
-                          </p>
-                        </div>
+                          </div>
 
-                        <div className="mt-4 flex items-end justify-between">
-                          <span className="inline-flex rounded-xl bg-zinc-100 px-3 py-1 text-xs tracking-tight text-zinc-500">
-                            {toDistanceLabel(booking.distanceCategory)}
-                          </span>
-                          {bookingPrice ? (
-                            <p className="text-2xl font-bold tracking-tight text-emerald-600">{bookingPrice}</p>
-                          ) : null}
-                        </div>
-                      </button>
+                          <div className="mt-4 flex items-end justify-between">
+                            <span className="inline-flex rounded-xl bg-zinc-100 px-3 py-1 text-xs tracking-tight text-zinc-500">
+                              {toDistanceLabel(booking.distanceCategory)}
+                            </span>
+                            {bookingPrice ? (
+                              <p className="text-2xl font-bold tracking-tight text-emerald-600">{bookingPrice}</p>
+                            ) : null}
+                          </div>
+                        </button>
+                      </article>
                     );
                   })}
                 </div>
@@ -491,18 +541,6 @@ export default function DashboardPage() {
                   View All
                 </button>
               </div>
-
-              {actionNotice ? (
-                <div
-                  className={`rounded-2xl border px-4 py-3 text-sm font-medium ${
-                    actionNotice.type === "success"
-                      ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-                      : "border-red-300 bg-red-50 text-red-700"
-                  }`}
-                >
-                  {actionNotice.text}
-                </div>
-              ) : null}
 
               {refreshing ? (
                 <p className="text-sm text-zinc-500">Refreshing dashboard data...</p>
