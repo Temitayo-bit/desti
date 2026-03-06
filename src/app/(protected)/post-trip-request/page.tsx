@@ -221,7 +221,7 @@ export default function PostTripRequestPage() {
                 Trip Request Posted Successfully
               </h2>
               <p className="text-zinc-500 max-w-md">
-                Your trip request is now live. Redirecting you to Dashboard...
+                Your trip request is now live.
               </p>
             </motion.section>
           ) : (
