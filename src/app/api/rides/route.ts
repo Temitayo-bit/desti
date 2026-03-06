@@ -71,9 +71,10 @@ export async function GET(request: NextRequest) {
             "includeFull",
             false
         );
-        const earliestAfter =
-            parseISODateParam(searchParams.get("earliestAfter"), "earliestAfter") ??
-            now;
+        const earliestAfter = parseISODateParam(
+            searchParams.get("earliestAfter"),
+            "earliestAfter"
+        );
         const latestBefore = parseISODateParam(
             searchParams.get("latestBefore"),
             "latestBefore"
@@ -83,8 +84,11 @@ export async function GET(request: NextRequest) {
         const andClauses: Prisma.RideWhereInput[] = [
             { status: "ACTIVE" },
             { latestDepartAt: { gt: now } },
-            { earliestDepartAt: { gte: earliestAfter } },
         ];
+
+        if (earliestAfter) {
+            andClauses.push({ earliestDepartAt: { gte: earliestAfter } });
+        }
 
         if (latestBefore) {
             andClauses.push({ latestDepartAt: { lte: latestBefore } });
