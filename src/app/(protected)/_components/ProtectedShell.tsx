@@ -124,7 +124,10 @@ export function ProtectedShell({ activeNav, children }: ProtectedShellProps) {
               </svg>
               My Rides
             </Link>
-            <div className={placeholderNavLinkClass()} tabIndex={-1} aria-disabled="true">
+            <Link
+              href="/my-trip-requests"
+              className={navLinkClass(activeNav === "myTripRequests")}
+            >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M8 2v4" />
                 <path d="M16 2v4" />
@@ -132,8 +135,8 @@ export function ProtectedShell({ activeNav, children }: ProtectedShellProps) {
                 <path d="M3 10h18" />
                 <path d="M8 14h8" />
               </svg>
-              My TripRequests
-            </div>
+              My Trip Requests
+            </Link>
             <div className={placeholderNavLinkClass()} tabIndex={-1} aria-disabled="true">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />

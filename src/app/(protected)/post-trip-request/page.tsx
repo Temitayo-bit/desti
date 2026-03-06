@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown } from "lucide-react";
 import { ProtectedShell } from "../_components/ProtectedShell";
@@ -82,7 +81,6 @@ async function parseErrorResponse(
 }
 
 export default function PostTripRequestPage() {
-  const router = useRouter();
   const [formValues, setFormValues] =
     useState<PostTripRequestFormValues>(initialFormValues);
   const [fieldErrors, setFieldErrors] = useState<PostTripRequestFieldErrors>({});
@@ -97,11 +95,15 @@ export default function PostTripRequestPage() {
     }
 
     const timeoutId = window.setTimeout(() => {
-      router.push("/post-trip-request");
+      setIsSuccess(false);
+      setFormValues(initialFormValues);
+      setFieldErrors({});
+      setSubmitError(null);
+      setShowAdvanced(false);
     }, 2500);
 
     return () => window.clearTimeout(timeoutId);
-  }, [isSuccess, router]);
+  }, [isSuccess]);
 
   const submitButtonLabel = useMemo(() => {
     if (isSubmitting) {
