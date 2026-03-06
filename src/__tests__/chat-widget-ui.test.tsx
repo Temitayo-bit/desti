@@ -25,6 +25,7 @@ describe("AI chat widget UI", () => {
                 composerRef={{ current: null }}
                 draft=""
                 errorMessage={null}
+                hasPendingSubmission={false}
                 isSending={false}
                 messages={[]}
                 onClose={() => undefined}
@@ -63,6 +64,7 @@ describe("AI chat widget UI", () => {
                 composerRef={{ current: null }}
                 draft=""
                 errorMessage="Model unavailable. Ensure Ollama is running."
+                hasPendingSubmission={true}
                 isSending={true}
                 messages={messages}
                 onClose={() => undefined}

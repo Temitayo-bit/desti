@@ -36,6 +36,7 @@ interface AiChatWidgetPanelProps {
     composerRef: RefObject<HTMLTextAreaElement | null>;
     draft: string;
     errorMessage: string | null;
+    hasPendingSubmission: boolean;
     isSending: boolean;
     messages: ChatWidgetMessage[];
     onClose: () => void;
@@ -72,6 +73,7 @@ export function AiChatWidgetPanel({
     composerRef,
     draft,
     errorMessage,
+    hasPendingSubmission,
     isSending,
     messages,
     onClose,
@@ -83,14 +85,13 @@ export function AiChatWidgetPanel({
     onSuggestedPrompt,
 }: AiChatWidgetPanelProps) {
     const isEmpty = messages.length === 0;
-    const submitDisabled = isSending || draft.trim().length === 0;
+    const submitDisabled =
+        isSending || hasPendingSubmission || draft.trim().length === 0;
 
     return (
         <section
             aria-labelledby="ai-chat-widget-title"
-            aria-modal="true"
             className="fixed inset-x-4 bottom-4 z-50 flex max-h-[min(42rem,calc(100vh-1rem))] flex-col overflow-hidden rounded-[2rem] border border-zinc-200 bg-zinc-50 shadow-2xl md:inset-x-auto md:bottom-24 md:right-4 md:w-[24rem] md:rounded-[1.75rem]"
-            role="dialog"
         >
             <header className="flex items-start justify-between gap-3 border-b border-zinc-200 bg-white px-5 py-4">
                 <div className="min-w-0">
@@ -149,7 +150,7 @@ export function AiChatWidgetPanel({
                                 <button
                                     key={prompt}
                                     className="rounded-full border border-emerald-200 bg-white px-3 py-2 text-left text-xs font-medium text-emerald-700 transition-colors hover:border-emerald-300 hover:bg-emerald-100/60 disabled:cursor-not-allowed disabled:opacity-60"
-                                    disabled={isSending}
+                                    disabled={isSending || hasPendingSubmission}
                                     onClick={() => onSuggestedPrompt(prompt)}
                                     type="button"
                                 >
@@ -296,7 +297,7 @@ export function AiChatWidget() {
 
     function submitMessage(content: string) {
         const trimmed = content.trim();
-        if (!trimmed || isSending) {
+        if (!trimmed || pendingSubmission || isSending) {
             return;
         }
 
@@ -313,7 +314,7 @@ export function AiChatWidget() {
     }
 
     function handleSuggestedPrompt(prompt: string) {
-        if (isSending) {
+        if (pendingSubmission || isSending) {
             return;
         }
         submitMessage(prompt);
@@ -425,6 +426,7 @@ export function AiChatWidget() {
                     composerRef={composerRef}
                     draft={draft}
                     errorMessage={errorMessage}
+                    hasPendingSubmission={pendingSubmission !== null}
                     isSending={isSending}
                     messages={messages}
                     onClose={() => setIsOpen(false)}
