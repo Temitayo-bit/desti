@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+    CHAT_WIDGET_HISTORY_LIMIT,
     requestChatAnswer,
+    trimChatHistory,
     toChatHistory,
     type ChatWidgetMessage,
 } from "@/lib/chat-widget";
@@ -40,6 +42,20 @@ describe("chat widget helper", () => {
                 content: "Use the Post Rides page.",
             },
         ]);
+    });
+
+    it("trims API history to the last 10 messages", () => {
+        const history = Array.from(
+            { length: CHAT_WIDGET_HISTORY_LIMIT + 4 },
+            (_, index) => ({
+                role: index % 2 === 0 ? "user" : "assistant",
+                content: `Message ${index + 1}`,
+            })
+        );
+
+        expect(trimChatHistory(history)).toEqual(
+            history.slice(-CHAT_WIDGET_HISTORY_LIMIT)
+        );
     });
 
     it("posts the current message and history to /api/chat", async () => {

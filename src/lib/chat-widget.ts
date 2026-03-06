@@ -17,6 +17,8 @@ export interface RequestChatAnswerOptions {
     signal?: AbortSignal;
 }
 
+export const CHAT_WIDGET_HISTORY_LIMIT = 10;
+
 export const CHAT_WIDGET_SUGGESTIONS = [
     "How do I post a ride?",
     "How do bookings work in Desti?",
@@ -30,6 +32,12 @@ export function toChatHistory(
     messages: ChatWidgetMessage[]
 ): ChatWidgetHistoryMessage[] {
     return messages.map(({ role, content }) => ({ role, content }));
+}
+
+export function trimChatHistory(
+    history: ChatWidgetHistoryMessage[]
+): ChatWidgetHistoryMessage[] {
+    return history.slice(-CHAT_WIDGET_HISTORY_LIMIT);
 }
 
 async function readChatApiError(

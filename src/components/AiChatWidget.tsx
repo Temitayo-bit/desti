@@ -21,6 +21,7 @@ import {
     CHAT_WIDGET_GREETING,
     CHAT_WIDGET_SUGGESTIONS,
     requestChatAnswer,
+    trimChatHistory,
     toChatHistory,
     type ChatWidgetHistoryMessage,
     type ChatWidgetMessage,
@@ -300,9 +301,10 @@ export function AiChatWidget() {
         }
 
         const history = toChatHistory(messages);
+        const trimmedHistory = trimChatHistory(history);
         setMessages((previous) => [...previous, buildMessage("user", trimmed)]);
         setDraft("");
-        void sendMessage(trimmed, history);
+        void sendMessage(trimmed, trimmedHistory);
     }
 
     function handleSubmit(event: FormEvent<HTMLFormElement>) {
