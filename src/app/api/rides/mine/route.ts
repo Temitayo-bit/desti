@@ -22,6 +22,37 @@ const rideSummarySelect = {
   updatedAt: true,
 } satisfies Prisma.RideSelect;
 
+const confirmedRideBookingSelect = {
+  id: true,
+  rideId: true,
+  riderUserId: true,
+  driverUserId: true,
+  seatsBooked: true,
+  ride: {
+    select: {
+      earliestDepartAt: true,
+      latestDepartAt: true,
+    },
+  },
+} satisfies Prisma.BookingSelect;
+
+type RideSummaryItem = Prisma.RideGetPayload<{
+  select: typeof rideSummarySelect;
+}>;
+
+type ConfirmedRideBookingItem = Prisma.BookingGetPayload<{
+  select: typeof confirmedRideBookingSelect;
+}>;
+
+interface ConfirmedBookingSummary {
+  id: string;
+  riderUserId: string;
+  driverUserId: string | null;
+  seatsBooked: number;
+  startsAt: string;
+  endsAt: string;
+}
+
 /**
  * GET /api/rides/mine
  *
@@ -35,7 +66,7 @@ export async function GET(request: NextRequest) {
 
     const driverUserId = auth.user.clerkUserId;
 
-    const items = await prisma.ride.findMany({
+    const items: RideSummaryItem[] = await prisma.ride.findMany({
       where: {
         driverUserId,
         status: "ACTIVE",
@@ -44,7 +75,50 @@ export async function GET(request: NextRequest) {
       select: rideSummarySelect,
     });
 
-    return NextResponse.json({ items, nextCursor: null });
+    const now = new Date();
+    const rideIds = items.map((ride) => ride.id);
+    const confirmedBookings: ConfirmedRideBookingItem[] =
+      rideIds.length === 0
+        ? []
+        : await prisma.booking.findMany({
+            where: {
+              status: "CONFIRMED",
+              rideId: {
+                in: rideIds,
+              },
+              ride: {
+                latestDepartAt: {
+                  gt: now,
+                },
+              },
+            },
+            orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+            select: confirmedRideBookingSelect,
+          });
+
+    const confirmedByRideId = new Map<string, ConfirmedBookingSummary[]>();
+    for (const booking of confirmedBookings) {
+      if (!booking.rideId || !booking.ride) continue;
+
+      const existing = confirmedByRideId.get(booking.rideId) ?? [];
+      existing.push({
+        id: booking.id,
+        riderUserId: booking.riderUserId,
+        driverUserId: booking.driverUserId,
+        seatsBooked: booking.seatsBooked,
+        startsAt: booking.ride.earliestDepartAt.toISOString(),
+        endsAt: booking.ride.latestDepartAt.toISOString(),
+      });
+      confirmedByRideId.set(booking.rideId, existing);
+    }
+
+    return NextResponse.json({
+      items: items.map((ride) => ({
+        ...ride,
+        confirmedBookings: confirmedByRideId.get(ride.id) ?? [],
+      })),
+      nextCursor: null,
+    });
   } catch (error) {
     console.error("[GET /api/rides/mine] Unexpected error:", error);
     return NextResponse.json(

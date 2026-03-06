@@ -13,6 +13,9 @@ const {
     mockAssertConversationParticipant,
     mockBookingFindUnique,
     mockOfferFindUnique,
+    mockOfferFindFirst,
+    mockConversationFindUnique,
+    mockConversationFindFirst,
 } = vi.hoisted(() => ({
     mockRequireStetsonAuth: vi.fn(),
     mockGetOrCreateBookingConversation: vi.fn(),
@@ -20,6 +23,9 @@ const {
     mockAssertConversationParticipant: vi.fn(),
     mockBookingFindUnique: vi.fn(),
     mockOfferFindUnique: vi.fn(),
+    mockOfferFindFirst: vi.fn(),
+    mockConversationFindUnique: vi.fn(),
+    mockConversationFindFirst: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({
@@ -51,6 +57,11 @@ vi.mock("@/lib/prisma", () => ({
         },
         offer: {
             findUnique: (...args: unknown[]) => mockOfferFindUnique(...args),
+            findFirst: (...args: unknown[]) => mockOfferFindFirst(...args),
+        },
+        conversation: {
+            findUnique: (...args: unknown[]) => mockConversationFindUnique(...args),
+            findFirst: (...args: unknown[]) => mockConversationFindFirst(...args),
         },
         message: {
             findFirst: vi.fn(),
@@ -87,10 +98,14 @@ describe("POST /api/conversations/for-booking/:bookingId and /for-offer/:offerId
         mockRequireStetsonAuth.mockResolvedValue(authSuccess());
         mockBookingFindUnique.mockResolvedValue({
             id: "booking-1",
+            tripRequestId: null,
             riderUserId: "user_rider_1",
             driverUserId: "user_driver_1",
             ride: null,
         });
+        mockOfferFindFirst.mockResolvedValue(null);
+        mockConversationFindUnique.mockResolvedValue(null);
+        mockConversationFindFirst.mockResolvedValue(null);
         mockOfferFindUnique.mockResolvedValue({
             id: "offer-1",
             riderUserId: "user_rider_1",
@@ -138,9 +153,33 @@ describe("POST /api/conversations/for-booking/:bookingId and /for-offer/:offerId
         expect(mockGetOrCreateOfferConversation).toHaveBeenCalledWith("offer-1");
     });
 
+    it("reuses canonical pair conversation for offer endpoint", async () => {
+        const pairConversation = makeConversation({
+            id: "pair-conversation-id",
+            type: "BOOKING",
+            bookingId: "booking-existing",
+            offerId: null,
+        });
+        mockConversationFindFirst.mockResolvedValue(pairConversation);
+        mockAssertConversationParticipant.mockResolvedValue(pairConversation);
+
+        const res = await handlePostConversationForOffer(
+            new NextRequest("http://localhost:3000/api/conversations/for-offer/offer-1", {
+                method: "POST",
+            }),
+            "offer-1"
+        );
+
+        expect(res.status).toBe(200);
+        const json = await res.json();
+        expect(json.id).toBe("pair-conversation-id");
+        expect(mockGetOrCreateOfferConversation).not.toHaveBeenCalled();
+    });
+
     it("returns 404 when caller is not a participant", async () => {
         mockBookingFindUnique.mockResolvedValue({
             id: "booking-1",
+            tripRequestId: null,
             riderUserId: "some-other-rider",
             driverUserId: "some-other-driver",
             ride: null,
@@ -160,6 +199,7 @@ describe("POST /api/conversations/for-booking/:bookingId and /for-offer/:offerId
     it("maps service 404 and 409 errors for booking/offer creation", async () => {
         mockBookingFindUnique.mockResolvedValue({
             id: "missing",
+            tripRequestId: null,
             riderUserId: "user_rider_1",
             driverUserId: "user_driver_1",
             ride: null,
@@ -190,5 +230,114 @@ describe("POST /api/conversations/for-booking/:bookingId and /for-offer/:offerId
             "cancelled"
         );
         expect(offerRes.status).toBe(409);
+    });
+
+    it("reuses offer conversation for offer-derived confirmed booking", async () => {
+        mockBookingFindUnique.mockResolvedValue({
+            id: "booking-1",
+            tripRequestId: "trip-request-1",
+            riderUserId: "user_rider_1",
+            driverUserId: "user_driver_1",
+            ride: null,
+        });
+        mockOfferFindFirst.mockResolvedValue({
+            id: "offer-accepted-1",
+        });
+
+        const offerConversation = makeConversation({
+            type: "OFFER",
+            bookingId: null,
+            offerId: "offer-accepted-1",
+        });
+        mockGetOrCreateOfferConversation.mockResolvedValue(offerConversation);
+        mockAssertConversationParticipant.mockResolvedValue(offerConversation);
+
+        const res = await handlePostConversationForBooking(
+            new NextRequest("http://localhost:3000/api/conversations/for-booking/booking-1", {
+                method: "POST",
+            }),
+            "booking-1"
+        );
+
+        expect(res.status).toBe(200);
+        const json = await res.json();
+        expect(json.id).toBe(offerConversation.id);
+        expect(mockGetOrCreateOfferConversation).toHaveBeenCalledWith(
+            "offer-accepted-1"
+        );
+        expect(mockGetOrCreateBookingConversation).not.toHaveBeenCalled();
+    });
+
+    it("reuses existing booking conversation when present", async () => {
+        mockBookingFindUnique.mockResolvedValue({
+            id: "booking-1",
+            tripRequestId: "trip-request-1",
+            riderUserId: "user_rider_1",
+            driverUserId: "user_driver_1",
+            ride: null,
+        });
+        mockOfferFindFirst.mockResolvedValue({
+            id: "offer-accepted-1",
+        });
+        const bookingConversation = makeConversation({
+            type: "BOOKING",
+            bookingId: "booking-1",
+            offerId: null,
+        });
+        mockConversationFindUnique.mockResolvedValue(bookingConversation);
+        mockAssertConversationParticipant.mockResolvedValue(bookingConversation);
+
+        const res = await handlePostConversationForBooking(
+            new NextRequest("http://localhost:3000/api/conversations/for-booking/booking-1", {
+                method: "POST",
+            }),
+            "booking-1"
+        );
+
+        expect(res.status).toBe(200);
+        const json = await res.json();
+        expect(json.id).toBe(bookingConversation.id);
+        expect(mockGetOrCreateOfferConversation).not.toHaveBeenCalled();
+        expect(mockGetOrCreateBookingConversation).not.toHaveBeenCalled();
+    });
+
+    it("reuses canonical trip-request conversation before accepted-offer fallback", async () => {
+        mockBookingFindUnique.mockResolvedValue({
+            id: "booking-1",
+            tripRequestId: "trip-request-1",
+            riderUserId: "user_rider_1",
+            driverUserId: "user_driver_1",
+            ride: null,
+        });
+        mockConversationFindFirst.mockResolvedValue(
+            makeConversation({
+                id: "canonical-conversation-id",
+                type: "OFFER",
+                bookingId: null,
+                offerId: "offer-old-thread",
+            })
+        );
+        mockAssertConversationParticipant.mockResolvedValue(
+            makeConversation({
+                id: "canonical-conversation-id",
+                type: "OFFER",
+                bookingId: null,
+                offerId: "offer-old-thread",
+            })
+        );
+
+        const res = await handlePostConversationForBooking(
+            new NextRequest("http://localhost:3000/api/conversations/for-booking/booking-1", {
+                method: "POST",
+            }),
+            "booking-1"
+        );
+
+        expect(res.status).toBe(200);
+        const json = await res.json();
+        expect(json.id).toBe("canonical-conversation-id");
+        expect(mockGetOrCreateOfferConversation).not.toHaveBeenCalled();
+        expect(mockGetOrCreateBookingConversation).not.toHaveBeenCalled();
+        expect(mockOfferFindFirst).not.toHaveBeenCalled();
     });
 });

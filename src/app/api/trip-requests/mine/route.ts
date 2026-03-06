@@ -20,6 +20,37 @@ const tripRequestSummarySelect = {
     updatedAt: true,
 } satisfies Prisma.TripRequestSelect;
 
+const confirmedTripRequestBookingSelect = {
+    id: true,
+    tripRequestId: true,
+    riderUserId: true,
+    driverUserId: true,
+    seatsBooked: true,
+    tripRequest: {
+        select: {
+            earliestDesiredAt: true,
+            latestDesiredAt: true,
+        },
+    },
+} satisfies Prisma.BookingSelect;
+
+type TripRequestSummaryItem = Prisma.TripRequestGetPayload<{
+    select: typeof tripRequestSummarySelect;
+}>;
+
+type ConfirmedTripRequestBookingItem = Prisma.BookingGetPayload<{
+    select: typeof confirmedTripRequestBookingSelect;
+}>;
+
+interface ConfirmedBookingSummary {
+    id: string;
+    riderUserId: string;
+    driverUserId: string | null;
+    seatsBooked: number;
+    startsAt: string;
+    endsAt: string;
+}
+
 /**
  * GET /api/trip-requests/mine
  *
@@ -33,7 +64,7 @@ export async function GET(request: NextRequest) {
 
         const riderUserId = auth.user.clerkUserId;
 
-        const items = await prisma.tripRequest.findMany({
+        const items: TripRequestSummaryItem[] = await prisma.tripRequest.findMany({
             where: {
                 riderUserId,
                 status: {
@@ -44,7 +75,50 @@ export async function GET(request: NextRequest) {
             select: tripRequestSummarySelect,
         });
 
-        return NextResponse.json({ items, nextCursor: null });
+        const now = new Date();
+        const tripRequestIds = items.map((tripRequest) => tripRequest.id);
+        const confirmedBookings: ConfirmedTripRequestBookingItem[] =
+            tripRequestIds.length === 0
+                ? []
+                : await prisma.booking.findMany({
+                      where: {
+                          status: "CONFIRMED",
+                          tripRequestId: {
+                              in: tripRequestIds,
+                          },
+                          tripRequest: {
+                              latestDesiredAt: {
+                                  gt: now,
+                              },
+                          },
+                      },
+                      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+                      select: confirmedTripRequestBookingSelect,
+                  });
+
+        const confirmedByTripRequestId = new Map<string, ConfirmedBookingSummary[]>();
+        for (const booking of confirmedBookings) {
+            if (!booking.tripRequestId || !booking.tripRequest) continue;
+
+            const existing = confirmedByTripRequestId.get(booking.tripRequestId) ?? [];
+            existing.push({
+                id: booking.id,
+                riderUserId: booking.riderUserId,
+                driverUserId: booking.driverUserId,
+                seatsBooked: booking.seatsBooked,
+                startsAt: booking.tripRequest.earliestDesiredAt.toISOString(),
+                endsAt: booking.tripRequest.latestDesiredAt.toISOString(),
+            });
+            confirmedByTripRequestId.set(booking.tripRequestId, existing);
+        }
+
+        return NextResponse.json({
+            items: items.map((tripRequest) => ({
+                ...tripRequest,
+                confirmedBookings: confirmedByTripRequestId.get(tripRequest.id) ?? [],
+            })),
+            nextCursor: null,
+        });
     } catch (error) {
         console.error("[GET /api/trip-requests/mine] Unexpected error:", error);
         return NextResponse.json(

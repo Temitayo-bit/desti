@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import type { DistanceCategory } from "@prisma/client";
-import { X } from "lucide-react";
+import { MessageCircle, X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ProtectedShell } from "../_components/ProtectedShell";
 import {
@@ -16,6 +17,7 @@ import {
   type MyTripRequestsQuickFilter,
 } from "@/lib/my-trip-requests";
 import { formatRelativeTime } from "@/lib/dashboard";
+import { openBookingConversationThread } from "@/lib/booking-conversation";
 
 type TripRequestStatus = "ACTIVE" | "CLOSED";
 
@@ -34,6 +36,16 @@ interface TripRequestSummary {
   status: TripRequestStatus;
   createdAt: string;
   updatedAt: string;
+  confirmedBookings: ConfirmedBookingSummary[];
+}
+
+interface ConfirmedBookingSummary {
+  id: string;
+  riderUserId: string;
+  driverUserId: string | null;
+  seatsBooked: number;
+  startsAt: string;
+  endsAt: string;
 }
 
 interface EditTripRequestFormData {
@@ -275,6 +287,7 @@ async function fetchPendingIncomingOffers(
 }
 
 export default function MyTripRequestsPage() {
+  const router = useRouter();
   const [tripRequests, setTripRequests] = useState<TripRequestSummary[]>([]);
   const [pendingOffers, setPendingOffers] = useState<PendingIncomingOffer[]>([]);
   const [selectedTripRequest, setSelectedTripRequest] =
@@ -292,6 +305,8 @@ export default function MyTripRequestsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [pendingOfferActions, setPendingOfferActions] =
     useState<OfferActionPendingMap>({});
+  const [openingConversationBookingId, setOpeningConversationBookingId] =
+    useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<ActionNotice>(null);
   const [successState, setSuccessState] = useState<"edit" | null>(null);
   const closeTripRequestDialogButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -317,7 +332,12 @@ export default function MyTripRequestsPage() {
 
         if (signal?.aborted) return;
 
-        setTripRequests(nextTripRequests);
+        setTripRequests(
+          nextTripRequests.map((tripRequest) => ({
+            ...tripRequest,
+            confirmedBookings: tripRequest.confirmedBookings ?? [],
+          })),
+        );
         setPendingOffers(nextPendingOffers);
         setSelectedTripRequest((prev) => {
           if (!prev) return prev;
@@ -581,11 +601,20 @@ export default function MyTripRequestsPage() {
         return;
       }
 
-      const updatedTripRequest = (await response.json()) as TripRequestSummary;
-      setSelectedTripRequest(updatedTripRequest);
+      const updatedTripRequest = (await response.json()) as Omit<
+        TripRequestSummary,
+        "confirmedBookings"
+      >;
+      const mergedUpdatedTripRequest: TripRequestSummary = {
+        ...updatedTripRequest,
+        confirmedBookings: selectedTripRequest.confirmedBookings,
+      };
+      setSelectedTripRequest(mergedUpdatedTripRequest);
       setTripRequests((prev) =>
         prev.map((tripRequest) =>
-          tripRequest.id === updatedTripRequest.id ? updatedTripRequest : tripRequest,
+          tripRequest.id === mergedUpdatedTripRequest.id
+            ? mergedUpdatedTripRequest
+            : tripRequest,
         ),
       );
       setIsEditing(false);
@@ -669,6 +698,20 @@ export default function MyTripRequestsPage() {
         return next;
       });
     }
+  };
+
+  const openBookingMessages = async (bookingId: string) => {
+    setActionNotice(null);
+    setOpeningConversationBookingId(bookingId);
+
+    const result = await openBookingConversationThread(bookingId);
+    if (!result.ok) {
+      setActionNotice({ type: "error", text: result.message });
+      setOpeningConversationBookingId(null);
+      return;
+    }
+
+    router.push(result.href);
   };
 
   return (
@@ -932,6 +975,53 @@ export default function MyTripRequestsPage() {
                         </div>
                       </div>
                     </button>
+
+                    {tripRequest.confirmedBookings.length > 0 ? (
+                      <div className="mt-4 border-t border-zinc-200 pt-4">
+                        <p className="mb-3 text-sm font-semibold text-zinc-900">
+                          Confirmed bookings ({tripRequest.confirmedBookings.length})
+                        </p>
+                        <div className="space-y-2">
+                          {tripRequest.confirmedBookings.map((booking) => {
+                            const openingConversation =
+                              openingConversationBookingId === booking.id;
+                            return (
+                              <div
+                                key={booking.id}
+                                className="rounded-xl border border-zinc-200 bg-zinc-50 p-3"
+                              >
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="space-y-1">
+                                    <p className="text-sm font-semibold text-zinc-900">
+                                      Booking #{booking.id.slice(0, 8)}
+                                    </p>
+                                    <p className="text-xs text-zinc-600">
+                                      {booking.seatsBooked}{" "}
+                                      {booking.seatsBooked === 1 ? "seat" : "seats"} ·{" "}
+                                      {formatTimeRange(
+                                        booking.startsAt,
+                                        booking.endsAt,
+                                      )}
+                                    </p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    disabled={openingConversation}
+                                    onClick={() =>
+                                      void openBookingMessages(booking.id)
+                                    }
+                                    className="inline-flex items-center gap-1 rounded-lg border border-zinc-300 px-2.5 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    <MessageCircle size={14} />
+                                    {openingConversation ? "Opening..." : "Message"}
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
 
                     {primaryOffer ? (
                       <div className="mt-4 pt-4 border-t border-zinc-200">
