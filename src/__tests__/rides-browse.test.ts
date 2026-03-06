@@ -91,15 +91,13 @@ describe("GET /api/rides", () => {
             expect.arrayContaining([
                 { status: "ACTIVE" },
                 { latestDepartAt: { gt: expect.any(Date) } },
+                { earliestDepartAt: { gte: expect.any(Date) } },
                 { seatsAvailable: { gte: 1 } },
             ])
         );
-        expect(
-            andClauses.some((clause) => "earliestDepartAt" in clause)
-        ).toBe(false);
     });
 
-    it("applies earliestAfter only when provided", async () => {
+    it("applies explicit earliestAfter value when provided", async () => {
         const earliestAfter = "2030-01-01T09:30:00.000Z";
         await GET(makeRequest(`?earliestAfter=${encodeURIComponent(earliestAfter)}`) as never);
 

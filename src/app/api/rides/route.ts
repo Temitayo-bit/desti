@@ -71,10 +71,9 @@ export async function GET(request: NextRequest) {
             "includeFull",
             false
         );
-        const earliestAfter = parseISODateParam(
-            searchParams.get("earliestAfter"),
-            "earliestAfter"
-        );
+        const earliestAfter =
+            parseISODateParam(searchParams.get("earliestAfter"), "earliestAfter") ??
+            now;
         const latestBefore = parseISODateParam(
             searchParams.get("latestBefore"),
             "latestBefore"
@@ -86,9 +85,7 @@ export async function GET(request: NextRequest) {
             { latestDepartAt: { gt: now } },
         ];
 
-        if (earliestAfter) {
-            andClauses.push({ earliestDepartAt: { gte: earliestAfter } });
-        }
+        andClauses.push({ earliestDepartAt: { gte: earliestAfter } });
 
         if (latestBefore) {
             andClauses.push({ latestDepartAt: { lte: latestBefore } });
