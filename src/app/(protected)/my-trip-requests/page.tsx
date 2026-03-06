@@ -232,10 +232,17 @@ async function fetchMyTripRequests(
 async function fetchPendingIncomingOffers(
   signal?: AbortSignal,
 ): Promise<PendingIncomingOffer[]> {
+  const MAX_PAGES = 100;
   const allOffers: PendingIncomingOffer[] = [];
   let nextCursor: string | null = null;
+  let pagesFetched = 0;
+  let lastCursor: string | null = null;
 
   do {
+    if (pagesFetched >= MAX_PAGES) {
+      throw new Error("Too many pages while fetching incoming offers.");
+    }
+
     const search = new URLSearchParams({
       role: "rider",
       status: "PENDING",
@@ -255,7 +262,13 @@ async function fetchPendingIncomingOffers(
 
     const payload = (await response.json()) as OffersMineApiResponse;
     allOffers.push(...(payload.items ?? []));
-    nextCursor = payload.nextCursor ?? null;
+    pagesFetched += 1;
+    const newCursor = payload.nextCursor ?? null;
+    if (newCursor && newCursor === lastCursor) {
+      throw new Error("Detected repeating pagination cursor for incoming offers.");
+    }
+    lastCursor = newCursor;
+    nextCursor = newCursor;
   } while (nextCursor);
 
   return allOffers;
