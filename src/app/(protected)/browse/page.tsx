@@ -7,6 +7,10 @@ import type { DistanceCategory } from "@prisma/client";
 import { X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ProtectedShell } from "../_components/ProtectedShell";
+import {
+  filterRidesForBrowse,
+  type BrowseQuickFilter,
+} from "@/lib/browse-trip-requests";
 
 // --- Types ---
 type RideStatus = "ACTIVE";
@@ -91,7 +95,7 @@ export default function BrowseRidesPage() {
     } | null;
   } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeFilter, setActiveFilter] = useState<string>("All");
+  const [activeFilter, setActiveFilter] = useState<BrowseQuickFilter>("All");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [bookingInProgress, setBookingInProgress] = useState(false);
@@ -196,26 +200,11 @@ export default function BrowseRidesPage() {
     });
   }, [selectedRide]);
 
-  // Filter rides based on search query (client-side as requested if no API)
-  const filteredRides = rides.filter((ride) => {
-    const matchesSearch = ride.destinationText.toLowerCase().includes(searchQuery.toLowerCase());
-
-    // Quick filters logic
-    if (activeFilter === "All") return matchesSearch;
-    if (activeFilter === "Today") {
-      const now = new Date();
-      const rideDate = new Date(ride.earliestDepartAt);
-      const isSameLocalDate =
-        rideDate.getFullYear() === now.getFullYear() &&
-        rideDate.getMonth() === now.getMonth() &&
-        rideDate.getDate() === now.getDate();
-      return matchesSearch && isSameLocalDate;
-    }
-    if (activeFilter === "Short") return matchesSearch && ride.distanceCategory === "SHORT";
-    if (activeFilter === "Medium") return matchesSearch && ride.distanceCategory === "MEDIUM";
-    if (activeFilter === "Long") return matchesSearch && ride.distanceCategory === "LONG";
-
-    return matchesSearch;
+  const filteredRides = filterRidesForBrowse({
+    rides,
+    currentUserId: currentUser?.clerkUserId ?? null,
+    searchQuery,
+    activeFilter,
   });
   const quickFilters = ["All", "Today", "Short", "Medium", "Long"] as const;
 

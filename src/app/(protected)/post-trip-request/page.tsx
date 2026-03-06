@@ -97,8 +97,7 @@ export default function PostTripRequestPage() {
     }
 
     const timeoutId = window.setTimeout(() => {
-      // TODO: Redirect to My Trip Requests page once it is available.
-      router.push("/");
+      router.push("/post-trip-request");
     }, 2500);
 
     return () => window.clearTimeout(timeoutId);
@@ -222,7 +221,7 @@ export default function PostTripRequestPage() {
                 Trip Request Posted Successfully
               </h2>
               <p className="text-zinc-500 max-w-md">
-                Your trip request is now live. Redirecting you to Dashboard...
+                Your trip request is now live.
               </p>
             </motion.section>
           ) : (
