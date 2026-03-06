@@ -1,10 +1,16 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
     AiChatWidget,
     AiChatWidgetPanel,
 } from "@/components/AiChatWidget";
 import type { ChatWidgetMessage } from "@/lib/chat-widget";
+
+vi.mock("@clerk/nextjs", () => ({
+    useAuth: () => ({
+        userId: null,
+    }),
+}));
 
 describe("AI chat widget UI", () => {
     it("renders the floating launcher by default", () => {

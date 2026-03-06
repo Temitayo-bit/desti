@@ -1,5 +1,6 @@
 "use client";
 
+import { useAuth } from "@clerk/nextjs";
 import {
     type FormEvent,
     type KeyboardEvent as ReactKeyboardEvent,
@@ -223,6 +224,7 @@ export function AiChatWidgetPanel({
 }
 
 export function AiChatWidget() {
+    const { userId } = useAuth();
     const [isOpen, setIsOpen] = useState(false);
     const [messages, setMessages] = useState<ChatWidgetMessage[]>([]);
     const [draft, setDraft] = useState("");
@@ -234,6 +236,8 @@ export function AiChatWidget() {
     const composerRef = useRef<HTMLTextAreaElement | null>(null);
     const scrollContainerRef = useRef<HTMLDivElement | null>(null);
     const nextMessageIdRef = useRef(0);
+    const previousUserIdRef = useRef<string | null | undefined>(userId);
+    const requestAbortControllerRef = useRef<AbortController | null>(null);
 
     function buildMessage(
         role: ChatWidgetMessage["role"],
@@ -251,6 +255,8 @@ export function AiChatWidget() {
         message: string,
         history: ChatWidgetHistoryMessage[]
     ) {
+        const controller = new AbortController();
+        requestAbortControllerRef.current = controller;
         setIsSending(true);
         setErrorMessage(null);
         setPendingSubmission({
@@ -262,6 +268,7 @@ export function AiChatWidget() {
             const answer = await requestChatAnswer({
                 message,
                 history,
+                signal: controller.signal,
             });
             setMessages((previous) => [
                 ...previous,
@@ -269,12 +276,19 @@ export function AiChatWidget() {
             ]);
             setPendingSubmission(null);
         } catch (error: unknown) {
+            if (controller.signal.aborted) {
+                return;
+            }
+
             const nextMessage =
                 error instanceof Error
                     ? error.message
                     : "Failed to contact the Desti assistant.";
             setErrorMessage(nextMessage);
         } finally {
+            if (requestAbortControllerRef.current === controller) {
+                requestAbortControllerRef.current = null;
+            }
             setIsSending(false);
         }
     }
@@ -325,6 +339,23 @@ export function AiChatWidget() {
     }
 
     useEffect(() => {
+        if (previousUserIdRef.current === userId) {
+            return;
+        }
+
+        previousUserIdRef.current = userId;
+        requestAbortControllerRef.current?.abort();
+        requestAbortControllerRef.current = null;
+        nextMessageIdRef.current = 0;
+        setIsOpen(false);
+        setIsSending(false);
+        setMessages([]);
+        setDraft("");
+        setErrorMessage(null);
+        setPendingSubmission(null);
+    }, [userId]);
+
+    useEffect(() => {
         if (!isOpen || isSending) {
             return;
         }
@@ -370,6 +401,12 @@ export function AiChatWidget() {
             window.removeEventListener("keydown", handleKeyDown);
         };
     }, [isOpen]);
+
+    useEffect(() => {
+        return () => {
+            requestAbortControllerRef.current?.abort();
+        };
+    }, []);
 
     return (
         <>
