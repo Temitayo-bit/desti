@@ -5,7 +5,7 @@ export type MyRidesQuickFilter =
   | "Today"
   | "Upcoming"
   | "Past"
-  | "Has Bookings";
+  | "Has Upcoming Bookings";
 
 export interface MyRideFilterInput {
   id: string;

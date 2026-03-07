@@ -99,7 +99,7 @@ describe("my-rides filter helper", () => {
     expect(result.map((ride) => ride.id)).toEqual(["past"]);
   });
 
-  it("filters by Has Bookings using confirmed bookings", () => {
+  it("filters by Has Upcoming Bookings using confirmed bookings", () => {
     const rides = [
       fakeRide({ id: "open", confirmedBookings: [] }),
       fakeRide({ id: "booked", confirmedBookings: [{ id: "booking-1" }] }),
@@ -108,7 +108,7 @@ describe("my-rides filter helper", () => {
     const result = filterMyRides({
       rides,
       searchQuery: "",
-      activeFilter: "Has Bookings",
+      activeFilter: "Has Upcoming Bookings",
       now: new Date("2030-01-01T12:00:00.000Z"),
     });
 
