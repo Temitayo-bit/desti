@@ -33,6 +33,7 @@ export function ViewToggle<T extends string>({
             key={option.value}
             href={option.href}
             className={toggleLinkClass(activeView === option.value)}
+            aria-current={activeView === option.value ? "page" : undefined}
           >
             {option.label}
           </Link>

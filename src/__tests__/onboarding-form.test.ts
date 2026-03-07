@@ -65,6 +65,9 @@ describe("onboarding form helpers", () => {
     });
 
     it("maps nullable local profile data into form defaults", () => {
+        const emptyFirst = toInitialOnboardingFormValues(null);
+        const emptySecond = toInitialOnboardingFormValues(null);
+
         expect(
             toInitialOnboardingFormValues({
                 name: " Avery Rider ",
@@ -85,6 +88,7 @@ describe("onboarding form helpers", () => {
             yearAtStetson: "",
             gender: "",
         });
+        expect(emptyFirst).not.toBe(emptySecond);
     });
 
     it("blocks submit while a request is already in-flight", () => {

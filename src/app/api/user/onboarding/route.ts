@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireStetsonAuth } from "@/lib/auth";
+import {
+    ONBOARDING_GENDER_VALUES,
+    ONBOARDING_MAX_AGE,
+    ONBOARDING_MIN_AGE,
+    ONBOARDING_YEAR_VALUES,
+    type OnboardingGenderValue,
+    type OnboardingYearValue,
+} from "@/lib/onboarding-schema";
 import { prisma } from "@/lib/prisma";
-
-const YEAR_VALUES = ["FRESHMAN", "SOPHOMORE", "JUNIOR", "SENIOR"] as const;
-const GENDER_VALUES = ["MALE", "FEMALE", "OTHER", "PREFER_NOT_TO_SAY"] as const;
-
-type YearAtStetsonValue = (typeof YEAR_VALUES)[number];
-type GenderValue = (typeof GENDER_VALUES)[number];
 
 interface ValidationIssue {
     field: string;
@@ -16,8 +18,8 @@ interface ValidationIssue {
 interface ParsedOnboardingBody {
     name: string;
     age: number;
-    yearAtStetson: YearAtStetsonValue;
-    gender: GenderValue;
+    yearAtStetson: OnboardingYearValue;
+    gender: OnboardingGenderValue;
 }
 
 const ALLOWED_ONBOARDING_FIELDS = new Set([
@@ -70,8 +72,8 @@ function validateOnboardingBody(rawBody: unknown): {
     if (
         typeof rawAge !== "number" ||
         !Number.isInteger(rawAge) ||
-        rawAge < 16 ||
-        rawAge > 100
+        rawAge < ONBOARDING_MIN_AGE ||
+        rawAge > ONBOARDING_MAX_AGE
     ) {
         issues.push({
             field: "age",
@@ -82,22 +84,22 @@ function validateOnboardingBody(rawBody: unknown): {
     const rawYearAtStetson = body.yearAtStetson;
     if (
         typeof rawYearAtStetson !== "string" ||
-        !YEAR_VALUES.includes(rawYearAtStetson as YearAtStetsonValue)
+        !ONBOARDING_YEAR_VALUES.includes(rawYearAtStetson as OnboardingYearValue)
     ) {
         issues.push({
             field: "yearAtStetson",
-            message: `yearAtStetson must be one of: ${YEAR_VALUES.join(", ")}.`,
+            message: `yearAtStetson must be one of: ${ONBOARDING_YEAR_VALUES.join(", ")}.`,
         });
     }
 
     const rawGender = body.gender;
     if (
         typeof rawGender !== "string" ||
-        !GENDER_VALUES.includes(rawGender as GenderValue)
+        !ONBOARDING_GENDER_VALUES.includes(rawGender as OnboardingGenderValue)
     ) {
         issues.push({
             field: "gender",
-            message: `gender must be one of: ${GENDER_VALUES.join(", ")}.`,
+            message: `gender must be one of: ${ONBOARDING_GENDER_VALUES.join(", ")}.`,
         });
     }
 
@@ -109,8 +111,8 @@ function validateOnboardingBody(rawBody: unknown): {
         parsed: {
             name,
             age: rawAge as number,
-            yearAtStetson: rawYearAtStetson as YearAtStetsonValue,
-            gender: rawGender as GenderValue,
+            yearAtStetson: rawYearAtStetson as OnboardingYearValue,
+            gender: rawGender as OnboardingGenderValue,
         },
         issues,
     };

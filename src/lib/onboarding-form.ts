@@ -1,19 +1,19 @@
-export const ONBOARDING_YEAR_VALUES = [
-    "FRESHMAN",
-    "SOPHOMORE",
-    "JUNIOR",
-    "SENIOR",
-] as const;
+import {
+    ONBOARDING_GENDER_VALUES,
+    ONBOARDING_MAX_AGE,
+    ONBOARDING_MIN_AGE,
+    ONBOARDING_YEAR_VALUES,
+    type OnboardingGenderValue,
+    type OnboardingYearValue,
+} from "@/lib/onboarding-schema";
 
-export const ONBOARDING_GENDER_VALUES = [
-    "MALE",
-    "FEMALE",
-    "OTHER",
-    "PREFER_NOT_TO_SAY",
-] as const;
-
-export type OnboardingYearValue = (typeof ONBOARDING_YEAR_VALUES)[number];
-export type OnboardingGenderValue = (typeof ONBOARDING_GENDER_VALUES)[number];
+export {
+    ONBOARDING_GENDER_VALUES,
+    ONBOARDING_MAX_AGE,
+    ONBOARDING_MIN_AGE,
+    ONBOARDING_YEAR_VALUES,
+};
+export type { OnboardingGenderValue, OnboardingYearValue };
 
 export interface OnboardingFormValues {
     name: string;
@@ -80,7 +80,7 @@ export function toInitialOnboardingFormValues(
     profile?: LocalOnboardingProfile | null
 ): OnboardingFormValues {
     if (!profile) {
-        return EMPTY_ONBOARDING_FORM_VALUES;
+        return { ...EMPTY_ONBOARDING_FORM_VALUES };
     }
 
     return {
@@ -116,7 +116,7 @@ export function buildOnboardingPayload(
     }
 
     const age = parseAge(formValues.age);
-    if (age === null || age < 16 || age > 100) {
+    if (age === null || age < ONBOARDING_MIN_AGE || age > ONBOARDING_MAX_AGE) {
         fieldErrors.age = "Age must be an integer between 16 and 100.";
     }
 

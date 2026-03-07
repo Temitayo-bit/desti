@@ -11,6 +11,9 @@ import { filterMyRides, type MyRidesQuickFilter } from "@/lib/my-rides";
 import { openBookingConversationThread } from "@/lib/booking-conversation";
 import type { ManagedRideSummary } from "@/types/ride";
 
+const rideCancellationEnabled =
+  process.env.NEXT_PUBLIC_ENABLE_RIDE_CANCELLATION === "true";
+
 type ActionNotice =
   | { type: "success"; text: string }
   | { type: "error"; text: string }
@@ -215,6 +218,10 @@ export function MyRidesView() {
   });
   const quickFilters = ["All", "Today", "Short", "Medium", "Long"] as const;
 
+  const selectedRideEditLocked = Boolean(
+    selectedRide && selectedRide.confirmedBookings.length > 0,
+  );
+
   const formatTimeRange = (earliest: string, latest: string) => {
     try {
       const d1 = new Date(earliest);
@@ -237,7 +244,7 @@ export function MyRidesView() {
   };
 
   const startEditing = () => {
-    if (!selectedRide) return;
+    if (!selectedRide || selectedRide.confirmedBookings.length > 0) return;
 
     setEditFormData({
       originText: selectedRide.originText,
@@ -280,6 +287,11 @@ export function MyRidesView() {
     const rawDollarsPart = parts[0] ?? "0";
     const rawCentsPart = parts[1] ?? "";
     const dollarsPart = rawDollarsPart === "" ? "0" : rawDollarsPart;
+
+    if (rawCentsPart.length > 2) {
+      alert("Price/Seat must be a valid non-negative dollar amount.");
+      return;
+    }
 
     if (!/^\d+$/.test(dollarsPart) || !/^\d*$/.test(rawCentsPart)) {
       alert("Price/Seat must be a valid non-negative dollar amount.");
@@ -342,6 +354,10 @@ export function MyRidesView() {
   };
 
   const handleCancelRide = async (rideId: string) => {
+    if (!rideCancellationEnabled) {
+      return;
+    }
+
     if (!confirm("Are you sure you want to cancel this ride?")) return;
 
     try {
@@ -984,16 +1000,31 @@ export function MyRidesView() {
                     <div className="mt-8 pt-6 border-t border-zinc-100 flex gap-3 justify-end items-center">
                       <button
                         onClick={startEditing}
+                        disabled={selectedRideEditLocked}
+                        title={
+                          selectedRideEditLocked
+                            ? "Editing is unavailable after a confirmed booking."
+                            : undefined
+                        }
                         className="px-5 py-2.5 bg-emerald-800 hover:bg-emerald-900 text-white font-medium rounded-xl transition-colors"
                       >
                         Edit Ride
                       </button>
                       <button
-                        onClick={() => void handleCancelRide(selectedRide.id)}
-                        disabled={submitting}
+                        onClick={() => {
+                          if (rideCancellationEnabled) {
+                            void handleCancelRide(selectedRide.id);
+                          }
+                        }}
+                        disabled={!rideCancellationEnabled || submitting}
+                        title={
+                          !rideCancellationEnabled
+                            ? "Ride cancellation is coming soon."
+                            : undefined
+                        }
                         className="px-5 py-2.5 bg-red-50 hover:bg-red-100 text-red-700 font-medium rounded-xl transition-colors disabled:opacity-60"
                       >
-                        Cancel Ride
+                        {rideCancellationEnabled ? "Cancel Ride" : "Cancel Ride (Coming soon)"}
                       </button>
                     </div>
                   </motion.div>
