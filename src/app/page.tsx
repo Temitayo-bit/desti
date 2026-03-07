@@ -19,6 +19,7 @@ import {
 import { redirect } from "next/navigation";
 import { evaluateFrontendAccess } from "@/lib/frontend-auth";
 import { prisma } from "@/lib/prisma";
+import { DestiLogo } from "@/components/DestiLogo";
 
 const featureCards = [
     {
@@ -246,11 +247,8 @@ export default async function HomePage() {
         <main className="min-h-screen bg-[#f7f7f5] text-slate-950">
             <header className="sticky top-0 z-30 border-b border-zinc-200 bg-[#f7f7f5]/95 backdrop-blur">
                 <div className="mx-auto flex max-w-[1220px] items-center justify-between gap-6 px-6 py-6 lg:px-10">
-                    <Link
-                        href="/"
-                        className="text-4xl font-bold tracking-tight text-emerald-700"
-                    >
-                        Desti
+                    <Link href="/" className="shrink-0">
+                        <DestiLogo size="md" />
                     </Link>
 
                     <nav className="hidden items-center gap-14 lg:flex">
@@ -517,7 +515,7 @@ export default async function HomePage() {
                                 className="rounded-[2rem] border border-zinc-200 bg-white p-10 shadow-[0_14px_30px_rgba(15,23,42,0.05)]"
                             >
                                 <p className="text-[6rem] font-bold leading-none text-emerald-100">
-                                    "
+                                    &ldquo;
                                 </p>
                                 <p className="-mt-4 text-[2.2rem] leading-[1.55] text-slate-700">
                                     {testimonial.quote}
@@ -604,11 +602,8 @@ export default async function HomePage() {
             <footer className="border-t border-zinc-200 px-6 py-16 lg:px-10">
                 <div className="mx-auto grid max-w-[1220px] gap-12 lg:grid-cols-[1.3fr_1fr_1fr]">
                     <div>
-                        <Link
-                            href="/"
-                            className="text-4xl font-bold tracking-tight text-emerald-700"
-                        >
-                            Desti
+                        <Link href="/" className="inline-flex">
+                            <DestiLogo size="lg" />
                         </Link>
                         <p className="mt-8 max-w-md text-2xl leading-[1.55] text-slate-600">
                             Built for the Stetson University community.
