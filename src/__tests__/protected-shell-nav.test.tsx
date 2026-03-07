@@ -35,4 +35,16 @@ describe("protected shell trip request navigation", () => {
         expect(markup).not.toContain("Browse TripRequests");
         expect(markup).not.toContain(">My Trip Requests<");
     });
+
+    it("renders the profile nav item as a live link with active styling", () => {
+        const markup = renderToStaticMarkup(
+            <ProtectedShell activeNav="profile">
+                <main>Profile page</main>
+            </ProtectedShell>
+        );
+
+        expect(markup).toContain('href="/profile"');
+        expect(markup).toContain(">Profile<");
+        expect(markup).toContain("bg-emerald-50 text-emerald-700");
+    });
 });

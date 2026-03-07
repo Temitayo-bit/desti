@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Menu, X } from "lucide-react";
+import { DestiLogo } from "@/components/DestiLogo";
 
 type ProtectedNavKey =
   | "dashboard"
@@ -26,22 +27,15 @@ function navLinkClass(isActive: boolean): string {
   return "flex items-center gap-3 px-4 py-3 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100/80 rounded-xl font-medium transition-colors";
 }
 
-function placeholderNavLinkClass(): string {
-  return "flex items-center gap-3 px-4 py-3 text-zinc-500 bg-zinc-50 rounded-xl font-medium transition-colors pointer-events-none opacity-70";
-}
-
 export function ProtectedShell({ activeNav, children }: ProtectedShellProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
     <div className="min-h-screen bg-zinc-50 font-sans text-zinc-900 flex flex-col md:flex-row">
       <div className="md:hidden flex items-center justify-between p-4 bg-white border-b border-zinc-200 sticky top-0 z-20">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-emerald-700 text-white rounded-md flex items-center justify-center font-bold text-lg">
-            D
-          </div>
-          <span className="font-bold text-xl">Desti</span>
-        </div>
+        <Link href="/dashboard" className="shrink-0">
+          <DestiLogo size="sm" />
+        </Link>
         <button
           type="button"
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -63,12 +57,9 @@ export function ProtectedShell({ activeNav, children }: ProtectedShellProps) {
         `}
       >
         <div className="p-6 h-full flex flex-col">
-          <div className="hidden md:flex items-center gap-3 mb-10">
-            <div className="w-10 h-10 bg-emerald-700 text-white rounded-lg flex items-center justify-center font-bold text-xl shadow-sm">
-              D
-            </div>
-            <span className="font-bold text-2xl tracking-tight">Desti</span>
-          </div>
+          <Link href="/dashboard" className="mb-10 hidden md:flex w-fit">
+            <DestiLogo size="md" />
+          </Link>
 
           <nav className="flex-1 space-y-2">
             <Link
@@ -121,13 +112,13 @@ export function ProtectedShell({ activeNav, children }: ProtectedShellProps) {
               </svg>
               Messages
             </Link>
-            <div className={placeholderNavLinkClass()} tabIndex={-1} aria-disabled="true">
+            <Link href="/profile" className={navLinkClass(activeNav === "profile")}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
                 <circle cx="12" cy="7" r="4" />
               </svg>
               Profile
-            </div>
+            </Link>
           </nav>
 
           <div className="mt-8 pt-6 border-t border-zinc-100">
