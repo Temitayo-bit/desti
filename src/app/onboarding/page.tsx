@@ -1,11 +1,10 @@
 import { currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
+import { OnboardingClientPage } from "@/app/onboarding/OnboardingClientPage";
 import { evaluateFrontendAccess } from "@/lib/frontend-auth";
 import { prisma } from "@/lib/prisma";
 
-export default async function ProtectedLayout({
-    children,
-}: Readonly<{ children: React.ReactNode }>) {
+export default async function OnboardingPage() {
     const user = await currentUser();
 
     if (!user) {
@@ -23,9 +22,9 @@ export default async function ProtectedLayout({
         select: { onboardingComplete: true },
     });
 
-    if (localUser?.onboardingComplete !== true) {
-        redirect("/onboarding");
+    if (localUser?.onboardingComplete === true) {
+        redirect("/");
     }
 
-    return <>{children}</>;
+    return <OnboardingClientPage verifiedEmail={access.verifiedStetsonEmail} />;
 }

@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { format } from "date-fns";
 import { X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ProtectedShell } from "../_components/ProtectedShell";
+import { TripRequestsViewToggle } from "../_components/TripRequestsViewToggle";
+import { MyTripRequestsView } from "../my-trip-requests/MyTripRequestsView";
 import {
   buildOfferPayload,
   filterTripRequestsForBrowse,
@@ -16,6 +18,7 @@ import {
   type PendingOfferSummary,
   type TripRequestSummary,
 } from "@/lib/browse-trip-requests";
+import { normalizeTripRequestsView } from "@/lib/trip-request-view";
 
 interface CurrentUserSummary {
   clerkUserId: string;
@@ -187,6 +190,8 @@ function toTitleCase(str: string) {
 }
 
 export default function BrowseTripRequestsPage() {
+  const searchParams = useSearchParams();
+  const currentView = normalizeTripRequestsView(searchParams.get("view"));
   const [tripRequests, setTripRequests] = useState<TripRequestSummary[]>([]);
   const [selectedTripRequest, setSelectedTripRequest] =
     useState<TripRequestSummary | null>(null);
@@ -208,6 +213,10 @@ export default function BrowseTripRequestsPage() {
   const lastFocusedElementRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
+    if (currentView !== "browse") {
+      return;
+    }
+
     const controller = new AbortController();
 
     async function fetchTripRequests() {
@@ -297,7 +306,7 @@ export default function BrowseTripRequestsPage() {
     return () => {
       controller.abort();
     };
-  }, []);
+  }, [currentView]);
 
   useEffect(() => {
     if (!selectedTripRequest) {
@@ -366,6 +375,14 @@ export default function BrowseTripRequestsPage() {
     lastFocusedElementRef.current = null;
   }
 
+  if (currentView === "my") {
+    return (
+      <ProtectedShell activeNav="browseTripRequests">
+        <MyTripRequestsView />
+      </ProtectedShell>
+    );
+  }
+
   async function handleSendOffer() {
     if (!selectedTripRequest || submittingOffer || selectedHasPendingOffer) {
       return;
@@ -422,35 +439,18 @@ export default function BrowseTripRequestsPage() {
   return (
     <ProtectedShell activeNav="browseTripRequests">
       <div className="bg-white rounded-2xl p-6 md:p-8 shadow-sm border border-zinc-100">
-        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6 md:mb-8">
+        <div className="mb-6 md:mb-8">
           <div>
             <h1 className="text-2xl md:text-3xl font-bold tracking-tight mb-2">
-              Browse Trip Requests
+              Trip Requests
             </h1>
             <p className="text-zinc-500">
               Find active trip requests from verified Stetson students
             </p>
           </div>
-          <Link
-            href="/post-trip-request"
-            className="bg-emerald-800 hover:bg-emerald-900 text-white px-5 py-2.5 rounded-xl font-medium flex items-center justify-center gap-2 transition-colors whitespace-nowrap shadow-sm"
-          >
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-            Post Trip Request
-          </Link>
         </div>
+
+        <TripRequestsViewToggle activeView="browse" />
 
         <div className="relative">
           <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-zinc-400">
