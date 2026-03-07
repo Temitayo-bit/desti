@@ -71,7 +71,12 @@ interface OffersMineApiResponse {
 }
 
 type OfferActionType = "accept" | "cancel";
-type OfferActionPendingMap = Partial<Record<string, OfferActionType>>;
+interface PendingOfferActionState {
+  action: OfferActionType;
+  idempotencyKey: string;
+}
+
+type OfferActionPendingMap = Partial<Record<string, PendingOfferActionState>>;
 type ActionNotice =
   | { type: "success"; text: string }
   | { type: "error"; text: string }
@@ -224,6 +229,14 @@ async function parseOfferActionError(response: Response): Promise<string> {
 
 function formatPrice(priceCents: number): string {
   return `$${(priceCents / 100).toFixed(2)}`;
+}
+
+function createIdempotencyKey(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 const FOCUSABLE_SELECTOR =
@@ -668,7 +681,13 @@ export function MyTripRequestsView() {
 
   const runOfferAction = async (offerId: string, action: OfferActionType) => {
     setActionNotice(null);
-    setPendingOfferActions((prev) => ({ ...prev, [offerId]: action }));
+    const existingPendingState = pendingOfferActions[offerId];
+    const idempotencyKey =
+      existingPendingState?.idempotencyKey ?? createIdempotencyKey();
+    setPendingOfferActions((prev) => ({
+      ...prev,
+      [offerId]: { action, idempotencyKey },
+    }));
 
     const endpoint =
       action === "accept"
@@ -678,7 +697,12 @@ export function MyTripRequestsView() {
       action === "accept" ? "Offer accepted." : "Offer cancelled.";
 
     try {
-      const response = await fetch(endpoint, { method: "POST" });
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Idempotency-Key": idempotencyKey,
+        },
+      });
       if (!response.ok) {
         throw new Error(await parseOfferActionError(response));
       }
@@ -1046,18 +1070,18 @@ export function MyTripRequestsView() {
                             ) : null}
                           </div>
                           <div className="grid grid-cols-2 gap-2 sm:w-[280px]">
-                            <button
-                              type="button"
-                              disabled={
-                                Boolean(pendingOfferActions[primaryOffer.id]) ||
-                                tripRequest.status !== "ACTIVE"
+                              <button
+                                type="button"
+                                disabled={
+                                  Boolean(pendingOfferActions[primaryOffer.id]) ||
+                                  tripRequest.status !== "ACTIVE"
                               }
                               onClick={() =>
                                 void runOfferAction(primaryOffer.id, "accept")
                               }
                               className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
                             >
-                              {pendingOfferActions[primaryOffer.id] === "accept"
+                              {pendingOfferActions[primaryOffer.id]?.action === "accept"
                                 ? "Accepting..."
                                 : "Accept"}
                             </button>
@@ -1072,7 +1096,7 @@ export function MyTripRequestsView() {
                               }
                               className="rounded-xl border border-zinc-300 px-4 py-2.5 text-sm font-semibold text-zinc-800 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
                             >
-                              {pendingOfferActions[primaryOffer.id] === "cancel"
+                              {pendingOfferActions[primaryOffer.id]?.action === "cancel"
                                 ? "Cancelling..."
                                 : "Cancel"}
                             </button>
@@ -1575,7 +1599,8 @@ export function MyTripRequestsView() {
                         ) : (
                           <div className="space-y-3">
                             {selectedTripRequestOffers.map((offer) => {
-                              const busyAction = pendingOfferActions[offer.id] ?? null;
+                              const busyAction =
+                                pendingOfferActions[offer.id]?.action ?? null;
                               const isBusy = Boolean(busyAction);
                               const actionsDisabled =
                                 isBusy || selectedTripRequest.status !== "ACTIVE";

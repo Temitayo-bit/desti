@@ -50,6 +50,20 @@ describe("onboarding form helpers", () => {
         expect(result.fieldErrors.gender).toBeDefined();
     });
 
+    it("rejects malformed age inputs instead of truncating them", () => {
+        const decimalAge = buildOnboardingPayload(
+            validFormValues({ age: "19.5" })
+        );
+        const suffixedAge = buildOnboardingPayload(
+            validFormValues({ age: "18abc" })
+        );
+
+        expect(decimalAge.payload).toBeNull();
+        expect(decimalAge.fieldErrors.age).toBeDefined();
+        expect(suffixedAge.payload).toBeNull();
+        expect(suffixedAge.fieldErrors.age).toBeDefined();
+    });
+
     it("maps nullable local profile data into form defaults", () => {
         expect(
             toInitialOnboardingFormValues({

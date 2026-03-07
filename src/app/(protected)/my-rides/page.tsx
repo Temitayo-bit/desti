@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
+import { getRidesViewHref } from "@/lib/ride-view";
 
 export default function MyRidesRedirectPage() {
-    redirect("/browse?view=my");
+    redirect(getRidesViewHref("my"));
 }

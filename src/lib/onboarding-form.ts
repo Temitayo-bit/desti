@@ -93,7 +93,7 @@ export function toInitialOnboardingFormValues(
 
 function parseAge(ageInput: string): number | null {
     const trimmed = ageInput.trim();
-    if (!trimmed) {
+    if (!trimmed || !/^\d+$/.test(trimmed)) {
         return null;
     }
 

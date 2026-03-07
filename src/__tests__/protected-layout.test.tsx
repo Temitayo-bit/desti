@@ -63,6 +63,20 @@ describe("protected layout onboarding gate", () => {
         ).rejects.toThrow("REDIRECT:/onboarding");
     });
 
+    it("redirects to onboarding when the local user record does not exist yet", async () => {
+        mockCurrentUser.mockResolvedValue(makeVerifiedUser());
+        mockFindUnique.mockResolvedValue(null);
+
+        vi.resetModules();
+        const ProtectedLayout = (await import("@/app/(protected)/layout")).default;
+
+        await expect(
+            ProtectedLayout({
+                children: <div>Protected content</div>,
+            })
+        ).rejects.toThrow("REDIRECT:/onboarding");
+    });
+
     it("renders protected content for completed users", async () => {
         mockCurrentUser.mockResolvedValue(makeVerifiedUser());
         mockFindUnique.mockResolvedValue({ onboardingComplete: true });

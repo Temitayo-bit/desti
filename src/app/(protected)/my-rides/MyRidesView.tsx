@@ -1,50 +1,20 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
-import type { DistanceCategory } from "@prisma/client";
 import { MessageCircle, X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { RidesViewToggle } from "../_components/RidesViewToggle";
 import { filterMyRides, type MyRidesQuickFilter } from "@/lib/my-rides";
 import { openBookingConversationThread } from "@/lib/booking-conversation";
+import type { ManagedRideSummary } from "@/types/ride";
 
-type RideStatus = "ACTIVE";
 type ActionNotice =
   | { type: "success"; text: string }
   | { type: "error"; text: string }
   | null;
-
-interface ConfirmedBookingSummary {
-  id: string;
-  riderUserId: string;
-  driverUserId: string | null;
-  seatsBooked: number;
-  startsAt: string;
-  endsAt: string;
-}
-
-interface RideSummary {
-  id: string;
-  driverUserId: string;
-  originText: string;
-  destinationText: string;
-  earliestDepartAt: string;
-  latestDepartAt: string;
-  distanceCategory: DistanceCategory;
-  priceCents: number;
-  seatsTotal: number;
-  seatsAvailable: number;
-  pickupInstructions: string | null;
-  dropoffInstructions: string | null;
-  preferredDepartAt: string | null;
-  status: RideStatus;
-  createdAt: string;
-  updatedAt: string;
-  confirmedBookings: ConfirmedBookingSummary[];
-}
 
 interface EditRideFormData {
   originText?: string;
@@ -127,13 +97,16 @@ const ArrowRightIcon = () => (
 
 export function MyRidesView() {
   const router = useRouter();
-  const [rides, setRides] = useState<RideSummary[]>([]);
-  const [selectedRide, setSelectedRide] = useState<RideSummary | null>(null);
+  const [rides, setRides] = useState<ManagedRideSummary[]>([]);
+  const [selectedRide, setSelectedRide] = useState<ManagedRideSummary | null>(
+    null,
+  );
   const [isEditing, setIsEditing] = useState(false);
   const [editFormData, setEditFormData] = useState<EditRideFormData>({});
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<MyRidesQuickFilter>("All");
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<Error | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [successState, setSuccessState] = useState<"edit" | null>(null);
   const [actionNotice, setActionNotice] = useState<ActionNotice>(null);
@@ -142,47 +115,55 @@ export function MyRidesView() {
   const closeRideDialogButtonRef = useRef<HTMLButtonElement | null>(null);
   const lastFocusedElementRef = useRef<HTMLElement | null>(null);
 
-  useEffect(() => {
-    const controller = new AbortController();
+  const loadMyRides = useCallback(async (signal?: AbortSignal) => {
+    try {
+      setLoadError(null);
+      setLoading(true);
+      const response = await fetch("/api/rides/mine", { signal });
 
-    async function fetchMyRides() {
-      try {
-        setLoading(true);
-        const response = await fetch("/api/rides/mine", {
-          signal: controller.signal,
-        });
+      if (!response.ok) {
+        throw new Error("Failed to fetch your rides");
+      }
 
-        if (!response.ok) {
-          throw new Error("Failed to fetch your rides");
-        }
+      const payload = (await response.json()) as {
+        items?: ManagedRideSummary[];
+      };
+      if (signal?.aborted) {
+        return;
+      }
 
-        const payload = (await response.json()) as { items?: RideSummary[] };
-        if (!controller.signal.aborted) {
-          setRides(
-            (payload.items ?? []).map((ride) => ({
-              ...ride,
-              confirmedBookings: ride.confirmedBookings ?? [],
-            })),
-          );
-        }
-      } catch (error) {
-        if (error instanceof Error && error.name === "AbortError") {
-          return;
-        }
-        console.error("Error fetching my rides:", error);
-      } finally {
-        if (!controller.signal.aborted) {
-          setLoading(false);
-        }
+      setRides(
+        (payload.items ?? []).map((ride) => ({
+          ...ride,
+          confirmedBookings: ride.confirmedBookings ?? [],
+        })),
+      );
+      setLoadError(null);
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        return;
+      }
+
+      setLoadError(
+        error instanceof Error
+          ? error
+          : new Error("Failed to load your rides."),
+      );
+      console.error("Error fetching my rides:", error);
+    } finally {
+      if (!signal?.aborted) {
+        setLoading(false);
       }
     }
+  }, []);
 
-    void fetchMyRides();
-
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadMyRides(controller.signal);
     return () => {
       controller.abort();
     };
-  }, []);
+  }, [loadMyRides]);
 
   useEffect(() => {
     if (!selectedRide) return;
@@ -191,6 +172,41 @@ export function MyRidesView() {
       closeRideDialogButtonRef.current?.focus();
     });
   }, [selectedRide]);
+
+  const closeRideModal = useCallback(() => {
+    setSelectedRide(null);
+    setSuccessState(null);
+    setIsEditing(false);
+    setEditFormData({});
+
+    const previouslyFocusedElement = lastFocusedElementRef.current;
+    if (previouslyFocusedElement) {
+      window.requestAnimationFrame(() => {
+        previouslyFocusedElement.focus();
+      });
+    }
+    lastFocusedElementRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    if (!selectedRide) {
+      return;
+    }
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") {
+        return;
+      }
+
+      event.preventDefault();
+      closeRideModal();
+    }
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [selectedRide, closeRideModal]);
 
   const filteredRides = filterMyRides({
     rides,
@@ -218,21 +234,6 @@ export function MyRidesView() {
 
   const toTitleCase = (value: string) => {
     return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
-  };
-
-  const closeRideModal = () => {
-    setSelectedRide(null);
-    setSuccessState(null);
-    setIsEditing(false);
-    setEditFormData({});
-
-    const previouslyFocusedElement = lastFocusedElementRef.current;
-    if (previouslyFocusedElement) {
-      window.requestAnimationFrame(() => {
-        previouslyFocusedElement.focus();
-      });
-    }
-    lastFocusedElementRef.current = null;
   };
 
   const startEditing = () => {
@@ -315,10 +316,10 @@ export function MyRidesView() {
       }
 
       const updatedRide = (await response.json()) as Omit<
-        RideSummary,
+        ManagedRideSummary,
         "confirmedBookings"
       >;
-      const mergedUpdatedRide: RideSummary = {
+      const mergedUpdatedRide: ManagedRideSummary = {
         ...updatedRide,
         confirmedBookings: selectedRide.confirmedBookings,
       };
@@ -375,14 +376,25 @@ export function MyRidesView() {
     setActionNotice(null);
     setOpeningConversationBookingId(bookingId);
 
-    const result = await openBookingConversationThread(bookingId);
-    if (!result.ok) {
-      setActionNotice({ type: "error", text: result.message });
-      setOpeningConversationBookingId(null);
-      return;
-    }
+    try {
+      const result = await openBookingConversationThread(bookingId);
+      if (!result.ok) {
+        setActionNotice({ type: "error", text: result.message });
+        return;
+      }
 
-    router.push(result.href);
+      router.push(result.href);
+    } catch (error) {
+      setActionNotice({
+        type: "error",
+        text:
+          error instanceof Error
+            ? error.message
+            : "Unable to open booking messages right now.",
+      });
+    } finally {
+      setOpeningConversationBookingId(null);
+    }
   };
 
   return (
@@ -434,6 +446,7 @@ export function MyRidesView() {
           </div>
           <input
             type="text"
+            aria-label="Search destinations"
             placeholder="Search destinations..."
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
@@ -485,6 +498,39 @@ export function MyRidesView() {
                   className="h-32 bg-zinc-100 animate-pulse rounded-2xl"
                 ></div>
               ))}
+            </div>
+          ) : loadError ? (
+            <div className="text-center py-16 px-4">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="text-red-500"
+                >
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="12" y1="8" x2="12" y2="12"></line>
+                  <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+              </div>
+              <h3 className="text-lg font-bold text-zinc-900 mb-1">
+                Unable to load rides
+              </h3>
+              <p className="text-zinc-500 max-w-sm mx-auto">
+                {loadError.message || "Something went wrong while loading your rides."}
+              </p>
+              <button
+                type="button"
+                onClick={() => void loadMyRides()}
+                className="mt-4 rounded-xl bg-emerald-800 hover:bg-emerald-900 px-5 py-2.5 font-medium text-white transition-colors"
+              >
+                Retry
+              </button>
             </div>
           ) : filteredRides.length === 0 ? (
             <div className="text-center py-16 px-4">
@@ -625,7 +671,10 @@ export function MyRidesView() {
       </div>
 
       {selectedRide && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/40 backdrop-blur-sm">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/40 backdrop-blur-sm"
+          onClick={closeRideModal}
+        >
           <div
             role="dialog"
             aria-modal="true"
