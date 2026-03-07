@@ -1,16 +1,19 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { format } from "date-fns";
 import type { DistanceCategory } from "@prisma/client";
 import { X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ProtectedShell } from "../_components/ProtectedShell";
+import { RidesViewToggle } from "../_components/RidesViewToggle";
+import { MyRidesView } from "../my-rides/MyRidesView";
 import {
   filterRidesForBrowse,
   type BrowseQuickFilter,
 } from "@/lib/browse-trip-requests";
+import { normalizeRidesView } from "@/lib/ride-view";
 
 // --- Types ---
 type RideStatus = "ACTIVE";
@@ -80,6 +83,8 @@ const ArrowRightIcon = () => (
 
 // --- Component ---
 export default function BrowseRidesPage() {
+  const searchParams = useSearchParams();
+  const currentView = normalizeRidesView(searchParams.get("view"));
   const [rides, setRides] = useState<RideSummary[]>([]);
   const [selectedRide, setSelectedRide] = useState<RideSummary | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -107,6 +112,10 @@ export default function BrowseRidesPage() {
   const lastFocusedElementRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
+    if (currentView !== "browse") {
+      return;
+    }
+
     const controller = new AbortController();
 
     async function fetchRides() {
@@ -175,7 +184,7 @@ export default function BrowseRidesPage() {
     return () => {
       controller.abort();
     };
-  }, []);
+  }, [currentView]);
 
   useEffect(() => {
     if (!selectedRide) return;
@@ -434,24 +443,27 @@ export default function BrowseRidesPage() {
     }
   };
 
+  if (currentView === "my") {
+    return (
+      <ProtectedShell activeNav="browse">
+        <MyRidesView />
+      </ProtectedShell>
+    );
+  }
+
   return (
     <ProtectedShell activeNav="browse">
 
         {/* Top Header Section */}
         <div className="bg-white rounded-2xl p-6 md:p-8 shadow-sm border border-zinc-100">
-          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6 md:mb-8">
+          <div className="mb-6 md:mb-8">
             <div>
-              <h1 className="text-2xl md:text-3xl font-bold tracking-tight mb-2">Browse Available Rides</h1>
+              <h1 className="text-2xl md:text-3xl font-bold tracking-tight mb-2">Rides</h1>
               <p className="text-zinc-500">Find rides from verified Stetson students</p>
             </div>
-            <Link
-              href="/post-ride"
-              className="bg-emerald-800 hover:bg-emerald-900 text-white px-5 py-2.5 rounded-xl font-medium flex items-center justify-center gap-2 transition-colors whitespace-nowrap shadow-sm"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-              Post a Ride
-            </Link>
           </div>
+
+          <RidesViewToggle activeView="browse" />
 
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-zinc-400">

@@ -1,0 +1,24 @@
+import type { DistanceCategory } from "@prisma/client";
+import type { ConfirmedBookingSummary } from "@/types/booking";
+
+export type ManagedRideStatus = "ACTIVE";
+
+export interface ManagedRideSummary {
+  id: string;
+  driverUserId: string;
+  originText: string;
+  destinationText: string;
+  earliestDepartAt: string;
+  latestDepartAt: string;
+  distanceCategory: DistanceCategory;
+  priceCents: number;
+  seatsTotal: number;
+  seatsAvailable: number;
+  pickupInstructions: string | null;
+  dropoffInstructions: string | null;
+  preferredDepartAt: string | null;
+  status: ManagedRideStatus;
+  createdAt: string;
+  updatedAt: string;
+  confirmedBookings: ConfirmedBookingSummary[];
+}
