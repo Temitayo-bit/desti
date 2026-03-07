@@ -229,6 +229,7 @@ export function AiChatWidgetPanel({
 export function AiChatWidget() {
     const { userId } = useAuth();
     const pathname = usePathname();
+    const currentPathname = pathname ?? "";
     const [isOpen, setIsOpen] = useState(false);
     const [messages, setMessages] = useState<ChatWidgetMessage[]>([]);
     const [draft, setDraft] = useState("");
@@ -414,9 +415,9 @@ export function AiChatWidget() {
     }, []);
 
     const isMarketingLauncher =
-        pathname === "/" ||
-        pathname.startsWith("/sign-in") ||
-        pathname.startsWith("/sign-up");
+        currentPathname === "/" ||
+        currentPathname.startsWith("/sign-in") ||
+        currentPathname.startsWith("/sign-up");
 
     return (
         <>
