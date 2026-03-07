@@ -1,6 +1,18 @@
 import type { DistanceCategory } from "@prisma/client";
 
-export type BrowseQuickFilter = "All" | "Today" | "Short" | "Medium" | "Long";
+export type BrowseRidesQuickFilter =
+  | "All"
+  | "Soon"
+  | "Later"
+  | "2+ Seats"
+  | "Short Trip";
+
+export type BrowseTripRequestsQuickFilter =
+  | "All"
+  | "Soon"
+  | "Solo"
+  | "Group"
+  | "Offer Sent";
 
 export interface TripRequestSummary {
   id: string;
@@ -35,6 +47,7 @@ export interface RideBrowseSummary {
   destinationText: string;
   earliestDepartAt: string;
   distanceCategory: DistanceCategory;
+  seatsAvailable: number;
 }
 
 export interface OfferFormValues {
@@ -117,33 +130,78 @@ export function buildOfferPayload(
   };
 }
 
-function isSameLocalDate(dateA: Date, dateB: Date): boolean {
-  return (
-    dateA.getFullYear() === dateB.getFullYear() &&
-    dateA.getMonth() === dateB.getMonth() &&
-    dateA.getDate() === dateB.getDate()
-  );
+function addHours(date: Date, hours: number): Date {
+  return new Date(date.getTime() + hours * 60 * 60 * 1000);
 }
 
-function applyQuickFilter(
-  distanceCategory: DistanceCategory,
-  startsAtIso: string,
-  activeFilter: BrowseQuickFilter,
+function parseStartsAt(startsAtIso: string): Date | null {
+  const startsAt = new Date(startsAtIso);
+  if (Number.isNaN(startsAt.getTime())) {
+    return null;
+  }
+
+  return startsAt;
+}
+
+function applyTripRequestQuickFilter(
+  tripRequest: TripRequestSummary,
+  activeFilter: BrowseTripRequestsQuickFilter,
+  hasPendingOffer: boolean,
   now: Date,
 ): boolean {
   if (activeFilter === "All") return true;
 
-  if (activeFilter === "Today") {
-    const startsAt = new Date(startsAtIso);
-    if (Number.isNaN(startsAt.getTime())) {
-      return false;
-    }
-    return isSameLocalDate(startsAt, now);
+  if (activeFilter === "Offer Sent") {
+    return hasPendingOffer;
   }
 
-  if (activeFilter === "Short") return distanceCategory === "SHORT";
-  if (activeFilter === "Medium") return distanceCategory === "MEDIUM";
-  return distanceCategory === "LONG";
+  if (activeFilter === "Solo") {
+    return tripRequest.seatsNeeded === 1;
+  }
+
+  if (activeFilter === "Group") {
+    return tripRequest.seatsNeeded >= 2;
+  }
+
+  const startsAt = parseStartsAt(tripRequest.earliestDesiredAt);
+  if (!startsAt) {
+    return false;
+  }
+
+  const threshold = addHours(now, 24);
+  if (activeFilter === "Soon") {
+    return startsAt >= now && startsAt <= threshold;
+  }
+
+  return false;
+}
+
+function applyRideQuickFilter(
+  ride: RideBrowseSummary,
+  activeFilter: BrowseRidesQuickFilter,
+  now: Date,
+): boolean {
+  if (activeFilter === "All") return true;
+
+  if (activeFilter === "2+ Seats") {
+    return ride.seatsAvailable >= 2;
+  }
+
+  if (activeFilter === "Short Trip") {
+    return ride.distanceCategory === "SHORT";
+  }
+
+  const startsAt = parseStartsAt(ride.earliestDepartAt);
+  if (!startsAt) {
+    return false;
+  }
+
+  const threshold = addHours(now, 24);
+  if (activeFilter === "Soon") {
+    return startsAt >= now && startsAt <= threshold;
+  }
+
+  return startsAt > threshold;
 }
 
 export function getPendingOfferTripRequestIds(
@@ -160,7 +218,7 @@ interface FilterTripRequestOptions {
   tripRequests: TripRequestSummary[];
   currentUserId: string | null;
   searchQuery: string;
-  activeFilter: BrowseQuickFilter;
+  activeFilter: BrowseTripRequestsQuickFilter;
   pendingOfferTripRequestIds: Set<string>;
   now?: Date;
 }
@@ -189,10 +247,10 @@ export function filterTripRequestsForBrowse({
         return false;
       }
 
-      return applyQuickFilter(
-        tripRequest.distanceCategory,
-        tripRequest.earliestDesiredAt,
+      return applyTripRequestQuickFilter(
+        tripRequest,
         activeFilter,
+        pendingOfferTripRequestIds.has(tripRequest.id),
         now,
       );
     })
@@ -206,7 +264,7 @@ interface FilterRideOptions<T extends RideBrowseSummary> {
   rides: T[];
   currentUserId: string | null;
   searchQuery: string;
-  activeFilter: BrowseQuickFilter;
+  activeFilter: BrowseRidesQuickFilter;
   now?: Date;
 }
 
@@ -232,11 +290,6 @@ export function filterRidesForBrowse<T extends RideBrowseSummary>({
       return false;
     }
 
-    return applyQuickFilter(
-      ride.distanceCategory,
-      ride.earliestDepartAt,
-      activeFilter,
-      now,
-    );
+    return applyRideQuickFilter(ride, activeFilter, now);
   });
 }

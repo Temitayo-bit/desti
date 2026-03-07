@@ -12,7 +12,7 @@ import {
   buildOfferPayload,
   filterTripRequestsForBrowse,
   getPendingOfferTripRequestIds,
-  type BrowseQuickFilter,
+  type BrowseTripRequestsQuickFilter,
   type OfferFieldErrors,
   type OfferFormValues,
   type PendingOfferSummary,
@@ -197,7 +197,7 @@ export default function BrowseTripRequestsPage() {
     useState<TripRequestSummary | null>(null);
   const [currentUser, setCurrentUser] = useState<CurrentUserSummary | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeFilter, setActiveFilter] = useState<BrowseQuickFilter>("All");
+  const [activeFilter, setActiveFilter] = useState<BrowseTripRequestsQuickFilter>("All");
   const [loading, setLoading] = useState(true);
   const [submittingOffer, setSubmittingOffer] = useState(false);
   const [pendingOfferTripRequestIds, setPendingOfferTripRequestIds] = useState(
@@ -318,7 +318,7 @@ export default function BrowseTripRequestsPage() {
     });
   }, [selectedTripRequest]);
 
-  const quickFilters = ["All", "Today", "Short", "Medium", "Long"] as const;
+  const quickFilters = ["All", "Soon", "Solo", "Group", "Offer Sent"] as const;
 
   const filteredTripRequests = useMemo(
     () =>

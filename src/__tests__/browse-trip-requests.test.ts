@@ -50,6 +50,7 @@ function fakeRide(overrides: Partial<RideBrowseSummary> = {}): RideBrowseSummary
     destinationText: "Orlando",
     earliestDepartAt: "2030-01-01T10:00:00.000Z",
     distanceCategory: "MEDIUM",
+    seatsAvailable: 1,
     ...overrides,
   };
 }
@@ -106,41 +107,67 @@ describe("browse-trip-requests helpers", () => {
   it("filters trip requests by ownership/search/filter and marks pending offers", () => {
     const tripRequests = [
       fakeTripRequest({ id: "tr-own", riderUserId: "driver-1", destinationText: "Miami" }),
-      fakeTripRequest({ id: "tr-short", distanceCategory: "SHORT", destinationText: "Orlando" }),
-      fakeTripRequest({ id: "tr-medium", distanceCategory: "MEDIUM", destinationText: "Tampa" }),
+      fakeTripRequest({ id: "tr-with-offer", seatsNeeded: 1, destinationText: "Orlando" }),
+      fakeTripRequest({ id: "tr-without-offer", seatsNeeded: 3, destinationText: "Orlando" }),
     ];
 
-    const pendingIds = new Set<string>(["tr-short"]);
+    const pendingIds = new Set<string>(["tr-with-offer"]);
 
     const filtered = filterTripRequestsForBrowse({
       tripRequests,
       currentUserId: "driver-1",
       searchQuery: "orlando",
-      activeFilter: "Short",
+      activeFilter: "Offer Sent",
       pendingOfferTripRequestIds: pendingIds,
       now: new Date("2030-01-01T00:00:00.000Z"),
     });
 
     expect(filtered).toHaveLength(1);
-    expect(filtered[0].id).toBe("tr-short");
+    expect(filtered[0].id).toBe("tr-with-offer");
     expect(filtered[0].hasPendingOffer).toBe(true);
   });
 
-  it("filters rides and hides driver-owned rides", () => {
+  it("filters rides by seat count and hides driver-owned rides", () => {
     const rides = [
-      fakeRide({ id: "ride-own", driverUserId: "driver-1", destinationText: "Orlando", distanceCategory: "SHORT" }),
-      fakeRide({ id: "ride-a", driverUserId: "driver-2", destinationText: "Orlando", distanceCategory: "SHORT" }),
-      fakeRide({ id: "ride-b", driverUserId: "driver-3", destinationText: "Tampa", distanceCategory: "MEDIUM" }),
+      fakeRide({ id: "ride-own", driverUserId: "driver-1", destinationText: "Orlando", seatsAvailable: 4 }),
+      fakeRide({ id: "ride-a", driverUserId: "driver-2", destinationText: "Orlando", seatsAvailable: 2 }),
+      fakeRide({ id: "ride-b", driverUserId: "driver-3", destinationText: "Orlando", seatsAvailable: 1 }),
     ];
 
     const filtered = filterRidesForBrowse({
       rides,
       currentUserId: "driver-1",
       searchQuery: "orlando",
-      activeFilter: "Short",
+      activeFilter: "2+ Seats",
       now: new Date("2030-01-01T00:00:00.000Z"),
     });
 
     expect(filtered.map((ride) => ride.id)).toEqual(["ride-a"]);
+  });
+
+  it("filters rides into Soon and Later buckets", () => {
+    const rides = [
+      fakeRide({ id: "soon", earliestDepartAt: "2030-01-01T10:00:00.000Z", seatsAvailable: 1 }),
+      fakeRide({ id: "later", earliestDepartAt: "2030-01-02T10:00:01.000Z", seatsAvailable: 1 }),
+    ];
+
+    const soon = filterRidesForBrowse({
+      rides,
+      currentUserId: null,
+      searchQuery: "",
+      activeFilter: "Soon",
+      now: new Date("2030-01-01T10:00:00.000Z"),
+    });
+
+    const later = filterRidesForBrowse({
+      rides,
+      currentUserId: null,
+      searchQuery: "",
+      activeFilter: "Later",
+      now: new Date("2030-01-01T10:00:00.000Z"),
+    });
+
+    expect(soon.map((ride) => ride.id)).toEqual(["soon"]);
+    expect(later.map((ride) => ride.id)).toEqual(["later"]);
   });
 });

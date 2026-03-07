@@ -1,12 +1,19 @@
 import type { DistanceCategory } from "@prisma/client";
 
-export type MyRidesQuickFilter = "All" | "Today" | "Short" | "Medium" | "Long";
+export type MyRidesQuickFilter =
+  | "All"
+  | "Today"
+  | "Upcoming"
+  | "Past"
+  | "Has Bookings";
 
 export interface MyRideFilterInput {
   id: string;
   destinationText: string;
   earliestDepartAt: string;
+  latestDepartAt: string;
   distanceCategory: DistanceCategory;
+  confirmedBookings: readonly unknown[];
 }
 
 function isSameLocalDate(dateA: Date, dateB: Date): boolean {
@@ -14,6 +21,18 @@ function isSameLocalDate(dateA: Date, dateB: Date): boolean {
     dateA.getFullYear() === dateB.getFullYear() &&
     dateA.getMonth() === dateB.getMonth() &&
     dateA.getDate() === dateB.getDate()
+  );
+}
+
+function endOfLocalDay(date: Date): Date {
+  return new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+    23,
+    59,
+    59,
+    999,
   );
 }
 
@@ -32,9 +51,23 @@ function applyQuickFilter(
     return isSameLocalDate(rideDate, now);
   }
 
-  if (activeFilter === "Short") return ride.distanceCategory === "SHORT";
-  if (activeFilter === "Medium") return ride.distanceCategory === "MEDIUM";
-  return ride.distanceCategory === "LONG";
+  if (activeFilter === "Upcoming") {
+    const rideDate = new Date(ride.earliestDepartAt);
+    if (Number.isNaN(rideDate.getTime())) {
+      return false;
+    }
+    return rideDate > endOfLocalDay(now);
+  }
+
+  if (activeFilter === "Past") {
+    const latestDate = new Date(ride.latestDepartAt);
+    if (Number.isNaN(latestDate.getTime())) {
+      return false;
+    }
+    return latestDate < now;
+  }
+
+  return ride.confirmedBookings.length > 0;
 }
 
 export function filterMyRides<T extends MyRideFilterInput>({
