@@ -176,6 +176,10 @@ const heroRideCards = [
     },
 ];
 
+function stripSurroundingQuotes(value: string): string {
+    return value.replace(/^[\s"“”]+/, "").replace(/[\s"“”]+$/, "");
+}
+
 async function resolveRootState() {
     const user = await currentUser();
 
@@ -518,7 +522,7 @@ export default async function HomePage() {
                                     &ldquo;
                                 </p>
                                 <p className="-mt-4 text-[2.2rem] leading-[1.55] text-slate-700">
-                                    {testimonial.quote}
+                                    {stripSurroundingQuotes(testimonial.quote)}
                                 </p>
                                 <div className="mt-10 flex items-center gap-5">
                                     <div className="flex h-20 w-20 items-center justify-center rounded-full bg-emerald-50 text-3xl font-bold text-emerald-700">
