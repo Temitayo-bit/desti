@@ -132,7 +132,7 @@ export function OnboardingClientPage({
         }
 
         const timeoutId = window.setTimeout(() => {
-            router.replace("/");
+            router.replace("/dashboard");
         }, 1600);
 
         return () => window.clearTimeout(timeoutId);
@@ -162,7 +162,7 @@ export function OnboardingClientPage({
                 }
 
                 if (payload.localUser?.onboardingComplete) {
-                    router.replace("/");
+                    router.replace("/dashboard");
                     return;
                 }
 
@@ -249,7 +249,7 @@ export function OnboardingClientPage({
 
             const parsed = await parseOnboardingErrorResponse(response);
             if (response.status === 409 || parsed.code === "ONBOARDING_ALREADY_COMPLETED") {
-                router.replace("/");
+                router.replace("/dashboard");
                 return;
             }
 

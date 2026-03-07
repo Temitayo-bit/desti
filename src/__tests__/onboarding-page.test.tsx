@@ -60,7 +60,7 @@ describe("onboarding page", () => {
         vi.resetModules();
         const OnboardingPage = (await import("@/app/onboarding/page")).default;
 
-        await expect(OnboardingPage()).rejects.toThrow("REDIRECT:/");
+        await expect(OnboardingPage()).rejects.toThrow("REDIRECT:/dashboard");
     });
 
     it("renders the onboarding client page for incomplete users", async () => {

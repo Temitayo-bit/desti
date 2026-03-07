@@ -72,7 +72,7 @@ export function ProtectedShell({ activeNav, children }: ProtectedShellProps) {
 
           <nav className="flex-1 space-y-2">
             <Link
-              href="/"
+              href="/dashboard"
               className={navLinkClass(activeNav === "dashboard")}
             >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

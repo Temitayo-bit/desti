@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "@clerk/nextjs";
+import { usePathname } from "next/navigation";
 import {
     type FormEvent,
     type KeyboardEvent as ReactKeyboardEvent,
@@ -227,6 +228,8 @@ export function AiChatWidgetPanel({
 
 export function AiChatWidget() {
     const { userId } = useAuth();
+    const pathname = usePathname();
+    const currentPathname = pathname ?? "";
     const [isOpen, setIsOpen] = useState(false);
     const [messages, setMessages] = useState<ChatWidgetMessage[]>([]);
     const [draft, setDraft] = useState("");
@@ -411,6 +414,11 @@ export function AiChatWidget() {
         };
     }, []);
 
+    const isMarketingLauncher =
+        currentPathname === "/" ||
+        currentPathname.startsWith("/sign-in") ||
+        currentPathname.startsWith("/sign-up");
+
     return (
         <>
             {isOpen ? (
@@ -443,7 +451,11 @@ export function AiChatWidget() {
                 <button
                     aria-expanded={isOpen}
                     aria-label={isOpen ? "Close Desti assistant" : "Open Desti assistant"}
-                    className="group flex h-16 w-16 items-center justify-center rounded-full bg-emerald-600 text-white shadow-[0_18px_40px_-18px_rgba(5,150,105,0.9)] transition-all hover:-translate-y-0.5 hover:bg-emerald-500 focus:outline-none focus:ring-4 focus:ring-emerald-200"
+                    className={`group flex items-center justify-center rounded-full text-white transition-all focus:outline-none ${
+                        isMarketingLauncher
+                            ? "h-14 w-14 bg-zinc-900 text-[2rem] font-medium shadow-[0_18px_32px_-18px_rgba(15,23,42,0.9)] hover:-translate-y-0.5 hover:bg-zinc-800 focus:ring-4 focus:ring-zinc-200"
+                            : "h-16 w-16 bg-emerald-600 shadow-[0_18px_40px_-18px_rgba(5,150,105,0.9)] hover:-translate-y-0.5 hover:bg-emerald-500 focus:ring-4 focus:ring-emerald-200"
+                    }`}
                     onClick={() => setIsOpen((previous) => !previous)}
                     type="button"
                 >
