@@ -98,7 +98,7 @@ export default function PostRidePage() {
     }
 
     const timeoutId = window.setTimeout(() => {
-      router.push("/");
+      router.push("/dashboard");
     }, 2500);
 
     return () => window.clearTimeout(timeoutId);

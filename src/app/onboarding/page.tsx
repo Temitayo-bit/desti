@@ -23,7 +23,7 @@ export default async function OnboardingPage() {
     });
 
     if (localUser?.onboardingComplete === true) {
-        redirect("/");
+        redirect("/dashboard");
     }
 
     return <OnboardingClientPage verifiedEmail={access.verifiedStetsonEmail} />;

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
 import { MessageCircle, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { ProtectedShell } from "./_components/ProtectedShell";
+import { ProtectedShell } from "../_components/ProtectedShell";
 import {
   type DashboardOfferSummary,
   type DashboardBookingItem,

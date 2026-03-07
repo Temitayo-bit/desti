@@ -28,6 +28,7 @@ describe("protected shell trip request navigation", () => {
         );
 
         expect(markup).toContain(">Rides<");
+        expect(markup).toContain('href="/dashboard"');
         expect(markup).not.toContain("Browse Rides");
         expect(markup).not.toContain(">My Rides<");
         expect(markup).toContain("Trip Requests");
