@@ -67,7 +67,16 @@ function applyQuickFilter(
     return latestDate < now;
   }
 
-  return ride.confirmedBookings.length > 0;
+  if (ride.confirmedBookings.length === 0) {
+    return false;
+  }
+
+  const latestDate = new Date(ride.latestDepartAt);
+  if (Number.isNaN(latestDate.getTime())) {
+    return false;
+  }
+
+  return latestDate >= now;
 }
 
 export function filterMyRides<T extends MyRideFilterInput>({
