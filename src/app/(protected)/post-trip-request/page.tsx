@@ -166,7 +166,7 @@ export default function PostTripRequestPage() {
   }
 
   return (
-    <ProtectedShell activeNav="postTripRequest">
+    <ProtectedShell activeNav="browseTripRequests">
       <div className="md:hidden px-1">
         <h1 className="text-2xl font-bold tracking-tight mb-1">Post a Trip Request</h1>
         <p className="text-zinc-500 text-sm">

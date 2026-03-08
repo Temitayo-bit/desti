@@ -4,8 +4,6 @@ import { useState } from "react";
 import Link from "next/link";
 import {
   CarFront,
-  CirclePlus,
-  FilePlus2,
   LayoutDashboard,
   Menu,
   MessagesSquare,
@@ -19,8 +17,6 @@ type ProtectedNavKey =
   | "dashboard"
   | "browse"
   | "browseTripRequests"
-  | "postRide"
-  | "postTripRequest"
   | "messages"
   | "profile";
 
@@ -106,24 +102,6 @@ export function ProtectedShell({ activeNav, children }: ProtectedShellProps) {
                 <Route size={20} strokeWidth={2.1} />
               </span>
               Trip Requests
-            </Link>
-            <Link
-              href="/post-ride"
-              className={`${navLinkClass(activeNav === "postRide")} group`}
-            >
-              <span className={navIconWrapClass(activeNav === "postRide")}>
-                <CirclePlus size={20} strokeWidth={2.1} />
-              </span>
-              Post Rides
-            </Link>
-            <Link
-              href="/post-trip-request"
-              className={`${navLinkClass(activeNav === "postTripRequest")} group`}
-            >
-              <span className={navIconWrapClass(activeNav === "postTripRequest")}>
-                <FilePlus2 size={20} strokeWidth={2.1} />
-              </span>
-              Post Trip Request
             </Link>
             <Link
               href="/messages"

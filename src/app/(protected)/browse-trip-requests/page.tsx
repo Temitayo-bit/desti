@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { format } from "date-fns";
 import { X } from "lucide-react";
@@ -439,7 +440,7 @@ export default function BrowseTripRequestsPage() {
   return (
     <ProtectedShell activeNav="browseTripRequests">
       <div className="bg-white rounded-2xl p-6 md:p-8 shadow-sm border border-zinc-100">
-        <div className="mb-6 md:mb-8">
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6 md:mb-8">
           <div>
             <h1 className="text-2xl md:text-3xl font-bold tracking-tight mb-2">
               Trip Requests
@@ -448,6 +449,25 @@ export default function BrowseTripRequestsPage() {
               Find active trip requests from verified Stetson students
             </p>
           </div>
+          <Link
+            href="/post-trip-request"
+            className="bg-emerald-800 hover:bg-emerald-900 text-white px-5 py-2.5 rounded-xl font-medium flex items-center justify-center gap-2 transition-colors whitespace-nowrap shadow-sm"
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            Post Trip Request
+          </Link>
         </div>
 
         <TripRequestsViewToggle activeView="browse" />
