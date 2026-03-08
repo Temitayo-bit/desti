@@ -165,7 +165,7 @@ export default function PostRidePage() {
   }
 
   return (
-    <ProtectedShell activeNav="postRide">
+    <ProtectedShell activeNav="browse">
       <div className="md:hidden px-1">
         <h1 className="text-2xl font-bold tracking-tight mb-1">Post a Ride</h1>
         <p className="text-zinc-500 text-sm">

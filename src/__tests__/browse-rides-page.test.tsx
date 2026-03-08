@@ -51,6 +51,8 @@ describe("browse rides hub page", () => {
         expect(markup).toContain("Rides");
         expect(markup).toContain("Browse");
         expect(markup).toContain("My Rides");
+        expect(markup).toContain("Post a Ride");
+        expect(markup).toContain('href="/post-ride"');
         expect(markup).not.toContain("data-testid=\"my-rides-view\"");
     });
 
