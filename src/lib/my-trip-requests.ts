@@ -2,16 +2,18 @@ import type { DistanceCategory } from "@prisma/client";
 
 export type MyTripRequestsQuickFilter =
     | "All"
-    | "Today"
-    | "Short"
-    | "Medium"
-    | "Long";
+    | "Active"
+    | "Offers Received"
+    | "Booked"
+    | "Closed";
 
 export interface MyTripRequestFilterInput {
     id: string;
     destinationText: string;
     earliestDesiredAt: string;
     distanceCategory: DistanceCategory;
+    status: "ACTIVE" | "CLOSED";
+    confirmedBookings: readonly unknown[];
 }
 
 export interface PendingIncomingOffer {
@@ -28,44 +30,38 @@ export interface PendingIncomingOffer {
 
 export type PendingOffersByTripRequestId = Record<string, PendingIncomingOffer[]>;
 
-function isSameLocalDate(dateA: Date, dateB: Date): boolean {
-    return (
-        dateA.getFullYear() === dateB.getFullYear() &&
-        dateA.getMonth() === dateB.getMonth() &&
-        dateA.getDate() === dateB.getDate()
-    );
-}
-
 function applyQuickFilter(
     tripRequest: MyTripRequestFilterInput,
     activeFilter: MyTripRequestsQuickFilter,
-    now: Date
+    pendingOfferTripRequestIds: Set<string>
 ): boolean {
     if (activeFilter === "All") return true;
 
-    if (activeFilter === "Today") {
-        const tripDate = new Date(tripRequest.earliestDesiredAt);
-        if (Number.isNaN(tripDate.getTime())) {
-            return false;
-        }
-        return isSameLocalDate(tripDate, now);
+    if (activeFilter === "Active") {
+        return tripRequest.status === "ACTIVE";
     }
 
-    if (activeFilter === "Short") return tripRequest.distanceCategory === "SHORT";
-    if (activeFilter === "Medium") return tripRequest.distanceCategory === "MEDIUM";
-    return tripRequest.distanceCategory === "LONG";
+    if (activeFilter === "Offers Received") {
+        return pendingOfferTripRequestIds.has(tripRequest.id);
+    }
+
+    if (activeFilter === "Booked") {
+        return tripRequest.confirmedBookings.length > 0;
+    }
+
+    return tripRequest.status === "CLOSED";
 }
 
 export function filterMyTripRequests<T extends MyTripRequestFilterInput>({
     tripRequests,
     searchQuery,
     activeFilter,
-    now = new Date(),
+    pendingOfferTripRequestIds = new Set<string>(),
 }: {
     tripRequests: T[];
     searchQuery: string;
     activeFilter: MyTripRequestsQuickFilter;
-    now?: Date;
+    pendingOfferTripRequestIds?: Set<string>;
 }): T[] {
     const normalizedSearch = searchQuery.trim().toLowerCase();
 
@@ -78,7 +74,11 @@ export function filterMyTripRequests<T extends MyTripRequestFilterInput>({
             return false;
         }
 
-        return applyQuickFilter(tripRequest, activeFilter, now);
+        return applyQuickFilter(
+            tripRequest,
+            activeFilter,
+            pendingOfferTripRequestIds
+        );
     });
 }
 

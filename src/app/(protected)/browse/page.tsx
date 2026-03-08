@@ -11,7 +11,7 @@ import { RidesViewToggle } from "../_components/RidesViewToggle";
 import { MyRidesView } from "../my-rides/MyRidesView";
 import {
   filterRidesForBrowse,
-  type BrowseQuickFilter,
+  type BrowseRidesQuickFilter,
 } from "@/lib/browse-trip-requests";
 import { normalizeRidesView } from "@/lib/ride-view";
 
@@ -100,7 +100,7 @@ export default function BrowseRidesPage() {
     } | null;
   } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeFilter, setActiveFilter] = useState<BrowseQuickFilter>("All");
+  const [activeFilter, setActiveFilter] = useState<BrowseRidesQuickFilter>("All");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [bookingInProgress, setBookingInProgress] = useState(false);
@@ -215,7 +215,7 @@ export default function BrowseRidesPage() {
     searchQuery,
     activeFilter,
   });
-  const quickFilters = ["All", "Today", "Short", "Medium", "Long"] as const;
+  const quickFilters = ["All", "Soon", "Later", "2+ Seats", "Short Trip"] as const;
 
   const formatTimeRange = (earliest: string, latest: string) => {
     try {

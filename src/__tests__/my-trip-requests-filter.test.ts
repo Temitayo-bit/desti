@@ -16,6 +16,8 @@ function fakeTripRequest(
     destinationText: "Orlando",
     earliestDesiredAt: "2030-01-01T10:00:00.000Z",
     distanceCategory: "MEDIUM",
+    status: "ACTIVE",
+    confirmedBookings: [],
     ...overrides,
   };
 }
@@ -31,7 +33,6 @@ describe("my-trip-requests filter helper", () => {
       tripRequests,
       searchQuery: "",
       activeFilter: "All",
-      now: new Date("2030-01-01T00:00:00.000Z"),
     });
 
     expect(result.map((tripRequest) => tripRequest.id)).toEqual(["a", "b"]);
@@ -47,49 +48,73 @@ describe("my-trip-requests filter helper", () => {
       tripRequests,
       searchQuery: "orlan",
       activeFilter: "All",
-      now: new Date("2030-01-01T00:00:00.000Z"),
     });
 
     expect(result.map((tripRequest) => tripRequest.id)).toEqual(["a"]);
   });
 
-  it("filters by quick distance category", () => {
+  it("filters by Active using status", () => {
     const tripRequests = [
-      fakeTripRequest({ id: "short", distanceCategory: "SHORT" }),
-      fakeTripRequest({ id: "medium", distanceCategory: "MEDIUM" }),
-      fakeTripRequest({ id: "long", distanceCategory: "LONG" }),
+      fakeTripRequest({ id: "active", status: "ACTIVE" }),
+      fakeTripRequest({ id: "closed", status: "CLOSED" }),
     ];
 
     const result = filterMyTripRequests({
       tripRequests,
       searchQuery: "",
-      activeFilter: "Short",
-      now: new Date("2030-01-01T00:00:00.000Z"),
+      activeFilter: "Active",
     });
 
-    expect(result.map((tripRequest) => tripRequest.id)).toEqual(["short"]);
+    expect(result.map((tripRequest) => tripRequest.id)).toEqual(["active"]);
   });
 
-  it("filters by Today using earliestDesiredAt", () => {
+  it("filters by Offers Received using pending offer ids", () => {
     const tripRequests = [
+      fakeTripRequest({ id: "with-offer" }),
+      fakeTripRequest({ id: "without-offer" }),
+    ];
+
+    const result = filterMyTripRequests({
+      tripRequests,
+      searchQuery: "",
+      activeFilter: "Offers Received",
+      pendingOfferTripRequestIds: new Set(["with-offer"]),
+    });
+
+    expect(result.map((tripRequest) => tripRequest.id)).toEqual(["with-offer"]);
+  });
+
+  it("filters by Booked using confirmed bookings", () => {
+    const tripRequests = [
+      fakeTripRequest({ id: "open", confirmedBookings: [] }),
       fakeTripRequest({
-        id: "today",
-        earliestDesiredAt: "2030-01-01T10:00:00.000Z",
-      }),
-      fakeTripRequest({
-        id: "later",
-        earliestDesiredAt: "2030-01-02T10:00:00.000Z",
+        id: "booked",
+        confirmedBookings: [{ id: "booking-1" }],
       }),
     ];
 
     const result = filterMyTripRequests({
       tripRequests,
       searchQuery: "",
-      activeFilter: "Today",
-      now: new Date("2030-01-01T12:00:00.000Z"),
+      activeFilter: "Booked",
     });
 
-    expect(result.map((tripRequest) => tripRequest.id)).toEqual(["today"]);
+    expect(result.map((tripRequest) => tripRequest.id)).toEqual(["booked"]);
+  });
+
+  it("filters by Closed using status", () => {
+    const tripRequests = [
+      fakeTripRequest({ id: "active", status: "ACTIVE" }),
+      fakeTripRequest({ id: "closed", status: "CLOSED" }),
+    ];
+
+    const result = filterMyTripRequests({
+      tripRequests,
+      searchQuery: "",
+      activeFilter: "Closed",
+    });
+
+    expect(result.map((tripRequest) => tripRequest.id)).toEqual(["closed"]);
   });
 
   it("groups pending offers by trip request id", () => {

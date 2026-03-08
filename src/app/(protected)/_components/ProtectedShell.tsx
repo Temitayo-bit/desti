@@ -2,7 +2,17 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Menu, X } from "lucide-react";
+import {
+  CarFront,
+  CirclePlus,
+  FilePlus2,
+  LayoutDashboard,
+  Menu,
+  MessagesSquare,
+  Route,
+  UserRound,
+  X,
+} from "lucide-react";
 import { DestiLogo } from "@/components/DestiLogo";
 
 type ProtectedNavKey =
@@ -21,10 +31,18 @@ interface ProtectedShellProps {
 
 function navLinkClass(isActive: boolean): string {
   if (isActive) {
-    return "flex items-center gap-3 px-4 py-3 bg-emerald-50 text-emerald-700 rounded-xl font-medium transition-colors";
+    return "flex items-center gap-3 px-3 py-3 bg-emerald-50 text-emerald-700 rounded-2xl font-medium transition-colors";
   }
 
-  return "flex items-center gap-3 px-4 py-3 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100/80 rounded-xl font-medium transition-colors";
+  return "flex items-center gap-3 px-3 py-3 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100/80 rounded-2xl font-medium transition-colors";
+}
+
+function navIconWrapClass(isActive: boolean): string {
+  if (isActive) {
+    return "flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700";
+  }
+
+  return "flex h-10 w-10 items-center justify-center rounded-xl bg-white text-zinc-500 ring-1 ring-zinc-200 transition-colors group-hover:bg-zinc-50 group-hover:text-zinc-700";
 }
 
 export function ProtectedShell({ activeNav, children }: ProtectedShellProps) {
@@ -64,59 +82,65 @@ export function ProtectedShell({ activeNav, children }: ProtectedShellProps) {
           <nav className="flex-1 space-y-2">
             <Link
               href="/dashboard"
-              className={navLinkClass(activeNav === "dashboard")}
+              className={`${navLinkClass(activeNav === "dashboard")} group`}
             >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect width="18" height="18" x="3" y="3" rx="2" />
-                <path d="M3 9h18" />
-                <path d="M9 21V9" />
-              </svg>
+              <span className={navIconWrapClass(activeNav === "dashboard")}>
+                <LayoutDashboard size={20} strokeWidth={2.1} />
+              </span>
               Dashboard
             </Link>
-            <Link href="/browse" className={navLinkClass(activeNav === "browse")}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-                <polyline points="9 22 9 12 15 12 15 22" />
-              </svg>
+            <Link
+              href="/browse"
+              className={`${navLinkClass(activeNav === "browse")} group`}
+            >
+              <span className={navIconWrapClass(activeNav === "browse")}>
+                <CarFront size={20} strokeWidth={2.1} />
+              </span>
               Rides
             </Link>
-            <Link href="/browse-trip-requests" className={navLinkClass(activeNav === "browseTripRequests")}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M2 12h20" />
-                <path d="m12 2 4 4-4 4" />
-                <path d="m12 14-4 4 4 4" />
-              </svg>
+            <Link
+              href="/browse-trip-requests"
+              className={`${navLinkClass(activeNav === "browseTripRequests")} group`}
+            >
+              <span className={navIconWrapClass(activeNav === "browseTripRequests")}>
+                <Route size={20} strokeWidth={2.1} />
+              </span>
               Trip Requests
             </Link>
-            <Link href="/post-ride" className={navLinkClass(activeNav === "postRide")}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10" />
-                <line x1="12" y1="8" x2="12" y2="16" />
-                <line x1="8" y1="12" x2="16" y2="12" />
-              </svg>
+            <Link
+              href="/post-ride"
+              className={`${navLinkClass(activeNav === "postRide")} group`}
+            >
+              <span className={navIconWrapClass(activeNav === "postRide")}>
+                <CirclePlus size={20} strokeWidth={2.1} />
+              </span>
               Post Rides
             </Link>
-            <Link href="/post-trip-request" className={navLinkClass(activeNav === "postTripRequest")}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-                <line x1="16" y1="13" x2="8" y2="13" />
-                <line x1="16" y1="17" x2="8" y2="17" />
-                <polyline points="10 9 9 9 8 9" />
-              </svg>
-              Post TripRequest
+            <Link
+              href="/post-trip-request"
+              className={`${navLinkClass(activeNav === "postTripRequest")} group`}
+            >
+              <span className={navIconWrapClass(activeNav === "postTripRequest")}>
+                <FilePlus2 size={20} strokeWidth={2.1} />
+              </span>
+              Post Trip Request
             </Link>
-            <Link href="/messages" className={navLinkClass(activeNav === "messages")}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-              </svg>
+            <Link
+              href="/messages"
+              className={`${navLinkClass(activeNav === "messages")} group`}
+            >
+              <span className={navIconWrapClass(activeNav === "messages")}>
+                <MessagesSquare size={20} strokeWidth={2.1} />
+              </span>
               Messages
             </Link>
-            <Link href="/profile" className={navLinkClass(activeNav === "profile")}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
-                <circle cx="12" cy="7" r="4" />
-              </svg>
+            <Link
+              href="/profile"
+              className={`${navLinkClass(activeNav === "profile")} group`}
+            >
+              <span className={navIconWrapClass(activeNav === "profile")}>
+                <UserRound size={20} strokeWidth={2.1} />
+              </span>
               Profile
             </Link>
           </nav>

@@ -6,7 +6,9 @@ function fakeRide(overrides: Partial<MyRideFilterInput> = {}): MyRideFilterInput
     id: "ride-1",
     destinationText: "Orlando",
     earliestDepartAt: "2030-01-01T10:00:00.000Z",
+    latestDepartAt: "2030-01-01T11:00:00.000Z",
     distanceCategory: "MEDIUM",
+    confirmedBookings: [],
     ...overrides,
   };
 }
@@ -41,21 +43,20 @@ describe("my-rides filter helper", () => {
     expect(result.map((ride) => ride.id)).toEqual(["a"]);
   });
 
-  it("filters by quick distance category", () => {
+  it("filters by Upcoming using rides after today", () => {
     const rides = [
-      fakeRide({ id: "short", distanceCategory: "SHORT" }),
-      fakeRide({ id: "medium", distanceCategory: "MEDIUM" }),
-      fakeRide({ id: "long", distanceCategory: "LONG" }),
+      fakeRide({ id: "today", earliestDepartAt: "2030-01-01T18:00:00.000Z" }),
+      fakeRide({ id: "upcoming", earliestDepartAt: "2030-01-02T10:00:00.000Z" }),
     ];
 
     const result = filterMyRides({
       rides,
       searchQuery: "",
-      activeFilter: "Short",
-      now: new Date("2030-01-01T00:00:00.000Z"),
+      activeFilter: "Upcoming",
+      now: new Date("2030-01-01T12:00:00.000Z"),
     });
 
-    expect(result.map((ride) => ride.id)).toEqual(["short"]);
+    expect(result.map((ride) => ride.id)).toEqual(["upcoming"]);
   });
 
   it("filters by Today using earliestDepartAt", () => {
@@ -72,5 +73,45 @@ describe("my-rides filter helper", () => {
     });
 
     expect(result.map((ride) => ride.id)).toEqual(["today"]);
+  });
+
+  it("filters by Past using latestDepartAt", () => {
+    const rides = [
+      fakeRide({
+        id: "past",
+        earliestDepartAt: "2029-12-31T10:00:00.000Z",
+        latestDepartAt: "2029-12-31T11:00:00.000Z",
+      }),
+      fakeRide({
+        id: "future",
+        earliestDepartAt: "2030-01-01T18:00:00.000Z",
+        latestDepartAt: "2030-01-01T19:00:00.000Z",
+      }),
+    ];
+
+    const result = filterMyRides({
+      rides,
+      searchQuery: "",
+      activeFilter: "Past",
+      now: new Date("2030-01-01T12:00:00.000Z"),
+    });
+
+    expect(result.map((ride) => ride.id)).toEqual(["past"]);
+  });
+
+  it("filters by Has Upcoming Bookings using confirmed bookings", () => {
+    const rides = [
+      fakeRide({ id: "open", confirmedBookings: [] }),
+      fakeRide({ id: "booked", confirmedBookings: [{ id: "booking-1" }] }),
+    ];
+
+    const result = filterMyRides({
+      rides,
+      searchQuery: "",
+      activeFilter: "Has Upcoming Bookings",
+      now: new Date("2030-01-01T12:00:00.000Z"),
+    });
+
+    expect(result.map((ride) => ride.id)).toEqual(["booked"]);
   });
 });

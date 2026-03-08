@@ -216,7 +216,13 @@ export function MyRidesView() {
     searchQuery,
     activeFilter,
   });
-  const quickFilters = ["All", "Today", "Short", "Medium", "Long"] as const;
+  const quickFilters = [
+    "All",
+    "Today",
+    "Upcoming",
+    "Past",
+    "Has Upcoming Bookings",
+  ] as const;
 
   const selectedRideEditLocked = Boolean(
     selectedRide && selectedRide.confirmedBookings.length > 0,

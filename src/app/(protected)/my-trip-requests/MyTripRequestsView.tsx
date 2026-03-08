@@ -405,6 +405,7 @@ export function MyTripRequestsView() {
     tripRequests,
     searchQuery,
     activeFilter,
+    pendingOfferTripRequestIds: new Set(pendingOffers.map((offer) => offer.tripRequestId)),
   });
   const pendingOffersByTripRequestId = useMemo(
     () => groupPendingOffersByTripRequestId(pendingOffers),
@@ -416,7 +417,7 @@ export function MyTripRequestsView() {
         selectedTripRequest.id,
       )
     : [];
-  const quickFilters = ["All", "Today", "Short", "Medium", "Long"] as const;
+  const quickFilters = ["All", "Active", "Offers Received", "Booked", "Closed"] as const;
 
   const formatTimeRange = (earliest: string, latest: string) => {
     try {
