@@ -45,7 +45,7 @@ export default async function AccessRestrictedPage({
 
                 <div className="mt-6 flex flex-wrap gap-3">
                     {isSignedIn ? (
-                        <SignOutButton redirectUrl="/sign-in">
+                        <SignOutButton redirectUrl="/">
                             <button
                                 type="button"
                                 className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-100"
@@ -64,7 +64,7 @@ export default async function AccessRestrictedPage({
 
                     {isSignedIn ? (
                         <div className="rounded-md border border-zinc-300 px-3 py-1 text-sm font-medium text-zinc-800">
-                            <UserButton afterSignOutUrl="/sign-in" />
+                            <UserButton afterSignOutUrl="/" />
                         </div>
                     ) : (
                         <Link

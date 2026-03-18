@@ -1,5 +1,384 @@
 # Code Explanation
 
+## First-time Onboarding Gate — POST onboarding + Guard (Chat D)
+
+### Overview
+
+Implements backend onboarding enforcement and onboarding submission:
+- New endpoint: `POST /api/user/onboarding`
+- Centralized guard gating in `requireStetsonAuth`
+- Explicit exemptions while onboarding is incomplete:
+  - `GET /api/me`
+  - `POST /api/user/onboarding`
+
+### Files Changed
+
+#### `src/lib/auth.ts` (MODIFIED)
+
+- **Line 3**: Added `prisma` import to load local user onboarding state during auth.
+- **Lines 24–33**: Added `AuthRequestContext` and `RouteMethodPath` types to pass request method/path context into the guard.
+- **Lines 35–38**: Added centralized `ONBOARDING_EXEMPT_ROUTES` list with only:
+  - `GET /api/me`
+  - `POST /api/user/onboarding`
+- **Lines 40–45**: Added `normalizePathname()` to handle trailing slashes so route exemption matching is stable.
+- **Lines 47–71**: Added `resolveMethodAndPath()` to derive method/path from either:
+  - a real `Request`, or
+  - direct `{ method, pathname }` context.
+- **Lines 73–79**: Added `isOnboardingExempt()` to check the centralized exemption list.
+- **Lines 97–99**: Updated `requireStetsonAuth` signature to accept optional request/context:
+  - `context?: Request | AuthRequestContext`
+- **Lines 134–137**: Resolved request method/path and computed exemption in one place.
+- **Lines 138–157**: Optimized onboarding gate check to only query Prisma when the route is not exempt:
+  - `prisma.user.findUnique({ select: { onboardingComplete: true } })` now runs only inside `if (!onboardingExempt)`.
+  - avoids unnecessary DB reads for `GET /api/me` and `POST /api/user/onboarding`.
+- **Lines 144–156**: Enforced onboarding gate for non-exempt protected endpoints:
+  - returns `403`
+  - with `code: "ONBOARDING_REQUIRED"`
+  - with a clear message
+- **Lines 100–132 and 158–164**: Existing Clerk session + verified `@stetson.edu` checks and success payload remain unchanged.
+
+#### `src/app/api/user/onboarding/route.ts` (NEW)
+
+- **Lines 5–9**: Added locked enum value sets for validation:
+  - `YEAR_VALUES`: `FRESHMAN | SOPHOMORE | JUNIOR | SENIOR`
+  - `GENDER_VALUES`: `MALE | FEMALE | OTHER | PREFER_NOT_TO_SAY`
+- **Lines 11–21**: Added local interfaces for field-level validation output and parsed payload shape.
+- **Lines 23–117**: Added strict request body validator:
+  - body must be a JSON object
+  - unknown keys are rejected via whitelist check against `name`, `age`, `yearAtStetson`, `gender`
+  - `name` trimmed length `2..80`
+  - `age` integer `16..100`
+  - `yearAtStetson` enum check
+  - `gender` enum check
+  - returns field-level `issues[]`
+- **Lines 124–239**: Wrapped the full handler flow in `try/catch` to provide a top-level error boundary.
+  - catches unexpected errors from auth, Prisma, and other runtime throws
+  - logs original error with `console.error`
+  - returns stable `500` response payload
+- **Lines 126–127**: Auth guard usage with request context:
+  - `const auth = await requireStetsonAuth(request);`
+  - route is exempt from onboarding gate by centralized guard config.
+- **Lines 129–140**: JSON parse guard for malformed body -> `400`.
+- **Lines 142–152**: Validation failure path -> `400` with:
+  - `error: "Bad Request"`
+  - `message: "Validation failed."`
+  - `fieldErrors` array.
+- **Lines 156–169**: User bootstrap/upsert behavior:
+  - ensures local user row exists for `clerkUserId`
+  - syncs email to verified Stetson email.
+- **Lines 171–180**: Write-once enforcement pre-check:
+  - if already onboarded -> `409`
+  - code `ONBOARDING_ALREADY_COMPLETED`
+  - no overwrite.
+- **Lines 182–195**: Atomic write-once update using `updateMany` with guard:
+  - `where: { clerkUserId, onboardingComplete: false }`
+  - updates `name`, `age`, `yearAtStetson`, `gender`
+  - sets `onboardingComplete: true`.
+- **Lines 197–206**: Secondary write-once race check:
+  - if update count is `0`, return `409` (already onboarded).
+- **Lines 208–222**: Fetches updated user profile fields after successful onboarding.
+- **Lines 224–238**: Returns profile payload on success, and `500` payload on unexpected errors.
+
+#### `src/app/api/me/route.ts` (MODIFIED)
+
+- **Line 1**: Added `NextRequest` import.
+- **Line 13**: Changed handler signature to `GET(request?: NextRequest)` for both route-runtime use and test compatibility.
+- **Lines 15–17**: Auth call now passes request context with explicit fallback:
+  - actual request when present
+  - otherwise `{ method: "GET", pathname: "/api/me" }`
+  - keeps `/api/me` explicitly exempt under centralized gate.
+- Remaining user upsert and response shape are unchanged.
+
+#### `src/app/api/dashboard/route.ts` (MODIFIED)
+
+- **Line 1**: Added `NextRequest` import.
+- **Line 73**: Changed handler signature to `GET(request?: NextRequest)` to preserve current tests.
+- **Lines 75–77**: Auth call now passes request context with fallback:
+  - actual request when present
+  - otherwise `{ method: "GET", pathname: "/api/dashboard" }`
+  - ensures dashboard remains a protected endpoint gated by onboarding.
+- All dashboard query and response logic remains unchanged.
+
+#### Request-context wiring updates (MODIFIED)
+
+- Updated all protected route call sites to pass `request` into `requireStetsonAuth(request)` so centralized exemption/gating can evaluate the current method/path correctly.
+- Updated files and lines:
+  - `src/routes/conversations.ts` lines 48, 66, 89, 124, 145
+  - `src/app/api/bookings/route.ts` line 21
+  - `src/app/api/bookings/mine/route.ts` line 48
+  - `src/app/api/bookings/[bookingId]/cancel/route.ts` line 29
+  - `src/app/api/offers/mine/route.ts` line 50
+  - `src/app/api/offers/[offerId]/accept/route.ts` line 15
+  - `src/app/api/offers/[offerId]/cancel/route.ts` line 15
+  - `src/app/api/rides/route.ts` lines 53, 348
+  - `src/app/api/rides/[rideId]/route.ts` line 35
+  - `src/app/api/trip-requests/route.ts` lines 52, 337
+  - `src/app/api/trip-requests/[tripRequestId]/route.ts` line 46
+  - `src/app/api/trip-requests/[tripRequestId]/offers/route.ts` line 72
+
+## First-time Onboarding Gate — Schema + /me (Chat C)
+
+### Overview
+
+Adds the data model and `/me` endpoint changes needed for first-time user onboarding. Users are created with `onboardingComplete=false` and null profile fields. The onboarding POST endpoint and gating middleware are owned by Chat D.
+
+### Files Changed
+
+#### `prisma/schema.prisma` (MODIFIED)
+
+- Added `YearAtStetson` enum (lines 44–49): `FRESHMAN`, `SOPHOMORE`, `JUNIOR`, `SENIOR`.
+- Added `Gender` enum (lines 52–57): `MALE`, `FEMALE`, `OTHER`, `PREFER_NOT_TO_SAY`.
+- Extended `User` model (lines 23–28) with onboarding profile fields:
+  - `name` — nullable `String?`, maps to `name` column. Stores user's display name.
+  - `yearAtStetson` — nullable `YearAtStetson?`, maps to `year_at_stetson`. Academic year classification.
+  - `gender` — nullable `Gender?`. Gender identity selection.
+  - `age` — nullable `Int?`. User's age.
+  - `onboardingComplete` — non-nullable `Boolean`, defaults to `false` at DB level, maps to `onboarding_complete`. Gates access to protected features (enforced by Chat D's middleware).
+
+#### `prisma/migrations/20260305020400_add_onboarding_fields/migration.sql` (NEW)
+
+- Creates `YearAtStetson` PostgreSQL enum with 4 values.
+- Creates `Gender` PostgreSQL enum with 4 values.
+- Alters `users` table to add 5 columns:
+  - `name TEXT` (nullable)
+  - `year_at_stetson "YearAtStetson"` (nullable)
+  - `gender "Gender"` (nullable)
+  - `age INTEGER` (nullable)
+  - `onboarding_complete BOOLEAN NOT NULL DEFAULT false`
+- Non-destructive: all nullable columns + boolean default ensure existing rows are unaffected.
+
+#### `src/app/api/me/route.ts` (MODIFIED)
+
+- Updated response payload in `localUser` object (lines 49–53) to include 5 new fields:
+  - `name: localUser.name` — returns `null` until onboarding completes.
+  - `yearAtStetson: localUser.yearAtStetson` — returns `null` until onboarding completes.
+  - `gender: localUser.gender` — returns `null` until onboarding completes.
+  - `age: localUser.age` — returns `null` until onboarding completes.
+  - `onboardingComplete: localUser.onboardingComplete` — returns `false` for new/non-onboarded users.
+- No changes to auth guard, upsert logic, or bootstrap behavior. The existing upsert creates the user row with DB defaults (null profile fields, `onboardingComplete=false`).
+- Endpoint remains accessible regardless of `onboardingComplete` status (no gating here).
+
+---
+
+## 2026-03-04 — Minimal Messaging System (MVP 1.5) — Service Layer
+
+### Overview
+
+Adds the database layer and shared service layer for a minimal messaging system. Messaging is allowed only between users who share a relationship through a Booking or Offer. The REST endpoints (SWE II scope) are NOT included here.
+
+### Files Changed
+
+#### `prisma/schema.prisma` (MODIFIED)
+
+- Added `ConversationType` enum: `BOOKING`, `OFFER`.
+- Added `Conversation` model:
+  - `id` — UUID primary key.
+  - `type` — `ConversationType` discriminator.
+  - `bookingId` — Nullable, `@unique`. At most one conversation per booking.
+  - `offerId` — Nullable, `@unique`. At most one conversation per offer.
+  - `riderUserId` / `driverUserId` — Clerk user IDs of the two participants.
+  - `createdAt` / `updatedAt` — Timestamps.
+  - Relations: `booking` (optional FK to `bookings`), `offer` (optional FK to `offers`), `messages` (one-to-many).
+  - Indexes: `[riderUserId, updatedAt]` and `[driverUserId, updatedAt]` for efficient listing.
+  - Maps to `conversations` table.
+- Added `Message` model:
+  - `id` — UUID primary key.
+  - `conversationId` — FK to `conversations`.
+  - `senderUserId` — Clerk user ID of the sender.
+  - `body` — Message text content.
+  - `createdAt` — Timestamp.
+  - Index: `[conversationId, createdAt]` for paginated message retrieval.
+  - Maps to `messages` table.
+- Added reverse relation `conversation Conversation?` to `Booking` model.
+- Added reverse relation `conversation Conversation?` to `Offer` model.
+
+#### `prisma/migrations/20260304172800_add_messaging_models/migration.sql` (NEW)
+
+- Creates `ConversationType` PostgreSQL enum.
+- Creates `conversations` table with primary key, columns, and foreign keys to `bookings` and `offers`.
+- Creates `messages` table with primary key, columns, and foreign key to `conversations`.
+- Creates unique indexes on `conversations.booking_id` and `conversations.offer_id`.
+- Creates composite indexes: `conversations(rider_user_id, updated_at)`, `conversations(driver_user_id, updated_at)`, `messages(conversation_id, created_at)`.
+
+#### `src/services/conversationService.ts` (NEW)
+
+- **`ConversationServiceError` class (lines 28–39)**:
+  - Custom error with `code` (machine-readable string), `statusCode` (HTTP status), and `message`.
+  - Allows the REST layer to map service errors directly to HTTP responses without coupling.
+- **`getOrCreateBookingConversation(bookingId)` (lines 49–119)**:
+  - Fast path: returns existing conversation via `findUnique({ where: { bookingId } })`.
+  - Validates booking exists (404 if not).
+  - Validates `booking.status === "CONFIRMED"` (409 if not).
+  - Resolves the driver: uses `booking.driverUserId` directly, or looks up via `ride.driverUserId` for ride-based bookings.
+  - Creates conversation with `type: "BOOKING"`.
+  - Handles race conditions: catches P2002 unique constraint violation and returns the existing conversation.
+- **`getOrCreateOfferConversation(offerId)` (lines 123–174)**:
+  - Same pattern as booking variant.
+  - Validates offer exists (404) and `offer.status` is `PENDING` or `ACCEPTED` (409 if cancelled).
+  - Creates conversation with `type: "OFFER"`.
+  - Same P2002 race-condition handling.
+- **`listUserConversations(userId)` (lines 178–188)**:
+  - Returns all conversations where user is `riderUserId` or `driverUserId`.
+  - Ordered by `updatedAt DESC` so most recently active conversations appear first.
+- **`getConversationById(conversationId)` (lines 192–198)**:
+  - Simple `findUnique` lookup. Returns `null` if not found.
+- **`verifyConversationParticipant(conversationId, userId)` (lines 202–218)**:
+  - Returns conversation if user is rider or driver participant.
+  - Returns `null` otherwise (route layer maps to 404).
+- **`createMessage(conversationId, senderUserId, body)` (lines 224–283)**:
+  - Fetches conversation with `include: { booking: { select: { status } }, offer: { select: { status } } }`.
+  - Returns 404 if conversation not found or sender is not a participant.
+  - **Send-blocking**: returns 409 if `booking.status === "CANCELLED"` or `offer.status === "CANCELLED"`. Reading is still allowed.
+  - Creates message via `$transaction`: inserts `Message` row and touches `conversation.updatedAt` to reflect recent activity.
+- **`getMessages(conversationId, cursor?, limit?)` (lines 287–314)**:
+  - Cursor-based pagination, newest-first (`createdAt DESC, id DESC`).
+  - Uses `take: limit + 1` sentinel pattern to detect next page.
+  - Clamps limit to `1..50`.
+  - Returns `{ messages, nextCursor }`.
+- **`countRecentMessages(userId, conversationId, minutes)` (lines 318–332)**:
+  - Counts messages by `userId` in conversation within last N minutes.
+  - Used by SWE II to enforce rate limits.
+- **`createMessageWithRateLimit(conversationId, senderUserId, body, options?)` (added)**:
+  - Enforces rate limit and message insert in a **single transaction**.
+  - Uses `SELECT ... FOR UPDATE` on the conversation row to serialize competing sends.
+  - Recomputes in-window count inside the same transaction and throws:
+    - `ConversationServiceError("Rate limit exceeded...", "RATE_LIMIT_EXCEEDED", 429)` when limit is reached.
+  - Performs the message insert + `conversation.updatedAt` touch only when under limit.
+- **`isPrismaUniqueConstraintError(err)` (lines 336–343)**:
+  - Utility type guard checking for Prisma P2002 error code.
+
+#### `src/helpers/conversationAuth.ts` (NEW)
+
+- **`assertConversationParticipant(conversationId, userId)` (lines 22–42)**:
+  - Fetches conversation by ID.
+  - If conversation does not exist OR user is not `riderUserId`/`driverUserId`, throws `ConversationServiceError` with `statusCode: 404` and `code: "CONVERSATION_NOT_FOUND"`.
+  - **Security**: never returns 403 — non-participants see "not found" to prevent information leakage.
+  - Returns the conversation on success.
+
+#### `src/helpers/messageValidation.ts` (NEW)
+
+- **`validateMessageBody(body)` (lines 24–40)**:
+  - Validates that `body` is a string (rejects non-strings).
+  - Trims leading/trailing whitespace.
+  - Rejects empty strings after trimming.
+  - Rejects messages exceeding 1000 characters after trimming.
+  - Returns discriminated union: `{ valid: true, trimmed }` or `{ valid: false, error }`.
+
+---
+
+## 2026-02-25 — Milestone 1: Local Chat Gateway (Ollama)
+
+### Overview
+
+Adds a local-only Q&A chatbot gateway backed by Ollama. Two endpoints, no auth, no DB, no actions — pure read-only question-answering over a knowledge pack file.
+
+### Files Changed
+
+#### `chat/knowledge.md` (NEW)
+
+- Markdown knowledge pack loaded at runtime by the chat service.
+- Sections: App Overview, How to Create a Ride, Trip Requests, Bookings, Offers, Editing, Cancellation, Dashboard, FAQ.
+- Product Lead can replace placeholder sections with real policy text.
+
+#### `src/app/api/chat/route.ts` (NEW)
+
+- **Constants (lines 7–10)**: `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `OLLAMA_TIMEOUT_MS` (30s), `MAX_HISTORY` (10).
+- **System prompt (lines 12–22)**: Hardcoded verbatim. Instructs the model to be Q&A only, never claim actions, never invent features, never mention implementation details.
+- **`loadKnowledgePack()` (lines 36–46)**: Reads `chat/knowledge.md` from disk using `fs/promises.readFile`. Caches in memory after first load. Throws if file is missing.
+- **`validateRequest()` (lines 50–82)**: Validates `message` (non-empty string after trim) and optional `history` (array of `{role, content}` pairs). Returns parsed data or error string.
+- **`POST()` handler (lines 92–184)**:
+  1. Parses JSON body; returns 400 on invalid JSON.
+  2. Validates via `validateRequest()`; returns 400 on failure.
+  3. Loads knowledge pack; returns 500 if missing.
+  4. Truncates history to last 10 messages via `history.slice(-MAX_HISTORY)`.
+  5. Assembles messages array: system prompt → knowledge pack (as system message) → truncated history → user message.
+  6. Calls `POST http://127.0.0.1:11434/api/chat` with `stream: false`, `AbortController` timeout at 30s.
+  7. On success: returns `{ answer }` from Ollama's `message.content`.
+  8. On Ollama non-OK status: returns 502.
+  9. On `AbortError` (timeout): returns 504 with clear message.
+  10. On `ECONNREFUSED` / `fetch failed`: returns 503 with `"Model unavailable. Ensure Ollama is running."`.
+  11. On other errors: returns 500.
+
+#### `src/app/api/chat/health/route.ts` (NEW)
+
+- **`GET()` handler**: Returns `{ status: "ok", model: "qwen2.5:7b-instruct" }`. No Ollama dependency check. Lightweight and fast.
+
+#### `src/__tests__/chat.test.ts` (NEW)
+
+- 7 test cases:
+  1. `returns a string answer when Ollama responds successfully`: Mocks fetch, verifies 200 + `answer` field.
+  2. `injects system prompt, knowledge pack, history, and user message into Ollama call`: Inspects the messages array sent to Ollama — checks system prompt text, knowledge pack presence, history entries, and final user message.
+  3. `truncates history to last 10 messages`: Sends 15 history entries, asserts only last 10 appear (total 13 messages = 2 system + 10 history + 1 user).
+  4. `returns 503 when Ollama is unreachable`: Mocks fetch rejection with `TypeError("fetch failed")`, asserts 503 + exact error message.
+  5. `returns 400 when message is missing or empty`: Tests empty string, whitespace-only, and missing `message` field.
+  6. `returns 400 when history is malformed`: Tests history entry with numeric `role`.
+  7. `GET /api/chat/health returns 200 with status ok and model name`: Verifies health endpoint response shape.
+- Uses `vi.resetModules()` between tests to clear the cached knowledge pack.
+- Mocks `fs/promises.readFile` and `globalThis.fetch` independently.
+
+## 2026-02-25 — GET /api/dashboard — Unified Upcoming Dashboard
+
+### Overview
+
+This change adds one backend read endpoint:
+
+- `GET /api/dashboard`
+
+Scope is intentionally limited to read-only aggregation. No create/update/cancel logic was modified.
+
+### Files Changed
+
+#### `src/app/api/dashboard/route.ts`
+
+- Added new endpoint implementation for `GET /api/dashboard`.
+- Significant blocks and responsibilities:
+  - **Select shapes (lines 8–56)**:
+    - `rideSummarySelect`: 11 fields for ride list items.
+    - `rideInBookingSelect`: 9 fields for ride summary nested inside bookings.
+    - `tripRequestSummarySelect`: 9 fields shared by bookings and offers (single source of truth).
+    - `offerSummarySelect`: 10 fields including nested `tripRequest`.
+  - **Auth guard block**:
+    - Uses required guard exactly:
+      - `const auth = await requireStetsonAuth();`
+      - `if (auth.error) return auth.error;`
+  - **Parallel query block (Promise.all, 10 queries)**:
+    - `ride.count`: Counts active rides where `driverUserId == userId`, `status == ACTIVE`, `latestDepartAt > now`.
+    - `ride.findMany`: Same filter, `orderBy: [earliestDepartAt ASC, id ASC]`, `take: 5`.
+    - `booking.count` (ride-based): Counts where `riderUserId == userId`, `status == CONFIRMED`, `rideId != null`, `ride.latestDepartAt > now`.
+    - `booking.findMany` (ride-based): Same filter, `orderBy: [ride.earliestDepartAt ASC, id ASC]`, `take: 5`. Includes nested `ride` summary.
+    - `booking.count` (triprequest-based): Counts where `riderUserId == userId`, `status == CONFIRMED`, `tripRequestId != null`, `tripRequest.latestDesiredAt > now`.
+    - `booking.findMany` (triprequest-based): Same filter, `orderBy: [tripRequest.earliestDesiredAt ASC, id ASC]`, `take: 5`. Includes nested `tripRequest` summary.
+    - `offer.count` (sent): Counts where `driverUserId == userId`, `status == PENDING`, `tripRequest.latestDesiredAt > now`.
+    - `offer.findMany` (sent): Same filter, `orderBy: [createdAt DESC, id DESC]`, `take: 5`. Includes nested `tripRequest`.
+    - `offer.count` (received): Counts where `riderUserId == userId`, `status == PENDING`, `tripRequest.latestDesiredAt > now`.
+    - `offer.findMany` (received): Same filter, `orderBy: [createdAt DESC, id DESC]`, `take: 5`. Includes nested `tripRequest`.
+  - **Booking merge block**:
+    - Combines ride-based and triprequest-based booking results (up to 5 each).
+    - Sorts by associated event's earliest timestamp ASC, then `id` ASC tie-break.
+    - Uses `getBookingEarliest()` helper to extract `ride.earliestDepartAt` or `tripRequest.earliestDesiredAt`.
+    - Slices merged list to 5.
+  - **Count merge**:
+    - `confirmedBookingsCount = rideBookingsCount + tripRequestBookingsCount`.
+  - **Response shape**:
+    - Returns `{ now, summary, upcoming }` matching the locked contract.
+  - **Error handling**:
+    - Returns `500` with stable message for unexpected failures.
+
+#### `src/__tests__/dashboard.test.ts`
+
+- Added focused test suite for `GET /api/dashboard`.
+- Significant tests (10 total):
+  - `returns correct counts and lists when user has items in all categories`: Verifies all 4 count fields and all list populations.
+  - `returns zeros and empty arrays when user has nothing`: Verifies empty state.
+  - `passes latestDepartAt > now filter to ride queries`: Verifies stale exclusion by inspecting Prisma call arguments.
+  - `passes upcoming filters to booking queries`: Verifies both ride-based and triprequest-based stale filters.
+  - `caps merged booking list at 5 even when more exist`: Verifies 10 bookings merge to 5 items.
+  - `passes take: 5 to all list queries`: Verifies all 5 findMany calls use `take: 5`.
+  - `sorts rides by earliestDepartAt ASC, id ASC`: Verifies orderBy argument.
+  - `sorts offers sent by createdAt DESC, id DESC`: Verifies orderBy argument.
+  - `sorts merged bookings by earliest* ASC, id ASC`: Verifies cross-type merge sorting.
+  - `response shape matches the locked contract`: Verifies all top-level and nested keys exist.
+
 ## 2026-02-25 — PATCH /api/trip-requests/:tripRequestId — Edit Lock Before Confirmation
 
 ### Overview
@@ -9,6 +388,7 @@ This change adds one backend endpoint:
 - `PATCH /api/trip-requests/:tripRequestId`
 
 The endpoint allows trip request editing only when:
+
 - caller is the owner (`riderUserId` matches auth user)
 - no `CONFIRMED` booking exists for the trip request
 - trip request is `ACTIVE`
@@ -1232,19 +1612,19 @@ Added the transactional logic for Rider acceptance. when a Rider accepts an offe
 #### `prisma/schema.prisma`
 
 - **`Booking` model**:
-    - Made `rideId` optional (nullable).
-    - Added `tripRequestId` (FK to TripRequest, optional).
-    - Added `driverUserId` and `priceCents` to support TripRequest-based bookings.
+  - Made `rideId` optional (nullable).
+  - Added `tripRequestId` (FK to TripRequest, optional).
+  - Added `driverUserId` and `priceCents` to support TripRequest-based bookings.
 - **`TripRequestStatus` enum**:
-    - Added `CLOSED` status.
+  - Added `CLOSED` status.
 - **`TripRequest` model**:
-    - Added `bookings` relation.
+  - Added `bookings` relation.
 
 #### `src/app/api/offers/[offerId]/accept/route.ts`
 
 - **`POST` handler** (Updated):
-    - Wrapped in `prisma.$transaction`.
-    - **Logic**:
+  - Wrapped in `prisma.$transaction`.
+  - **Logic**:
         1. Verify Offer (`PENDING`) and TripRequest (`ACTIVE`).
         2. Update Offer (`ACCEPTED`).
         3. Create Booking (`CONFIRMED`, linked to TripRequest).
@@ -1254,7 +1634,173 @@ Added the transactional logic for Rider acceptance. when a Rider accepts an offe
 #### `src/__tests__/offer-lifecycle.test.ts`
 
 - Updated **Test 5** to verify side effects:
-    - Checks `Booking` created with correct driver/price.
-    - Checks `TripRequest` status is `CLOSED`.
-    - Checks competing offers are `CANCELLED`.
+  - Checks `Booking` created with correct driver/price.
+  - Checks `TripRequest` status is `CLOSED`.
+  - Checks competing offers are `CANCELLED`.
 - Updated **Test 7** to verify double-booking prevention on fresh requests.
+
+## 2026-03-04 — MVP 1.5 Messaging REST Layer (SWE II)
+
+### Overview
+
+Implemented REST messaging endpoints on top of the SWE I messaging service layer.  
+No direct schema/model edits were made by SWE II; branch integration pulled those in unchanged.
+
+### Files Added/Updated
+
+#### `src/controllers/conversationController.ts` (NEW)
+
+- **Imports**:
+  - Uses service-layer functions from `@/services/conversationService`:
+    - `listUserConversations`
+    - `getOrCreateBookingConversation`
+    - `getOrCreateOfferConversation`
+  - Uses `assertConversationParticipant` from `@/helpers/conversationAuth`.
+  - Uses `prisma.message.findFirst` for latest-message preview lookup.
+- **`latestMessageSelect` constant**:
+  - Locks preview fields to `{ id, conversationId, senderUserId, body, createdAt }`.
+- **`ConversationListItem` type**:
+  - Defines response contract for `GET /api/conversations`, including `latestMessage | null`.
+- **`listConversationsController(userId)`**:
+  - Calls `listUserConversations(userId)` (already sorted by `updatedAt DESC` in service).
+  - Performs one `findFirst` latest-message lookup per conversation:
+    - `where: { conversationId }`
+    - `orderBy: [{ createdAt: "desc" }, { id: "desc" }]`
+  - Returns mapped list with required fields + preview.
+- **`createOrGetBookingConversationController(userId, bookingId)`**:
+  - Performs **pre-create authorization** by fetching booking participants using `bookingId` (rider + derived driver).
+  - Returns `404 BOOKING_NOT_FOUND` when caller is not a participant.
+  - Only after authorization, calls `getOrCreateBookingConversation(bookingId)`.
+  - Keeps `assertConversationParticipant` as secondary safety check.
+- **`createOrGetOfferConversationController(userId, offerId)`**:
+  - Performs **pre-create authorization** by fetching offer participants using `offerId`.
+  - Returns `404 OFFER_NOT_FOUND` when caller is not a participant.
+  - Only after authorization, calls `getOrCreateOfferConversation(offerId)`.
+  - Keeps `assertConversationParticipant` as secondary safety check.
+
+#### `src/controllers/messageController.ts` (NEW)
+
+- **Imports**:
+  - Uses `assertConversationParticipant` (privacy rule: non-participants get 404).
+  - Uses `validateMessageBody` helper from SWE I.
+  - Uses `createMessageWithRateLimit` from service layer.
+  - Uses `prisma.message.findMany` for ASC keyset pagination.
+- **Validation/pagination helpers**:
+  - `parseMessageLimit`:
+    - default `20`
+    - strict integer parsing
+    - allowed range `1..50`
+    - throws `ConversationServiceError(..., 400)` on invalid.
+  - `decodeMessageCursor`:
+    - expects base64 JSON `{ createdAt, id }`
+    - validates ISO datetime and UUID
+    - throws `400 INVALID_CURSOR` on malformed cursor.
+  - `encodeMessageCursor`:
+    - emits opaque base64 cursor using last item `{ createdAt, id }`.
+- **`getConversationMessagesController(userId, conversationId, searchParams)`**:
+  - Asserts participant first.
+  - Parses `limit` and `cursor`.
+  - Executes keyset query:
+    - base filter: `conversationId`
+    - cursor predicate:
+      - `(createdAt > cursor.createdAt) OR (createdAt = cursor.createdAt AND id > cursor.id)`
+  - Sorts `createdAt ASC`, `id ASC`.
+  - Uses `take: limit + 1` and computes `nextCursor`.
+  - Returns `{ items, nextCursor }`.
+- **`sendConversationMessageController(userId, conversationId, rawBody)`**:
+  - Asserts participant first.
+  - Validates body is JSON object.
+  - Validates message body via helper:
+    - trim
+    - non-empty
+    - max 1000 chars
+  - Calls `createMessageWithRateLimit(...)` with:
+    - `windowMinutes: 5`
+    - `maxMessages: 20`
+  - Rate-limit check and insert are now atomic (single transactional path).
+
+#### `src/routes/conversations.ts` (NEW)
+
+- **Purpose**:
+  - Central REST route layer used by Next App Router wrappers.
+  - Handles auth guard and HTTP error mapping.
+- **Error utilities**:
+  - `statusToErrorLabel` maps status to stable error label strings.
+  - `toErrorResponse` maps `ConversationServiceError` to JSON `{ error, code, message }`.
+  - Unexpected errors return `500`.
+- **Handlers**:
+  - `handleGetConversations(request)`:
+    - applies `requireStetsonAuth`
+    - returns `{ items }` from `listConversationsController`.
+  - `handleGetConversationMessages(request, conversationId)`:
+    - applies auth
+    - parses URL search params
+    - returns `{ items, nextCursor }`.
+  - `handlePostConversationMessage(request, conversationId)`:
+    - applies auth
+    - validates JSON parse (`400` on invalid JSON)
+    - sends message
+    - returns `201`.
+  - `handlePostConversationForBooking(request, bookingId)`:
+    - applies auth
+    - create/get booking conversation
+    - participant privacy via controller/helper chain.
+  - `handlePostConversationForOffer(request, offerId)`:
+    - same behavior for offer conversations.
+
+#### `src/app/api/conversations/route.ts` (NEW)
+
+- Adds Next.js API entrypoint for `GET /api/conversations`.
+- Thin wrapper that delegates to `handleGetConversations`.
+
+#### `src/app/api/conversations/[id]/messages/route.ts` (NEW)
+
+- Adds `GET` and `POST` entrypoints for `/api/conversations/:id/messages`.
+- Extracts `id` from async params and delegates to route handlers.
+
+#### `src/app/api/conversations/for-booking/[bookingId]/route.ts` (NEW)
+
+- Adds `POST /api/conversations/for-booking/:bookingId`.
+- Delegates directly to `handlePostConversationForBooking`.
+
+#### `src/app/api/conversations/for-offer/[offerId]/route.ts` (NEW)
+
+- Adds `POST /api/conversations/for-offer/:offerId`.
+- Delegates directly to `handlePostConversationForOffer`.
+
+#### `src/__tests__/conversations-list.test.ts` (NEW)
+
+- **Coverage**:
+  - `listConversationsController` returns full conversation item with `latestMessage` object or `null`.
+  - `handleGetConversations` passes through auth errors and skips data calls.
+
+#### `src/__tests__/conversation-messages.test.ts` (NEW)
+
+- **Coverage**:
+  - GET default limit (`20`) and ASC ordering.
+  - GET invalid limit returns `400`.
+  - GET keyset cursor pagination has no duplicate overlap and uses createdAt/id predicate.
+  - GET non-participant returns `404`.
+  - POST send success path.
+  - POST empty/whitespace validation (`400`).
+  - POST >1000 chars validation (`400`).
+  - POST rate limit (`429` at 20 in 5 minutes).
+  - POST non-participant returns `404`.
+
+#### `src/__tests__/conversations-for-booking-offer.test.ts` (NEW)
+
+- **Coverage**:
+  - booking conversation create/get success.
+  - offer conversation create/get success.
+  - non-participant receives `404`.
+  - service `404` and `409` errors are mapped to same HTTP statuses.
+
+### Verification Performed
+
+- `npm test`
+  - New messaging suites passed.
+  - Existing pre-existing integration suite `offer-lifecycle` still requires `DATABASE_URL` and fails in local env (unchanged known issue).
+- `npm test -- src/__tests__/conversations-list.test.ts src/__tests__/conversation-messages.test.ts src/__tests__/conversations-for-booking-offer.test.ts`
+  - All targeted messaging tests passed.
+- `npx tsc --noEmit`
+  - TypeScript compile passed.

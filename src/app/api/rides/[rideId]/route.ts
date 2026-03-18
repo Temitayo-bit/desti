@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireStetsonAuth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { DistanceCategory, BookingStatus } from "@/generated/prisma/client";
+import { DistanceCategory, BookingStatus } from "@prisma/client";
 
 const VALID_DISTANCE_CATEGORIES: ReadonlySet<string> = new Set(
     Object.values(DistanceCategory)
@@ -32,7 +32,7 @@ export async function PATCH(
     { params }: { params: Promise<{ rideId: string }> }
 ) {
     try {
-        const auth = await requireStetsonAuth();
+        const auth = await requireStetsonAuth(request);
         if (auth.error) return auth.error;
 
         const resolvedParams = await params;
@@ -330,4 +330,20 @@ export async function PATCH(
             { status: 500 }
         );
     }
+}
+
+export async function DELETE(
+    request: NextRequest,
+    { params }: { params: Promise<{ rideId: string }> }
+) {
+    // TODO: Implement the ride cancellation logic
+    // - Ensure the user is the driver
+    // - Check for active bookings
+    // - Mark the ride as cancelled or delete it
+    // - Notify riders
+
+    return NextResponse.json(
+        { message: "TODO: Ride cancellation endpoint is not yet implemented." },
+        { status: 501 }
+    );
 }

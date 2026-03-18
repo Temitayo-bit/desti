@@ -21,7 +21,7 @@ vi.mock("@/lib/prisma", () => ({
     prisma: mockPrisma,
 }));
 
-vi.mock("@/generated/prisma/client", () => ({
+vi.mock("@prisma/client", () => ({
     DistanceCategory: {
         SHORT: "SHORT",
         MEDIUM: "MEDIUM",
@@ -93,6 +93,20 @@ describe("GET /api/rides", () => {
                 { latestDepartAt: { gt: expect.any(Date) } },
                 { earliestDepartAt: { gte: expect.any(Date) } },
                 { seatsAvailable: { gte: 1 } },
+            ])
+        );
+    });
+
+    it("applies explicit earliestAfter value when provided", async () => {
+        const earliestAfter = "2030-01-01T09:30:00.000Z";
+        await GET(makeRequest(`?earliestAfter=${encodeURIComponent(earliestAfter)}`) as never);
+
+        const findManyArg = mockPrisma.ride.findMany.mock.calls[0][0];
+        const andClauses = getAndClauses(findManyArg);
+
+        expect(andClauses).toEqual(
+            expect.arrayContaining([
+                { earliestDepartAt: { gte: new Date(earliestAfter) } },
             ])
         );
     });

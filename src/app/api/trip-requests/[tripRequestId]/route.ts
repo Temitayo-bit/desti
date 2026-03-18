@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
     BookingStatus,
     DistanceCategory,
-} from "@/generated/prisma/client";
+} from "@prisma/client";
 import { requireStetsonAuth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -43,7 +43,7 @@ export async function PATCH(
     { params }: { params: Promise<{ tripRequestId: string }> }
 ) {
     try {
-        const auth = await requireStetsonAuth();
+        const auth = await requireStetsonAuth(request);
         if (auth.error) return auth.error;
 
         const { tripRequestId } = await params;
@@ -468,7 +468,10 @@ export async function PATCH(
             );
         }
 
-        const { bookings, ...responseTripRequest } = maybeUpdatedTripRequest;
+        const responseTripRequest = { ...maybeUpdatedTripRequest } as {
+            bookings?: unknown;
+        };
+        delete responseTripRequest.bookings;
         return NextResponse.json(responseTripRequest, { status: 200 });
     } catch (error) {
         console.error(
@@ -484,4 +487,16 @@ export async function PATCH(
             { status: 500 }
         );
     }
+}
+
+export async function DELETE() {
+    // TODO: Implement trip request cancellation logic.
+    // - Ensure the user is the owner
+    // - Verify status and booking constraints
+    // - Mark request as cancelled
+    // - Notify relevant users
+    return NextResponse.json(
+        { message: "TODO: Trip request cancellation endpoint is not yet implemented." },
+        { status: 501 }
+    );
 }
