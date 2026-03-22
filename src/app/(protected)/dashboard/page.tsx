@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
 import { MessageCircle, X } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ProtectedShell } from "../_components/ProtectedShell";
 import {
@@ -438,14 +439,12 @@ export default function DashboardPage() {
 
               <div className="flex items-center justify-between gap-4">
                 <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-zinc-900">Your Upcoming Trips</h2>
-                {/* TODO: Wire this to a dedicated bookings list route when available. */}
-                <button
-                  type="button"
-                  disabled
-                  className="rounded-xl border border-zinc-300 px-4 py-2 text-sm font-semibold text-zinc-400"
+                <Link
+                  href="/bookings"
+                  className="rounded-xl border border-zinc-300 px-4 py-2 text-sm font-semibold text-zinc-700 transition-colors hover:bg-zinc-50"
                 >
                   View All
-                </button>
+                </Link>
               </div>
 
               {normalizedBookings.length === 0 ? (
@@ -532,14 +531,12 @@ export default function DashboardPage() {
             <section className="space-y-4">
               <div className="flex items-center justify-between gap-4">
                 <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-zinc-900">Pending Offers</h2>
-                {/* TODO: Wire this to a dedicated offers list route when available. */}
-                <button
-                  type="button"
-                  disabled
-                  className="rounded-xl border border-zinc-300 px-4 py-2 text-sm font-semibold text-zinc-400"
+                <Link
+                  href="/offers"
+                  className="rounded-xl border border-zinc-300 px-4 py-2 text-sm font-semibold text-zinc-700 transition-colors hover:bg-zinc-50"
                 >
                   View All
-                </button>
+                </Link>
               </div>
 
               {refreshing ? (

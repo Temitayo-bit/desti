@@ -32,7 +32,11 @@ vi.mock("@prisma/client", () => ({
     BookingStatus: {
         CONFIRMED: "CONFIRMED",
         CANCELLED: "CANCELLED",
-    }
+    },
+    RideStatus: {
+        ACTIVE: "ACTIVE",
+        CANCELLED: "CANCELLED",
+    },
 }));
 
 import { PATCH } from "@/app/api/rides/[rideId]/route";

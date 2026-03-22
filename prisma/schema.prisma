@@ -66,6 +66,7 @@ enum DistanceCategory {
 /// Current status of a ride.
 enum RideStatus {
   ACTIVE
+  CANCELLED
 }
 
 /// Current status of a trip request.
