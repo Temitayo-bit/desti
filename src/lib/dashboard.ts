@@ -55,8 +55,14 @@ export interface DashboardBookingBase {
 }
 
 export type DashboardBookingItem =
-  | (DashboardBookingBase & { ride: DashboardRideInBooking; tripRequest?: never })
-  | (DashboardBookingBase & { tripRequest: DashboardTripRequestInBooking; ride?: never });
+  | (DashboardBookingBase & {
+      ride: DashboardRideInBooking;
+      tripRequest?: never;
+    })
+  | (DashboardBookingBase & {
+      tripRequest: DashboardTripRequestInBooking;
+      ride?: never;
+    });
 
 export interface DashboardOfferSummary {
   id: string;
@@ -125,7 +131,10 @@ export function normalizeDashboardBooking(
       driverUserId: booking.ride.driverUserId,
       status: booking.status,
       seatsBooked: booking.seatsBooked,
-      totalSeatsBooked: Math.max(0, booking.ride.seatsTotal - booking.ride.seatsAvailable),
+      totalSeatsBooked: Math.max(
+        0,
+        booking.ride.seatsTotal - booking.ride.seatsAvailable
+      ),
       originText: booking.ride.originText,
       destinationText: booking.ride.destinationText,
       startsAt: booking.ride.earliestDepartAt,
