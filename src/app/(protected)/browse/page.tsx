@@ -111,6 +111,7 @@ export default function BrowseRidesPage() {
   const [bookingInProgress, setBookingInProgress] = useState(false);
   const [bookingIdempotencyKey, setBookingIdempotencyKey] = useState<string | null>(null);
   const [successState, setSuccessState] = useState<"booking" | "edit" | null>(null);
+  const [isConfirmingRideCancellation, setIsConfirmingRideCancellation] = useState(false);
   const [selectedSeats, setSelectedSeats] = useState(1);
   const [userBookings, setUserBookings] = useState<Record<string, string>>({}); // rideId -> bookingId
   const closeRideDialogButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -251,6 +252,7 @@ export default function BrowseRidesPage() {
     setSelectedSeats(1);
     setIsEditing(false);
     setEditFormData({});
+    setIsConfirmingRideCancellation(false);
 
     const previouslyFocusedElement = lastFocusedElementRef.current;
     if (previouslyFocusedElement) {
@@ -361,24 +363,25 @@ export default function BrowseRidesPage() {
   };
 
   const handleCancelRide = async (rideId: string) => {
-    if (confirm("Are you sure you want to cancel this ride?")) {
-      try {
-        const res = await fetch(`/api/rides/${rideId}`, {
-          method: "DELETE",
-        });
+    try {
+      const res = await fetch(`/api/rides/${rideId}`, {
+        method: "DELETE",
+      });
 
-        if (res.ok) {
-          alert("Ride cancelled successfully.");
-          setRides((prev) => prev.filter((r) => r.id !== rideId));
-          closeRideModal();
-        } else if (res.status === 501) {
-          alert("Cancellation not implemented on server.");
-        } else {
-          alert("Failed to cancel ride.");
-        }
-      } catch {
-        alert("An error occurred while attempting to cancel the ride.");
+      if (res.ok) {
+        alert("Ride cancelled successfully.");
+        setRides((prev) => prev.filter((r) => r.id !== rideId));
+        closeRideModal();
+      } else if (res.status === 501) {
+        alert("Cancellation not implemented on server.");
+      } else {
+        const payload = await res.json().catch(() => null);
+        alert(payload?.message ?? payload?.error ?? "Failed to cancel ride.");
       }
+    } catch {
+      alert("An error occurred while attempting to cancel the ride.");
+    } finally {
+      setIsConfirmingRideCancellation(false);
     }
   };
 
@@ -877,6 +880,18 @@ export default function BrowseRidesPage() {
                           </div>
                         </div>
                       )}
+
+                      {isConfirmingRideCancellation ? (
+                        <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-red-900">
+                          <p className="text-base font-semibold">
+                            Cancel this ride?
+                          </p>
+                          <p className="mt-1 text-sm text-red-800">
+                            This will cancel the ride and any confirmed bookings tied
+                            to it.
+                          </p>
+                        </div>
+                      ) : null}
                     </div>
 
                     <div className="mt-8 pt-6 border-t border-zinc-100 flex gap-3 justify-end items-center">
@@ -889,12 +904,29 @@ export default function BrowseRidesPage() {
                           >
                             Edit Ride
                           </button>
-                          <button
-                            onClick={() => handleCancelRide(selectedRide.id)}
-                            className="px-5 py-2.5 bg-red-50 hover:bg-red-100 text-red-700 font-medium rounded-xl transition-colors"
-                          >
-                            Cancel Ride
-                          </button>
+                          {isConfirmingRideCancellation ? (
+                            <>
+                              <button
+                                onClick={() => setIsConfirmingRideCancellation(false)}
+                                className="px-5 py-2.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 font-medium rounded-xl transition-colors"
+                              >
+                                Keep Ride
+                              </button>
+                              <button
+                                onClick={() => handleCancelRide(selectedRide.id)}
+                                className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-medium rounded-xl transition-colors"
+                              >
+                                Confirm Cancel
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              onClick={() => setIsConfirmingRideCancellation(true)}
+                              className="px-5 py-2.5 bg-red-50 hover:bg-red-100 text-red-700 font-medium rounded-xl transition-colors"
+                            >
+                              Cancel Ride
+                            </button>
+                          )}
                         </>
                       ) : userBookings[selectedRide.id] ? (
                         <div className="flex flex-col items-end gap-3 w-full">

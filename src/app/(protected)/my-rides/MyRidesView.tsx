@@ -110,6 +110,8 @@ export function MyRidesView() {
   const [submitting, setSubmitting] = useState(false);
   const [successState, setSuccessState] = useState<"edit" | null>(null);
   const [actionNotice, setActionNotice] = useState<ActionNotice>(null);
+  const [isConfirmingCancellation, setIsConfirmingCancellation] =
+    useState(false);
   const [openingConversationBookingId, setOpeningConversationBookingId] =
     useState<string | null>(null);
   const closeRideDialogButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -178,6 +180,7 @@ export function MyRidesView() {
     setSuccessState(null);
     setIsEditing(false);
     setEditFormData({});
+    setIsConfirmingCancellation(false);
 
     const previouslyFocusedElement = lastFocusedElementRef.current;
     if (previouslyFocusedElement) {
@@ -357,27 +360,33 @@ export function MyRidesView() {
   };
 
   const handleCancelRide = async (rideId: string) => {
-    if (!confirm("Are you sure you want to cancel this ride?")) return;
-
     try {
       setSubmitting(true);
+      setActionNotice(null);
       const response = await fetch(`/api/rides/${rideId}`, {
         method: "DELETE",
       });
 
       if (response.ok) {
-        alert("Ride cancelled successfully.");
+        setActionNotice({ type: "success", text: "Ride cancelled successfully." });
         setRides((prev) => prev.filter((ride) => ride.id !== rideId));
         closeRideModal();
         return;
       }
 
       const payload = await response.json().catch(() => null);
-      alert(payload?.message ?? payload?.error ?? "Failed to cancel ride.");
+      setActionNotice({
+        type: "error",
+        text: payload?.message ?? payload?.error ?? "Failed to cancel ride.",
+      });
     } catch {
-      alert("An error occurred while attempting to cancel the ride.");
+      setActionNotice({
+        type: "error",
+        text: "An error occurred while attempting to cancel the ride.",
+      });
     } finally {
       setSubmitting(false);
+      setIsConfirmingCancellation(false);
     }
   };
 
@@ -979,7 +988,7 @@ export function MyRidesView() {
                                 {selectedRide.pickupInstructions}
                               </p>
                             )}
-                            {selectedRide.dropoffInstructions && (
+                      {selectedRide.dropoffInstructions && (
                               <p>
                                 <span className="font-semibold">Dropoff:</span>{" "}
                                 {selectedRide.dropoffInstructions}
@@ -988,6 +997,18 @@ export function MyRidesView() {
                           </div>
                         </div>
                       )}
+
+                      {isConfirmingCancellation ? (
+                        <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-red-900">
+                          <p className="text-base font-semibold">
+                            Cancel this ride?
+                          </p>
+                          <p className="mt-1 text-sm text-red-800">
+                            This will cancel the ride and any confirmed bookings tied
+                            to it.
+                          </p>
+                        </div>
+                      ) : null}
                     </div>
 
                     <div className="mt-8 pt-6 border-t border-zinc-100 flex gap-3 justify-end items-center">
@@ -1003,15 +1024,34 @@ export function MyRidesView() {
                       >
                         Edit Ride
                       </button>
-                      <button
-                        onClick={() => {
-                          void handleCancelRide(selectedRide.id);
-                        }}
-                        disabled={submitting}
-                        className="px-5 py-2.5 bg-red-50 hover:bg-red-100 text-red-700 font-medium rounded-xl transition-colors disabled:opacity-60"
-                      >
-                        Cancel Ride
-                      </button>
+                      {isConfirmingCancellation ? (
+                        <>
+                          <button
+                            onClick={() => setIsConfirmingCancellation(false)}
+                            disabled={submitting}
+                            className="px-5 py-2.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 font-medium rounded-xl transition-colors disabled:opacity-60"
+                          >
+                            Keep Ride
+                          </button>
+                          <button
+                            onClick={() => {
+                              void handleCancelRide(selectedRide.id);
+                            }}
+                            disabled={submitting}
+                            className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-medium rounded-xl transition-colors disabled:opacity-60"
+                          >
+                            {submitting ? "Cancelling..." : "Confirm Cancel"}
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={() => setIsConfirmingCancellation(true)}
+                          disabled={submitting}
+                          className="px-5 py-2.5 bg-red-50 hover:bg-red-100 text-red-700 font-medium rounded-xl transition-colors disabled:opacity-60"
+                        >
+                          Cancel Ride
+                        </button>
+                      )}
                     </div>
                   </motion.div>
                 )}
