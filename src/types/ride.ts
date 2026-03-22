@@ -1,7 +1,7 @@
 import type { DistanceCategory } from "@prisma/client";
 import type { ConfirmedBookingSummary } from "@/types/booking";
 
-export type ManagedRideStatus = "ACTIVE";
+export type ManagedRideStatus = "ACTIVE" | "CANCELLED";
 
 export interface ManagedRideSummary {
   id: string;

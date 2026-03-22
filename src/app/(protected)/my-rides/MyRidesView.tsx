@@ -11,9 +11,6 @@ import { filterMyRides, type MyRidesQuickFilter } from "@/lib/my-rides";
 import { openBookingConversationThread } from "@/lib/booking-conversation";
 import type { ManagedRideSummary } from "@/types/ride";
 
-const rideCancellationEnabled =
-  process.env.NEXT_PUBLIC_ENABLE_RIDE_CANCELLATION === "true";
-
 type ActionNotice =
   | { type: "success"; text: string }
   | { type: "error"; text: string }
@@ -360,10 +357,6 @@ export function MyRidesView() {
   };
 
   const handleCancelRide = async (rideId: string) => {
-    if (!rideCancellationEnabled) {
-      return;
-    }
-
     if (!confirm("Are you sure you want to cancel this ride?")) return;
 
     try {
@@ -376,12 +369,6 @@ export function MyRidesView() {
         alert("Ride cancelled successfully.");
         setRides((prev) => prev.filter((ride) => ride.id !== rideId));
         closeRideModal();
-        return;
-      }
-
-      if (response.status === 501) {
-        const payload = await response.json().catch(() => null);
-        alert(payload?.message ?? "Ride cancellation is not implemented yet.");
         return;
       }
 
@@ -1018,19 +1005,12 @@ export function MyRidesView() {
                       </button>
                       <button
                         onClick={() => {
-                          if (rideCancellationEnabled) {
-                            void handleCancelRide(selectedRide.id);
-                          }
+                          void handleCancelRide(selectedRide.id);
                         }}
-                        disabled={!rideCancellationEnabled || submitting}
-                        title={
-                          !rideCancellationEnabled
-                            ? "Ride cancellation is coming soon."
-                            : undefined
-                        }
+                        disabled={submitting}
                         className="px-5 py-2.5 bg-red-50 hover:bg-red-100 text-red-700 font-medium rounded-xl transition-colors disabled:opacity-60"
                       >
-                        {rideCancellationEnabled ? "Cancel Ride" : "Cancel Ride (Coming soon)"}
+                        Cancel Ride
                       </button>
                     </div>
                   </motion.div>

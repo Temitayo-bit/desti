@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireStetsonAuth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { DistanceCategory, BookingStatus } from "@prisma/client";
+import { DistanceCategory, BookingStatus, RideStatus } from "@prisma/client";
 
 const VALID_DISTANCE_CATEGORIES: ReadonlySet<string> = new Set(
     Object.values(DistanceCategory)
@@ -336,14 +336,145 @@ export async function DELETE(
     request: NextRequest,
     { params }: { params: Promise<{ rideId: string }> }
 ) {
-    // TODO: Implement the ride cancellation logic
-    // - Ensure the user is the driver
-    // - Check for active bookings
-    // - Mark the ride as cancelled or delete it
-    // - Notify riders
+    try {
+        const auth = await requireStetsonAuth(request);
+        if (auth.error) return auth.error;
 
-    return NextResponse.json(
-        { message: "TODO: Ride cancellation endpoint is not yet implemented." },
-        { status: 501 }
-    );
+        const resolvedParams = await params;
+        const rideId = resolvedParams.rideId;
+
+        const ride = await prisma.ride.findUnique({
+            where: { id: rideId },
+            select: {
+                id: true,
+                driverUserId: true,
+                latestDepartAt: true,
+                status: true,
+            },
+        });
+
+        if (!ride) {
+            return NextResponse.json(
+                { error: "Not Found", message: "Ride not found." },
+                { status: 404 }
+            );
+        }
+
+        if (ride.driverUserId !== auth.user.clerkUserId) {
+            return NextResponse.json(
+                { error: "Forbidden", message: "You don't own this ride." },
+                { status: 403 }
+            );
+        }
+
+        if (ride.status === RideStatus.CANCELLED) {
+            return NextResponse.json(
+                { message: "Ride already cancelled." },
+                { status: 200 }
+            );
+        }
+
+        const now = new Date();
+        if (ride.latestDepartAt <= now) {
+            return NextResponse.json(
+                {
+                    error: "Conflict",
+                    message: "Ride cannot be cancelled after it has already departed.",
+                },
+                { status: 409 }
+            );
+        }
+
+        const result = await prisma.$transaction(async (tx) => {
+            const transactionNow = new Date();
+            const updateResult = await tx.ride.updateMany({
+                where: {
+                    id: rideId,
+                    driverUserId: auth.user.clerkUserId,
+                    status: RideStatus.ACTIVE,
+                    latestDepartAt: { gt: transactionNow },
+                },
+                data: {
+                    status: RideStatus.CANCELLED,
+                },
+            });
+
+            if (updateResult.count === 0) {
+                const latestRide = await tx.ride.findUnique({
+                    where: { id: rideId },
+                    select: {
+                        id: true,
+                        driverUserId: true,
+                        latestDepartAt: true,
+                        status: true,
+                    },
+                });
+
+                if (!latestRide) {
+                    throw new Error("Ride not found.");
+                }
+
+                if (latestRide.driverUserId !== auth.user.clerkUserId) {
+                    throw new Error("Unauthorized access to ride.");
+                }
+
+                if (latestRide.status === RideStatus.CANCELLED) {
+                    return { message: "Ride already cancelled." };
+                }
+
+                if (latestRide.latestDepartAt <= transactionNow) {
+                    throw new Error("Ride already departed.");
+                }
+
+                throw new Error("Ride cancellation failed.");
+            }
+
+            await tx.booking.updateMany({
+                where: {
+                    rideId,
+                    status: BookingStatus.CONFIRMED,
+                },
+                data: {
+                    status: BookingStatus.CANCELLED,
+                },
+            });
+
+            return { message: "Ride cancelled successfully." };
+        });
+
+        return NextResponse.json(result, { status: 200 });
+    } catch (error: any) {
+        if (error.message === "Ride not found.") {
+            return NextResponse.json(
+                { error: "Not Found", message: "Ride not found." },
+                { status: 404 }
+            );
+        }
+
+        if (error.message === "Unauthorized access to ride.") {
+            return NextResponse.json(
+                { error: "Forbidden", message: "You don't own this ride." },
+                { status: 403 }
+            );
+        }
+
+        if (error.message === "Ride already departed.") {
+            return NextResponse.json(
+                {
+                    error: "Conflict",
+                    message: "Ride cannot be cancelled after it has already departed.",
+                },
+                { status: 409 }
+            );
+        }
+
+        console.error("[DELETE /api/rides/:rideId] Unexpected error:", error);
+        return NextResponse.json(
+            {
+                error: "Internal Server Error",
+                message: "An unexpected error occurred while cancelling the ride.",
+            },
+            { status: 500 }
+        );
+    }
 }

@@ -17,7 +17,7 @@ import {
 import { normalizeRidesView } from "@/lib/ride-view";
 
 // --- Types ---
-type RideStatus = "ACTIVE";
+type RideStatus = "ACTIVE" | "CANCELLED";
 interface RideSummary {
   id: string;
   driverUserId: string;
