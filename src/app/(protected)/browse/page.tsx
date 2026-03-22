@@ -51,6 +51,10 @@ interface ConfirmedBookingSummary {
   rideId: string | null;
 }
 
+function excludeCancelledRides(items: RideSummary[] | undefined): RideSummary[] {
+  return (items ?? []).filter((ride) => ride.status === "ACTIVE");
+}
+
 // --- Icons ---
 const MapPinIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-500">
@@ -126,7 +130,7 @@ export default function BrowseRidesPage() {
         if (!res.ok) throw new Error("Failed to fetch rides");
         const data = await res.json();
         if (!controller.signal.aborted) {
-          setRides(data.items || []);
+          setRides(excludeCancelledRides(data.items));
         }
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") return;
@@ -211,7 +215,7 @@ export default function BrowseRidesPage() {
   }, [selectedRide]);
 
   const filteredRides = filterRidesForBrowse({
-    rides,
+    rides: excludeCancelledRides(rides),
     currentUserId: currentUser?.clerkUserId ?? null,
     searchQuery,
     activeFilter,
@@ -339,9 +343,10 @@ export default function BrowseRidesPage() {
         const refreshRes = await fetch("/api/rides");
         if (refreshRes.ok) {
           const data = await refreshRes.json();
-          setRides(data.items || []);
+          const activeRides = excludeCancelledRides(data.items);
+          setRides(activeRides);
           // Update selected ride if still open
-          const updated = data.items.find((r: RideSummary) => r.id === rideId);
+          const updated = activeRides.find((r) => r.id === rideId);
           if (updated) setSelectedRide(updated);
         }
       } else {
