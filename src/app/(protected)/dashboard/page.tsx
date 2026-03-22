@@ -514,9 +514,11 @@ export default function DashboardPage() {
   }, [dashboard?.upcoming.bookings]);
 
   const sortedBookings = useMemo(() => {
-    return [...normalizedBookings].sort(
-      (a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()
-    );
+    return [...normalizedBookings]
+      .filter((booking) => booking.status === "CONFIRMED")
+      .sort(
+        (a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()
+      );
   }, [normalizedBookings]);
 
   const nextTrip = sortedBookings[0] ?? null;
@@ -525,13 +527,13 @@ export default function DashboardPage() {
   const ridesDriving = dashboard?.upcoming.ridesDriving ?? [];
 
   const hasAnyActivity =
-    normalizedBookings.length > 0 ||
+    sortedBookings.length > 0 ||
     sentOffers.length > 0 ||
     receivedOffers.length > 0 ||
     ridesDriving.length > 0;
 
   const needsAttentionCount =
-    receivedOffers.length + (nextTrip ? 1 : 0) + (normalizedBookings.length === 0 ? 1 : 0);
+    receivedOffers.length + (nextTrip ? 1 : 0) + (sortedBookings.length === 0 ? 1 : 0);
 
   return (
     <ProtectedShell activeNav="dashboard">
@@ -648,7 +650,7 @@ export default function DashboardPage() {
                     />
                   ) : null}
 
-                  {normalizedBookings.length === 0 ? (
+                  {sortedBookings.length === 0 ? (
                     <AttentionCard
                       title="No confirmed trips yet"
                       description="Browse available rides or post your own ride request to get moving."
@@ -789,11 +791,11 @@ export default function DashboardPage() {
                   </p>
                 </div>
                 <span className="inline-flex items-center rounded-full bg-zinc-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-zinc-600">
-                  {normalizedBookings.length} {normalizedBookings.length === 1 ? "trip" : "trips"}
+                  {sortedBookings.length} {sortedBookings.length === 1 ? "trip" : "trips"}
                 </span>
               </div>
 
-              {normalizedBookings.length === 0 ? (
+              {sortedBookings.length === 0 ? (
                 <div className={`${CARD_CLASS} text-zinc-500`}>
                   You do not have confirmed upcoming trips yet.
                 </div>
