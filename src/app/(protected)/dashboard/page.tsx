@@ -389,7 +389,9 @@ export default function DashboardPage() {
   const [selectedTrip, setSelectedTrip] = useState<NormalizedDashboardBooking | null>(null);
   const [actionNotice, setActionNotice] = useState<ActionNotice>(null);
   const [pendingActions, setPendingActions] = useState<Record<string, string>>({});
-  const [openingConversationBookingId, setOpeningConversationBookingId] = useState<string | null>(null);
+  const [openingConversationBookingId, setOpeningConversationBookingId] = useState<string | null>(
+    null
+  );
   const tripDialogRef = useRef<HTMLDivElement | null>(null);
   const closeTripButtonRef = useRef<HTMLButtonElement | null>(null);
   const pendingOffersSectionRef = useRef<HTMLElement | null>(null);
@@ -464,7 +466,7 @@ export default function DashboardPage() {
     offerId: string,
     endpoint: string,
     busyValue: string,
-    successMessage: string,
+    successMessage: string
   ) {
     setActionNotice(null);
     setPendingActions((prev) => ({ ...prev, [offerId]: busyValue }));
@@ -513,13 +515,24 @@ export default function DashboardPage() {
     return bookings.map(normalizeDashboardBooking);
   }, [dashboard?.upcoming.bookings]);
 
+  const confirmedBookings = useMemo(() => {
+    return normalizedBookings.filter((booking) => booking.status === "CONFIRMED");
+  }, [normalizedBookings]);
+
   const sortedBookings = useMemo(() => {
+<<<<<<< HEAD
     return [...normalizedBookings]
       .filter((booking) => booking.status === "CONFIRMED")
       .sort(
         (a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()
       );
   }, [normalizedBookings]);
+=======
+    return [...confirmedBookings].sort(
+      (a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()
+    );
+  }, [confirmedBookings]);
+>>>>>>> 6eba7ce (Fix dashboard booking filtering and attention counts)
 
   const nextTrip = sortedBookings[0] ?? null;
   const sentOffers = dashboard?.upcoming.offers.sent ?? [];
@@ -527,13 +540,30 @@ export default function DashboardPage() {
   const ridesDriving = dashboard?.upcoming.ridesDriving ?? [];
 
   const hasAnyActivity =
+<<<<<<< HEAD
     sortedBookings.length > 0 ||
+=======
+    confirmedBookings.length > 0 ||
+>>>>>>> 6eba7ce (Fix dashboard booking filtering and attention counts)
     sentOffers.length > 0 ||
     receivedOffers.length > 0 ||
     ridesDriving.length > 0;
 
+  const hasReceivedOffersCard = receivedOffers.length > 0;
+  const hasNextTripCard = Boolean(nextTrip);
+  const hasNoConfirmedTripsCard = confirmedBookings.length === 0;
+  const hasPendingSentOffersCard =
+    receivedOffers.length === 0 && Boolean(nextTrip) && sentOffers.length > 0;
+
   const needsAttentionCount =
+<<<<<<< HEAD
     receivedOffers.length + (nextTrip ? 1 : 0) + (sortedBookings.length === 0 ? 1 : 0);
+=======
+    (hasReceivedOffersCard ? 1 : 0) +
+    (hasNextTripCard ? 1 : 0) +
+    (hasNoConfirmedTripsCard ? 1 : 0) +
+    (hasPendingSentOffersCard ? 1 : 0);
+>>>>>>> 6eba7ce (Fix dashboard booking filtering and attention counts)
 
   return (
     <ProtectedShell activeNav="dashboard">
@@ -623,7 +653,7 @@ export default function DashboardPage() {
                 </div>
 
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  {receivedOffers.length > 0 ? (
+                  {hasReceivedOffersCard ? (
                     <AttentionCard
                       title={`${receivedOffers.length} incoming ${receivedOffers.length === 1 ? "offer" : "offers"} waiting`}
                       description="Review pending offers so riders are not left waiting."
@@ -637,7 +667,7 @@ export default function DashboardPage() {
                     />
                   ) : null}
 
-                  {nextTrip ? (
+                  {hasNextTripCard && nextTrip ? (
                     <AttentionCard
                       title="Your next confirmed trip is coming up"
                       description={`${nextTrip.originText} to ${nextTrip.destinationText} • ${format(
@@ -650,7 +680,11 @@ export default function DashboardPage() {
                     />
                   ) : null}
 
+<<<<<<< HEAD
                   {sortedBookings.length === 0 ? (
+=======
+                  {hasNoConfirmedTripsCard ? (
+>>>>>>> 6eba7ce (Fix dashboard booking filtering and attention counts)
                     <AttentionCard
                       title="No confirmed trips yet"
                       description="Browse available rides or post your own ride request to get moving."
@@ -660,7 +694,7 @@ export default function DashboardPage() {
                     />
                   ) : null}
 
-                  {receivedOffers.length === 0 && nextTrip && sentOffers.length > 0 ? (
+                  {hasPendingSentOffersCard ? (
                     <AttentionCard
                       title="You still have offers pending"
                       description={`${sentOffers.length} ${sentOffers.length === 1 ? "offer is" : "offers are"} still awaiting a response.`}
@@ -681,7 +715,8 @@ export default function DashboardPage() {
                         You’re all set to start.
                       </p>
                       <p className="mt-2 text-sm text-zinc-500">
-                        Post a ride, browse rides, or create a trip request to start using Desti.
+                        Post a ride, browse rides, or create a trip request to start using
+                        Desti.
                       </p>
                     </div>
                   ) : null}
@@ -791,11 +826,20 @@ export default function DashboardPage() {
                   </p>
                 </div>
                 <span className="inline-flex items-center rounded-full bg-zinc-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-zinc-600">
+<<<<<<< HEAD
                   {sortedBookings.length} {sortedBookings.length === 1 ? "trip" : "trips"}
                 </span>
               </div>
 
               {sortedBookings.length === 0 ? (
+=======
+                  {confirmedBookings.length}{" "}
+                  {confirmedBookings.length === 1 ? "trip" : "trips"}
+                </span>
+              </div>
+
+              {confirmedBookings.length === 0 ? (
+>>>>>>> 6eba7ce (Fix dashboard booking filtering and attention counts)
                 <div className={`${CARD_CLASS} text-zinc-500`}>
                   You do not have confirmed upcoming trips yet.
                 </div>
@@ -912,9 +956,7 @@ export default function DashboardPage() {
                   </h3>
 
                   {sentOffers.length === 0 ? (
-                    <div className={`${CARD_CLASS} text-zinc-500`}>
-                      No pending offers sent.
-                    </div>
+                    <div className={`${CARD_CLASS} text-zinc-500`}>No pending offers sent.</div>
                   ) : (
                     sentOffers.map((offer) => {
                       const isBusy = Boolean(pendingActions[offer.id]);
@@ -1058,6 +1100,7 @@ export default function DashboardPage() {
                   <div className="mb-4 flex items-center gap-2 text-lg font-bold text-emerald-800">
                     <ClockIcon /> Trip Window
                   </div>
+
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="mb-1 block text-sm font-medium text-zinc-600">
@@ -1087,9 +1130,11 @@ export default function DashboardPage() {
                       {getSeatDisplayText(selectedTrip, viewerUserId)}
                     </div>
                   </div>
+
                   <div>
                     <div className="mb-2 flex items-center gap-2 font-semibold text-emerald-800">
-                      <span className="text-lg font-bold leading-none">$</span> Price
+                      <span className="text-lg font-bold leading-none">$</span>
+                      Price
                     </div>
                     <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-lg font-medium text-zinc-800">
                       {formatPrice(selectedTrip.priceCents) ?? "TBD"}
@@ -1106,23 +1151,23 @@ export default function DashboardPage() {
                     </div>
                   </div>
                 ) : null}
-              </div>
 
-              <div className="mt-8 flex items-center justify-end gap-3 border-t border-zinc-100 pt-6">
-                <button
-                  onClick={() => void openBookingMessages(selectedTrip.id)}
-                  disabled={openingConversationBookingId === selectedTrip.id}
-                  className="inline-flex items-center gap-2 rounded-xl border border-zinc-300 px-5 py-2.5 text-sm font-medium text-zinc-900 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <MessageCircle size={16} />
-                  {openingConversationBookingId === selectedTrip.id ? "Opening..." : "Message"}
-                </button>
-                <button
-                  onClick={() => setSelectedTrip(null)}
-                  className="rounded-xl bg-emerald-800 px-8 py-2.5 text-lg font-medium text-white shadow-sm transition-colors hover:bg-emerald-900"
-                >
-                  Close
-                </button>
+                <div className="mt-8 flex items-center justify-end gap-3 border-t border-zinc-100 pt-6">
+                  <button
+                    onClick={() => void openBookingMessages(selectedTrip.id)}
+                    disabled={openingConversationBookingId === selectedTrip.id}
+                    className="inline-flex items-center gap-2 rounded-xl border border-zinc-300 px-5 py-2.5 text-sm font-medium text-zinc-900 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <MessageCircle size={16} />
+                    {openingConversationBookingId === selectedTrip.id ? "Opening..." : "Message"}
+                  </button>
+                  <button
+                    onClick={() => setSelectedTrip(null)}
+                    className="rounded-xl bg-emerald-800 px-8 py-2.5 text-lg font-medium text-white shadow-sm transition-colors hover:bg-emerald-900"
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
             </div>
           </div>
