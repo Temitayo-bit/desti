@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { format } from "date-fns";
 import { MessageCircle, X } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -98,34 +105,107 @@ const UsersIcon = ({ className = "text-zinc-500" }: { className?: string }) => (
 );
 
 const CheckCircleIcon = () => (
-  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-600">
+  <svg
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className="text-emerald-600"
+  >
     <circle cx="12" cy="12" r="10" />
     <path d="m9 12 2 2 4-4" />
   </svg>
 );
 
 const PaperPlaneIcon = () => (
-  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-600">
+  <svg
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className="text-emerald-600"
+  >
     <path d="M3.714 3.048a.53.53 0 0 1 .746-.211l18.451 8.281a.53.53 0 0 1 0 .966L4.46 20.365a.53.53 0 0 1-.746-.58l2.065-6.743a.53.53 0 0 0 0-.31z" />
     <path d="M6 12h16" />
   </svg>
 );
 
 const InboxIcon = () => (
-  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-600">
+  <svg
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className="text-emerald-600"
+  >
     <path d="M22 12h-4l-3 3h-6l-3-3H2" />
     <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
   </svg>
 );
 
 const CarIcon = () => (
-  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-600">
+  <svg
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className="text-emerald-600"
+  >
     <path d="M14 16H9m10 0h1l-1.44-4.32A2 2 0 0 0 16.67 10H7.33a2 2 0 0 0-1.89 1.68L4 16h1" />
     <path d="M5 16v2a1 1 0 0 0 1 1h1" />
     <path d="M19 16v2a1 1 0 0 1-1 1h-1" />
     <path d="M9 19h6" />
     <circle cx="7.5" cy="16.5" r="1.5" />
     <circle cx="16.5" cy="16.5" r="1.5" />
+  </svg>
+);
+
+const ArrowRightIcon = ({ className = "text-zinc-500" }: { className?: string }) => (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+  >
+    <path d="M5 12h14" />
+    <path d="m12 5 7 7-7 7" />
+  </svg>
+);
+
+const LightningIcon = ({ className = "text-emerald-700" }: { className?: string }) => (
+  <svg
+    width="18"
+    height="18"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+  >
+    <path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z" />
   </svg>
 );
 
@@ -141,10 +221,6 @@ function formatTimeRange(startIso: string, endIso: string): string {
 
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
       return "Time TBD";
-    }
-
-    if (start.toDateString() === end.toDateString()) {
-      return `${format(start, "MMM d, h:mm a")} -> ${format(end, "MMM d, h:mm a")}`;
     }
 
     return `${format(start, "MMM d, h:mm a")} -> ${format(end, "MMM d, h:mm a")}`;
@@ -170,7 +246,7 @@ function MetricCard({
 }: {
   title: string;
   value: number;
-  icon: React.ReactNode;
+  icon: ReactNode;
 }) {
   return (
     <article className="w-[280px] shrink-0 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
@@ -192,7 +268,7 @@ function OfferCard({
   children,
 }: {
   offer: DashboardOfferSummary;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <article className={CARD_CLASS}>
@@ -201,9 +277,13 @@ function OfferCard({
           <div className="flex items-start gap-2">
             <MapPinIcon className="mt-1 shrink-0 text-zinc-400" />
             <div className="min-w-0">
-              <p className="truncate text-lg font-semibold tracking-tight text-zinc-900">{offer.tripRequest.originText}</p>
+              <p className="truncate text-lg font-semibold tracking-tight text-zinc-900">
+                {offer.tripRequest.originText}
+              </p>
               <p className="text-sm tracking-tight text-zinc-500">to</p>
-              <p className="truncate text-lg font-semibold tracking-tight text-zinc-900">{offer.tripRequest.destinationText}</p>
+              <p className="truncate text-lg font-semibold tracking-tight text-zinc-900">
+                {offer.tripRequest.destinationText}
+              </p>
             </div>
           </div>
         </div>
@@ -217,17 +297,83 @@ function OfferCard({
             {offer.seatsOffered} {offer.seatsOffered === 1 ? "seat" : "seats"}
           </p>
           <p className="flex items-center gap-2 text-sm tracking-tight">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-500">
-              <circle cx="12" cy="12" r="10" />
-              <polyline points="12 6 12 12 16 14" />
-            </svg>
+            <ClockIcon className="text-zinc-500" />
             {formatRelativeTime(offer.createdAt)}
           </p>
         </div>
-        <p className="text-2xl font-bold tracking-tight text-emerald-600">{formatPrice(offer.priceCents)}</p>
+        <p className="text-2xl font-bold tracking-tight text-emerald-600">
+          {formatPrice(offer.priceCents)}
+        </p>
       </div>
 
       {children}
+    </article>
+  );
+}
+
+function QuickActionButton({
+  title,
+  subtitle,
+  onClick,
+}: {
+  title: string;
+  subtitle: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center justify-between rounded-2xl border border-zinc-200 bg-white px-4 py-4 text-left shadow-sm transition hover:border-emerald-300 hover:shadow-md"
+    >
+      <div>
+        <p className="text-sm font-semibold tracking-tight text-zinc-900">{title}</p>
+        <p className="mt-1 text-sm text-zinc-500">{subtitle}</p>
+      </div>
+      <ArrowRightIcon className="shrink-0 text-zinc-400" />
+    </button>
+  );
+}
+
+function AttentionCard({
+  title,
+  description,
+  label,
+  onClick,
+  tone = "amber",
+}: {
+  title: string;
+  description: string;
+  label: string;
+  onClick: () => void;
+  tone?: "amber" | "emerald" | "blue";
+}) {
+  const toneClass =
+    tone === "emerald"
+      ? "border-emerald-200 bg-emerald-50"
+      : tone === "blue"
+        ? "border-blue-200 bg-blue-50"
+        : "border-amber-200 bg-amber-50";
+
+  return (
+    <article className={`rounded-2xl border p-4 ${toneClass}`}>
+      <div className="flex items-start gap-3">
+        <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl bg-white/80">
+          <LightningIcon />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-zinc-900">{title}</p>
+          <p className="mt-1 text-sm text-zinc-600">{description}</p>
+          <button
+            type="button"
+            onClick={onClick}
+            className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-zinc-900 hover:text-emerald-700"
+          >
+            {label}
+            <ArrowRightIcon className="text-current" />
+          </button>
+        </div>
+      </div>
     </article>
   );
 }
@@ -245,6 +391,7 @@ export default function DashboardPage() {
   const [openingConversationBookingId, setOpeningConversationBookingId] = useState<string | null>(null);
   const tripDialogRef = useRef<HTMLDivElement | null>(null);
   const closeTripButtonRef = useRef<HTMLButtonElement | null>(null);
+  const pendingOffersSectionRef = useRef<HTMLElement | null>(null);
 
   const refreshDashboard = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent ?? false;
@@ -359,20 +506,41 @@ export default function DashboardPage() {
   }
 
   const summary = dashboard?.summary;
+
   const normalizedBookings = useMemo(() => {
     const bookings = (dashboard?.upcoming.bookings ?? []) as DashboardBookingItem[];
     return bookings.map(normalizeDashboardBooking);
   }, [dashboard?.upcoming.bookings]);
+
+  const sortedBookings = useMemo(() => {
+    return [...normalizedBookings].sort(
+      (a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()
+    );
+  }, [normalizedBookings]);
+
+  const nextTrip = sortedBookings[0] ?? null;
   const sentOffers = dashboard?.upcoming.offers.sent ?? [];
   const receivedOffers = dashboard?.upcoming.offers.received ?? [];
+  const ridesDriving = dashboard?.upcoming.ridesDriving ?? [];
+
+  const hasAnyActivity =
+    normalizedBookings.length > 0 ||
+    sentOffers.length > 0 ||
+    receivedOffers.length > 0 ||
+    ridesDriving.length > 0;
+
+  const needsAttentionCount =
+    receivedOffers.length + (nextTrip ? 1 : 0) + (normalizedBookings.length === 0 ? 1 : 0);
 
   return (
     <ProtectedShell activeNav="dashboard">
       <section className="space-y-8">
         <header className="space-y-2">
-          <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-zinc-900">Dashboard</h1>
-          <p className="text-zinc-500 text-lg md:text-xl">
-            Your upcoming trips and offers
+          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 md:text-3xl">
+            Dashboard
+          </h1>
+          <p className="text-lg text-zinc-500 md:text-xl">
+            What needs your attention and what’s coming up next.
           </p>
         </header>
 
@@ -423,29 +591,205 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <section className="space-y-4">
-              {actionNotice ? (
-                <div
-                  className={`rounded-2xl border px-4 py-3 text-sm font-medium ${
-                    actionNotice.type === "success"
-                      ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-                      : "border-red-300 bg-red-50 text-red-700"
-                  }`}
-                >
-                  {actionNotice.text}
-                </div>
-              ) : null}
+            {actionNotice ? (
+              <div
+                className={`rounded-2xl border px-4 py-3 text-sm font-medium ${
+                  actionNotice.type === "success"
+                    ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                    : "border-red-300 bg-red-50 text-red-700"
+                }`}
+              >
+                {actionNotice.text}
+              </div>
+            ) : null}
 
+            <section className="grid grid-cols-1 gap-5 xl:grid-cols-[1.3fr_0.9fr]">
+              <div className="space-y-4 rounded-3xl border border-zinc-200 bg-white p-5 shadow-sm md:p-6">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                      Needs attention
+                    </p>
+                    <h2 className="mt-1 text-2xl font-bold tracking-tight text-zinc-900">
+                      Your next actions
+                    </h2>
+                  </div>
+                  <span className="inline-flex items-center rounded-full bg-zinc-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-zinc-600">
+                    {needsAttentionCount} {needsAttentionCount === 1 ? "item" : "items"}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  {receivedOffers.length > 0 ? (
+                    <AttentionCard
+                      title={`${receivedOffers.length} incoming ${receivedOffers.length === 1 ? "offer" : "offers"} waiting`}
+                      description="Review pending offers so riders are not left waiting."
+                      label="Review offers"
+                      onClick={() =>
+                        pendingOffersSectionRef.current?.scrollIntoView({
+                          behavior: "smooth",
+                          block: "start",
+                        })
+                      }
+                    />
+                  ) : null}
+
+                  {nextTrip ? (
+                    <AttentionCard
+                      title="Your next confirmed trip is coming up"
+                      description={`${nextTrip.originText} to ${nextTrip.destinationText} • ${format(
+                        new Date(nextTrip.startsAt),
+                        "MMM d, h:mm a"
+                      )}`}
+                      label="View trip details"
+                      onClick={() => setSelectedTrip(nextTrip)}
+                      tone="blue"
+                    />
+                  ) : null}
+
+                  {normalizedBookings.length === 0 ? (
+                    <AttentionCard
+                      title="No confirmed trips yet"
+                      description="Browse available rides or post your own ride request to get moving."
+                      label="Browse rides"
+                      onClick={() => router.push("/browse")}
+                      tone="emerald"
+                    />
+                  ) : null}
+
+                  {receivedOffers.length === 0 && nextTrip && sentOffers.length > 0 ? (
+                    <AttentionCard
+                      title="You still have offers pending"
+                      description={`${sentOffers.length} ${sentOffers.length === 1 ? "offer is" : "offers are"} still awaiting a response.`}
+                      label="Check offers"
+                      onClick={() =>
+                        pendingOffersSectionRef.current?.scrollIntoView({
+                          behavior: "smooth",
+                          block: "start",
+                        })
+                      }
+                      tone="emerald"
+                    />
+                  ) : null}
+
+                  {!hasAnyActivity ? (
+                    <div className="rounded-2xl border border-dashed border-zinc-300 bg-zinc-50 p-6 md:col-span-2">
+                      <p className="text-lg font-semibold tracking-tight text-zinc-900">
+                        You’re all set to start.
+                      </p>
+                      <p className="mt-2 text-sm text-zinc-500">
+                        Post a ride, browse rides, or create a trip request to start using Desti.
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="space-y-4 rounded-3xl border border-zinc-200 bg-white p-5 shadow-sm md:p-6">
+                <div>
+                  <p className="text-sm font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                    Quick actions
+                  </p>
+                  <h2 className="mt-1 text-2xl font-bold tracking-tight text-zinc-900">
+                    Jump back in
+                  </h2>
+                </div>
+
+                <div className="space-y-3">
+                  <QuickActionButton
+                    title="Browse rides"
+                    subtitle="Find your next ride quickly."
+                    onClick={() => router.push("/browse")}
+                  />
+                  <QuickActionButton
+                    title="Post a ride"
+                    subtitle="Share empty seats with other students."
+                    onClick={() => router.push("/post-ride")}
+                  />
+                  <QuickActionButton
+                    title="Browse trip requests"
+                    subtitle="See who still needs a ride."
+                    onClick={() => router.push("/browse-trip-requests")}
+                  />
+                  <QuickActionButton
+                    title="Post a trip request"
+                    subtitle="Let drivers send offers to you."
+                    onClick={() => router.push("/post-trip-request")}
+                  />
+                </div>
+              </div>
+            </section>
+
+            {nextTrip ? (
+              <section className="rounded-3xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-5 shadow-sm md:p-6">
+                <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                      Next up
+                    </p>
+                    <div className="mt-3 flex items-start gap-3">
+                      <MapPinIcon className="mt-1 shrink-0 text-emerald-700" />
+                      <div className="min-w-0">
+                        <h2 className="truncate text-2xl font-bold tracking-tight text-zinc-900">
+                          {nextTrip.originText}
+                        </h2>
+                        <p className="text-sm text-zinc-500">to</p>
+                        <h3 className="truncate text-2xl font-bold tracking-tight text-zinc-900">
+                          {nextTrip.destinationText}
+                        </h3>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap gap-3 text-sm text-zinc-600">
+                      <span className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1.5 shadow-sm">
+                        <CalendarIcon />
+                        {formatTimeRange(nextTrip.startsAt, nextTrip.endsAt)}
+                      </span>
+                      <span className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1.5 shadow-sm">
+                        <UsersIcon />
+                        {getSeatDisplayText(nextTrip, viewerUserId)}
+                      </span>
+                      <span className="inline-flex items-center rounded-full bg-white px-3 py-1.5 shadow-sm">
+                        {toDistanceLabel(nextTrip.distanceCategory)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-3 sm:flex-row">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedTrip(nextTrip)}
+                      className="rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-800"
+                    >
+                      View trip details
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void openBookingMessages(nextTrip.id)}
+                      disabled={openingConversationBookingId === nextTrip.id}
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl border border-zinc-300 bg-white px-5 py-3 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <MessageCircle size={16} />
+                      {openingConversationBookingId === nextTrip.id ? "Opening..." : "Message"}
+                    </button>
+                  </div>
+                </div>
+              </section>
+            ) : null}
+
+            <section className="space-y-4">
               <div className="flex items-center justify-between gap-4">
-                <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-zinc-900">Your Upcoming Trips</h2>
-                {/* TODO: Wire this to a dedicated bookings list route when available. */}
-                <button
-                  type="button"
-                  disabled
-                  className="rounded-xl border border-zinc-300 px-4 py-2 text-sm font-semibold text-zinc-400"
-                >
-                  View All
-                </button>
+                <div>
+                  <h2 className="text-2xl font-bold tracking-tight text-zinc-900 md:text-3xl">
+                    Your Upcoming Trips
+                  </h2>
+                  <p className="mt-1 text-sm text-zinc-500">
+                    Confirmed bookings and ride details you can act on now.
+                  </p>
+                </div>
+                <span className="inline-flex items-center rounded-full bg-zinc-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-zinc-600">
+                  {normalizedBookings.length} {normalizedBookings.length === 1 ? "trip" : "trips"}
+                </span>
               </div>
 
               {normalizedBookings.length === 0 ? (
@@ -454,9 +798,10 @@ export default function DashboardPage() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-                  {normalizedBookings.map((booking) => {
+                  {sortedBookings.map((booking) => {
                     const bookingPrice = formatPrice(booking.priceCents);
                     const openingConversation = openingConversationBookingId === booking.id;
+
                     return (
                       <article
                         key={booking.id}
@@ -467,12 +812,17 @@ export default function DashboardPage() {
                             <div className="flex items-start gap-2">
                               <MapPinIcon className="mt-1 shrink-0 text-zinc-400" />
                               <div className="min-w-0">
-                                <p className="truncate text-lg font-semibold tracking-tight text-zinc-900">{booking.originText}</p>
+                                <p className="truncate text-lg font-semibold tracking-tight text-zinc-900">
+                                  {booking.originText}
+                                </p>
                                 <p className="text-sm tracking-tight text-zinc-500">to</p>
-                                <p className="truncate text-lg font-semibold tracking-tight text-zinc-900">{booking.destinationText}</p>
+                                <p className="truncate text-lg font-semibold tracking-tight text-zinc-900">
+                                  {booking.destinationText}
+                                </p>
                               </div>
                             </div>
                           </div>
+
                           <div className="flex items-center gap-2">
                             <button
                               type="button"
@@ -501,12 +851,14 @@ export default function DashboardPage() {
                               <CalendarIcon />
                               {formatTimeRange(booking.startsAt, booking.endsAt)}
                             </p>
+
                             {booking.driverName ? (
                               <p className="flex items-center gap-2 text-sm tracking-tight">
                                 <UsersIcon />
                                 Driver: {booking.driverName}
                               </p>
                             ) : null}
+
                             <p className="flex items-center gap-2 text-sm tracking-tight">
                               <UsersIcon />
                               {getSeatDisplayText(booking, viewerUserId)}
@@ -518,7 +870,9 @@ export default function DashboardPage() {
                               {toDistanceLabel(booking.distanceCategory)}
                             </span>
                             {bookingPrice ? (
-                              <p className="text-2xl font-bold tracking-tight text-emerald-600">{bookingPrice}</p>
+                              <p className="text-2xl font-bold tracking-tight text-emerald-600">
+                                {bookingPrice}
+                              </p>
                             ) : null}
                           </div>
                         </button>
@@ -529,17 +883,19 @@ export default function DashboardPage() {
               )}
             </section>
 
-            <section className="space-y-4">
+            <section ref={pendingOffersSectionRef} className="space-y-4">
               <div className="flex items-center justify-between gap-4">
-                <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-zinc-900">Pending Offers</h2>
-                {/* TODO: Wire this to a dedicated offers list route when available. */}
-                <button
-                  type="button"
-                  disabled
-                  className="rounded-xl border border-zinc-300 px-4 py-2 text-sm font-semibold text-zinc-400"
-                >
-                  View All
-                </button>
+                <div>
+                  <h2 className="text-2xl font-bold tracking-tight text-zinc-900 md:text-3xl">
+                    Pending Offers
+                  </h2>
+                  <p className="mt-1 text-sm text-zinc-500">
+                    Review offers you sent and decide on offers you received.
+                  </p>
+                </div>
+                <span className="inline-flex items-center rounded-full bg-zinc-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-zinc-600">
+                  {sentOffers.length + receivedOffers.length} open
+                </span>
               </div>
 
               {refreshing ? (
@@ -548,12 +904,18 @@ export default function DashboardPage() {
 
               <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
                 <div className="space-y-3">
-                  <h3 className="text-xl md:text-2xl font-semibold tracking-tight text-zinc-900">Offers Sent</h3>
+                  <h3 className="text-xl font-semibold tracking-tight text-zinc-900 md:text-2xl">
+                    Offers Sent
+                  </h3>
+
                   {sentOffers.length === 0 ? (
-                    <div className={`${CARD_CLASS} text-zinc-500`}>No pending offers sent.</div>
+                    <div className={`${CARD_CLASS} text-zinc-500`}>
+                      No pending offers sent.
+                    </div>
                   ) : (
                     sentOffers.map((offer) => {
                       const isBusy = Boolean(pendingActions[offer.id]);
+
                       return (
                         <OfferCard key={offer.id} offer={offer}>
                           <button
@@ -564,7 +926,7 @@ export default function DashboardPage() {
                                 offer.id,
                                 `/api/offers/${offer.id}/cancel`,
                                 "cancel",
-                                "Offer cancelled.",
+                                "Offer cancelled."
                               )
                             }
                             className="w-full rounded-2xl border border-zinc-300 px-5 py-3 text-lg font-semibold tracking-tight text-zinc-900 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
@@ -578,13 +940,19 @@ export default function DashboardPage() {
                 </div>
 
                 <div className="space-y-3">
-                  <h3 className="text-xl md:text-2xl font-semibold tracking-tight text-zinc-900">Offers Received</h3>
+                  <h3 className="text-xl font-semibold tracking-tight text-zinc-900 md:text-2xl">
+                    Offers Received
+                  </h3>
+
                   {receivedOffers.length === 0 ? (
-                    <div className={`${CARD_CLASS} text-zinc-500`}>No pending offers received.</div>
+                    <div className={`${CARD_CLASS} text-zinc-500`}>
+                      No pending offers received.
+                    </div>
                   ) : (
                     receivedOffers.map((offer) => {
                       const busyAction = pendingActions[offer.id] ?? null;
                       const isBusy = Boolean(busyAction);
+
                       return (
                         <OfferCard key={offer.id} offer={offer}>
                           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -596,7 +964,7 @@ export default function DashboardPage() {
                                   offer.id,
                                   `/api/offers/${offer.id}/accept`,
                                   "accept",
-                                  "Offer accepted.",
+                                  "Offer accepted."
                                 )
                               }
                               className="w-full rounded-2xl bg-emerald-600 px-5 py-3 text-lg font-semibold tracking-tight text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
@@ -611,7 +979,7 @@ export default function DashboardPage() {
                                   offer.id,
                                   `/api/offers/${offer.id}/cancel`,
                                   "decline",
-                                  "Offer declined.",
+                                  "Offer declined."
                                 )
                               }
                               className="w-full rounded-2xl border border-zinc-300 px-5 py-3 text-lg font-semibold tracking-tight text-zinc-900 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
@@ -632,11 +1000,11 @@ export default function DashboardPage() {
 
       {selectedTrip ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/40 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/40 p-4 backdrop-blur-sm"
           onClick={() => setSelectedTrip(null)}
         >
           <div
-            className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col relative"
+            className="relative flex max-h-[90vh] w-full max-w-2xl flex-col overflow-y-auto rounded-2xl bg-white shadow-xl"
             onClick={(event) => event.stopPropagation()}
             role="dialog"
             aria-modal="true"
@@ -644,18 +1012,20 @@ export default function DashboardPage() {
             tabIndex={-1}
             ref={tripDialogRef}
           >
-            <div className="p-6 md:p-8 flex-1">
+            <div className="flex-1 p-6 md:p-8">
               <button
                 onClick={() => setSelectedTrip(null)}
                 aria-label="Close trip details"
-                className="absolute top-6 right-6 p-2 text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 rounded-full transition-colors z-10"
+                className="absolute right-6 top-6 z-10 rounded-full p-2 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-600"
                 ref={closeTripButtonRef}
               >
                 <X size={20} />
               </button>
 
-              <div className="mb-8 pr-12 flex items-center justify-between gap-3">
-                <h2 id="trip-details-title" className="text-2xl font-bold text-zinc-900">Trip Details</h2>
+              <div className="mb-8 flex items-center justify-between gap-3 pr-12">
+                <h2 id="trip-details-title" className="text-2xl font-bold text-zinc-900">
+                  Trip Details
+                </h2>
                 <span className="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-blue-700">
                   CONFIRMED
                 </span>
@@ -664,37 +1034,41 @@ export default function DashboardPage() {
               <div className="space-y-6">
                 <div className="space-y-4">
                   <div>
-                    <div className="flex items-center gap-2 mb-2 text-sm font-semibold text-emerald-800">
+                    <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-emerald-800">
                       <MapPinIcon /> Origin
                     </div>
-                    <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-4 text-zinc-700">
+                    <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-zinc-700">
                       {selectedTrip.originText}
                     </div>
                   </div>
                   <div>
-                    <div className="flex items-center gap-2 mb-2 text-sm font-semibold text-emerald-800">
+                    <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-emerald-800">
                       <MapPinIcon /> Destination
                     </div>
-                    <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-4 text-zinc-700">
+                    <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-zinc-700">
                       {selectedTrip.destinationText}
                     </div>
                   </div>
                 </div>
 
-                <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-5 md:p-6">
-                  <div className="flex items-center gap-2 mb-4 text-emerald-800 font-bold text-lg">
+                <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-5 md:p-6">
+                  <div className="mb-4 flex items-center gap-2 text-lg font-bold text-emerald-800">
                     <ClockIcon /> Trip Window
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-zinc-600 mb-1">Earliest</label>
-                      <div className="bg-white border border-zinc-200 rounded-xl p-3 text-zinc-800 shadow-sm">
+                      <label className="mb-1 block text-sm font-medium text-zinc-600">
+                        Earliest
+                      </label>
+                      <div className="rounded-xl border border-zinc-200 bg-white p-3 text-zinc-800 shadow-sm">
                         {format(new Date(selectedTrip.startsAt), "MMM d, h:mm a")}
                       </div>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-zinc-600 mb-1">Latest</label>
-                      <div className="bg-white border border-zinc-200 rounded-xl p-3 text-zinc-800 shadow-sm">
+                      <label className="mb-1 block text-sm font-medium text-zinc-600">
+                        Latest
+                      </label>
+                      <div className="rounded-xl border border-zinc-200 bg-white p-3 text-zinc-800 shadow-sm">
                         {format(new Date(selectedTrip.endsAt), "MMM d, h:mm a")}
                       </div>
                     </div>
@@ -703,18 +1077,18 @@ export default function DashboardPage() {
 
                 <div className="grid grid-cols-2 gap-6">
                   <div>
-                    <div className="flex items-center gap-2 mb-2 text-emerald-800 font-semibold">
+                    <div className="mb-2 flex items-center gap-2 font-semibold text-emerald-800">
                       <UsersIcon /> Seats Booked
                     </div>
-                    <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-4 text-zinc-800 font-medium text-lg">
+                    <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-lg font-medium text-zinc-800">
                       {getSeatDisplayText(selectedTrip, viewerUserId)}
                     </div>
                   </div>
                   <div>
-                    <div className="flex items-center gap-2 mb-2 text-emerald-800 font-semibold">
-                      <span className="font-bold text-lg leading-none">$</span> Price
+                    <div className="mb-2 flex items-center gap-2 font-semibold text-emerald-800">
+                      <span className="text-lg font-bold leading-none">$</span> Price
                     </div>
-                    <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-4 text-zinc-800 font-medium text-lg">
+                    <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-lg font-medium text-zinc-800">
                       {formatPrice(selectedTrip.priceCents) ?? "TBD"}
                     </div>
                   </div>
@@ -722,17 +1096,27 @@ export default function DashboardPage() {
 
                 {selectedTrip.driverName ? (
                   <div className="pt-2">
-                    <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4 text-sm text-blue-900">
-                      <p><span className="font-semibold">Driver:</span> {selectedTrip.driverName}</p>
+                    <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-4 text-sm text-blue-900">
+                      <p>
+                        <span className="font-semibold">Driver:</span> {selectedTrip.driverName}
+                      </p>
                     </div>
                   </div>
                 ) : null}
               </div>
 
-              <div className="mt-8 pt-6 border-t border-zinc-100 flex justify-end items-center">
+              <div className="mt-8 flex items-center justify-end gap-3 border-t border-zinc-100 pt-6">
+                <button
+                  onClick={() => void openBookingMessages(selectedTrip.id)}
+                  disabled={openingConversationBookingId === selectedTrip.id}
+                  className="inline-flex items-center gap-2 rounded-xl border border-zinc-300 px-5 py-2.5 text-sm font-medium text-zinc-900 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <MessageCircle size={16} />
+                  {openingConversationBookingId === selectedTrip.id ? "Opening..." : "Message"}
+                </button>
                 <button
                   onClick={() => setSelectedTrip(null)}
-                  className="px-8 py-2.5 bg-emerald-800 hover:bg-emerald-900 text-white font-medium rounded-xl shadow-sm transition-colors text-lg"
+                  className="rounded-xl bg-emerald-800 px-8 py-2.5 text-lg font-medium text-white shadow-sm transition-colors hover:bg-emerald-900"
                 >
                   Close
                 </button>
