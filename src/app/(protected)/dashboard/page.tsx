@@ -10,6 +10,7 @@ import {
 } from "react";
 import { format } from "date-fns";
 import { MessageCircle, X } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ProtectedShell } from "../_components/ProtectedShell";
 import {
