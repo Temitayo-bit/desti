@@ -520,19 +520,10 @@ export default function DashboardPage() {
   }, [normalizedBookings]);
 
   const sortedBookings = useMemo(() => {
-<<<<<<< HEAD
-    return [...normalizedBookings]
-      .filter((booking) => booking.status === "CONFIRMED")
-      .sort(
-        (a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()
-      );
-  }, [normalizedBookings]);
-=======
     return [...confirmedBookings].sort(
       (a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()
     );
   }, [confirmedBookings]);
->>>>>>> 6eba7ce (Fix dashboard booking filtering and attention counts)
 
   const nextTrip = sortedBookings[0] ?? null;
   const sentOffers = dashboard?.upcoming.offers.sent ?? [];
@@ -540,11 +531,7 @@ export default function DashboardPage() {
   const ridesDriving = dashboard?.upcoming.ridesDriving ?? [];
 
   const hasAnyActivity =
-<<<<<<< HEAD
-    sortedBookings.length > 0 ||
-=======
     confirmedBookings.length > 0 ||
->>>>>>> 6eba7ce (Fix dashboard booking filtering and attention counts)
     sentOffers.length > 0 ||
     receivedOffers.length > 0 ||
     ridesDriving.length > 0;
@@ -556,14 +543,10 @@ export default function DashboardPage() {
     receivedOffers.length === 0 && Boolean(nextTrip) && sentOffers.length > 0;
 
   const needsAttentionCount =
-<<<<<<< HEAD
-    receivedOffers.length + (nextTrip ? 1 : 0) + (sortedBookings.length === 0 ? 1 : 0);
-=======
     (hasReceivedOffersCard ? 1 : 0) +
     (hasNextTripCard ? 1 : 0) +
     (hasNoConfirmedTripsCard ? 1 : 0) +
     (hasPendingSentOffersCard ? 1 : 0);
->>>>>>> 6eba7ce (Fix dashboard booking filtering and attention counts)
 
   return (
     <ProtectedShell activeNav="dashboard">
@@ -680,11 +663,7 @@ export default function DashboardPage() {
                     />
                   ) : null}
 
-<<<<<<< HEAD
-                  {sortedBookings.length === 0 ? (
-=======
                   {hasNoConfirmedTripsCard ? (
->>>>>>> 6eba7ce (Fix dashboard booking filtering and attention counts)
                     <AttentionCard
                       title="No confirmed trips yet"
                       description="Browse available rides or post your own ride request to get moving."
@@ -826,20 +805,12 @@ export default function DashboardPage() {
                   </p>
                 </div>
                 <span className="inline-flex items-center rounded-full bg-zinc-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-zinc-600">
-<<<<<<< HEAD
-                  {sortedBookings.length} {sortedBookings.length === 1 ? "trip" : "trips"}
-                </span>
-              </div>
-
-              {sortedBookings.length === 0 ? (
-=======
                   {confirmedBookings.length}{" "}
                   {confirmedBookings.length === 1 ? "trip" : "trips"}
                 </span>
               </div>
 
               {confirmedBookings.length === 0 ? (
->>>>>>> 6eba7ce (Fix dashboard booking filtering and attention counts)
                 <div className={`${CARD_CLASS} text-zinc-500`}>
                   You do not have confirmed upcoming trips yet.
                 </div>
