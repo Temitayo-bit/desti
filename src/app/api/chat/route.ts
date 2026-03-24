@@ -5,7 +5,7 @@ import { GoogleGenAI } from "@google/genai";
 
 /* ── Constants ────────────────────────────────────────────────────────────── */
 
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const GEMINI_MODEL = process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
 const GEMINI_TIMEOUT_MS = 30_000;
 const MAX_HISTORY = 10;
 
@@ -187,6 +187,8 @@ export async function POST(request: NextRequest) {
     const systemInstruction = `${SYSTEM_PROMPT}\n\n--- Knowledge Pack ---\n${knowledge}\n--- End Knowledge Pack ---`;
 
     // ── Call Gemini ──────────────────────────────────────────────────────
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
     try {
         const ai = new GoogleGenAI({ apiKey: geminiApiKey });
         const chat = ai.chats.create({
@@ -194,12 +196,10 @@ export async function POST(request: NextRequest) {
             config: { systemInstruction },
             history: geminiHistory,
         });
-        const result = await Promise.race([
-            chat.sendMessage({ message }),
-            new Promise<never>((_, reject) =>
-                setTimeout(() => reject(new Error("GEMINI_TIMEOUT")), GEMINI_TIMEOUT_MS)
-            ),
-        ]);
+        const result = await chat.sendMessage({
+            message,
+            config: { abortSignal: controller.signal },
+        });
         const answer = result.text ?? "";
 
         if (typeof answer !== "string" || answer.length === 0) {
@@ -212,8 +212,11 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json({ answer });
     } catch (err: unknown) {
-        // Timeout
-        if (err instanceof Error && err.message === "GEMINI_TIMEOUT") {
+        // Timeout (AbortController fires AbortError with name "AbortError")
+        const isAbort =
+            (err instanceof DOMException && err.name === "AbortError") ||
+            (err instanceof Error && err.name === "AbortError");
+        if (isAbort) {
             console.error("[POST /api/chat] 504 — Gemini request exceeded", GEMINI_TIMEOUT_MS, "ms");
             return NextResponse.json(
                 { error: "Chat request timed out. The model took too long to respond." },
@@ -251,5 +254,7 @@ export async function POST(request: NextRequest) {
             { error: "An unexpected error occurred." },
             { status: 500 }
         );
+    } finally {
+        clearTimeout(timeoutId);
     }
 }

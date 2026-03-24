@@ -48,8 +48,16 @@ describe("Chat Gateway", () => {
     });
 
     afterEach(() => {
-        process.env.GEMINI_API_KEY = originalGeminiApiKey;
-        process.env.GEMINI_MODEL = originalGeminiModel;
+        if (originalGeminiApiKey === undefined) {
+            delete process.env.GEMINI_API_KEY;
+        } else {
+            process.env.GEMINI_API_KEY = originalGeminiApiKey;
+        }
+        if (originalGeminiModel === undefined) {
+            delete process.env.GEMINI_MODEL;
+        } else {
+            process.env.GEMINI_MODEL = originalGeminiModel;
+        }
     });
 
     // ── 1. POST /api/chat returns answer when Gemini responds ────────────
@@ -107,9 +115,9 @@ describe("Chat Gateway", () => {
         expect(createArg.config?.systemInstruction).toContain("Knowledge Pack");
         expect(createArg.config?.systemInstruction).toContain("Test Knowledge");
 
-        expect(mockSendMessage).toHaveBeenCalledWith({
-            message: "How do bookings work?",
-        });
+        expect(mockSendMessage).toHaveBeenCalledWith(
+            expect.objectContaining({ message: "How do bookings work?" })
+        );
     });
 
     // ── 3. History truncation ─────────────────────────────────────────────

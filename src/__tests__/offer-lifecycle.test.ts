@@ -1,6 +1,4 @@
-/**
- * @jest-environment node
- */
+// @vitest-environment node
 import "dotenv/config";
 import { POST as createOffer } from "@/app/api/trip-requests/[tripRequestId]/offers/route";
 import { POST as acceptOffer } from "@/app/api/offers/[offerId]/accept/route";
@@ -102,7 +100,10 @@ describe("Offer Lifecycle Integration Tests", () => {
     const createReq = (url: string, headers: Record<string, string>, body: any) => {
         return new NextRequest(new URL(url, "http://localhost"), {
             method: "POST",
-            headers: new Headers(headers),
+            headers: new Headers({
+                "Content-Type": "application/json",
+                ...headers,
+            }),
             body: JSON.stringify(body),
         });
     };
@@ -125,9 +126,11 @@ describe("Offer Lifecycle Integration Tests", () => {
         expect(json.seatsOffered).toBe(2);
     });
 
+    // Depends on test 1 having created an offer with key "idemp_offer_1".
+    // Tests in this describe block run sequentially in definition order.
     test("2. Idempotency returns same offer", async () => {
         mockAuth(DRIVER_ID);
-        const key = "idemp_offer_1"; // Same key
+        const key = "idemp_offer_1"; // Same key as test 1
         const req = createReq(
             `http://localhost/api/trip-requests/${tripRequestId}/offers`,
             { "Idempotency-Key": key },
