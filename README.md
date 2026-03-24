@@ -29,7 +29,7 @@ The app currently uses the following primary libraries, packages, and frameworks
 
 ### Authentication and Database
 
-- Clerk `^6.37.3` via `@clerk/nextjs`
+- Clerk `^7.0.6` via `@clerk/nextjs`
 - Prisma ORM `^6.19.2`
 - Prisma Client `^6.19.2` via `@prisma/client`
 - PostgreSQL as the database
