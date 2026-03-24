@@ -55,6 +55,6 @@ describe("access restricted page", () => {
         const markup = renderToStaticMarkup(output as ReactNode);
 
         expect(markup).toContain('data-sign-out-redirect="/"');
-        expect(markup).toContain('data-user-button-after-sign-out="/"');
+        // UserButton sign-out redirect is global: afterSignOutUrl on ClerkProvider in layout.tsx
     });
 });
