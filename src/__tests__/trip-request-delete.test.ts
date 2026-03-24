@@ -226,6 +226,84 @@ describe("DELETE /api/trip-requests/:tripRequestId", () => {
         });
     });
 
+    it("returns 404 when the conditional cancel loses a race and the trip request is gone", async () => {
+        mockPrisma.tripRequest.findUnique
+            .mockResolvedValueOnce(fakeTripRequest())
+            .mockResolvedValueOnce(null);
+        mockPrisma.tripRequest.updateMany.mockResolvedValue({ count: 0 });
+
+        const res = await DELETE(makeRequest() as never, {
+            params: Promise.resolve({ tripRequestId: "trip-123" }),
+        });
+        const json = await res.json();
+
+        expect(res.status).toBe(404);
+        expect(mockPrisma.tripRequest.updateMany).toHaveBeenCalledWith({
+            where: {
+                id: "trip-123",
+                riderUserId: "user_rider_1",
+                status: "ACTIVE",
+            },
+            data: { status: "CANCELLED" },
+        });
+        expect(json).toEqual({
+            error: "Not Found",
+            message: "Trip request not found.",
+        });
+    });
+
+    it("returns 403 when the conditional cancel loses a race and ownership changes", async () => {
+        mockPrisma.tripRequest.findUnique
+            .mockResolvedValueOnce(fakeTripRequest())
+            .mockResolvedValueOnce(fakeTripRequest({ riderUserId: "different_user" }));
+        mockPrisma.tripRequest.updateMany.mockResolvedValue({ count: 0 });
+
+        const res = await DELETE(makeRequest() as never, {
+            params: Promise.resolve({ tripRequestId: "trip-123" }),
+        });
+        const json = await res.json();
+
+        expect(res.status).toBe(403);
+        expect(mockPrisma.tripRequest.updateMany).toHaveBeenCalledWith({
+            where: {
+                id: "trip-123",
+                riderUserId: "user_rider_1",
+                status: "ACTIVE",
+            },
+            data: { status: "CANCELLED" },
+        });
+        expect(json).toEqual({
+            error: "Forbidden",
+            message: "You don't own this trip request.",
+        });
+    });
+
+    it("returns a generic 409 when the conditional cancel loses a race but the trip request remains ACTIVE", async () => {
+        mockPrisma.tripRequest.findUnique
+            .mockResolvedValueOnce(fakeTripRequest())
+            .mockResolvedValueOnce(fakeTripRequest({ status: "ACTIVE" }));
+        mockPrisma.tripRequest.updateMany.mockResolvedValue({ count: 0 });
+
+        const res = await DELETE(makeRequest() as never, {
+            params: Promise.resolve({ tripRequestId: "trip-123" }),
+        });
+        const json = await res.json();
+
+        expect(res.status).toBe(409);
+        expect(mockPrisma.tripRequest.updateMany).toHaveBeenCalledWith({
+            where: {
+                id: "trip-123",
+                riderUserId: "user_rider_1",
+                status: "ACTIVE",
+            },
+            data: { status: "CANCELLED" },
+        });
+        expect(json).toEqual({
+            error: "Conflict",
+            message: "Trip request cancellation could not be completed.",
+        });
+    });
+
     it("returns 500 when an unexpected exception is thrown", async () => {
         mockPrisma.tripRequest.findUnique.mockRejectedValueOnce(new Error("db down"));
 
