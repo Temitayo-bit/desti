@@ -1,0 +1,40 @@
+services:
+  db:
+    image: postgres:16
+    container_name: desti-db
+    environment:
+      POSTGRES_DB: desti
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d desti"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  web:
+    build:
+      context: .
+    container_name: desti-web
+    working_dir: /app
+    env_file:
+      - ./.env
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+    volumes:
+      - ./:/app
+      - /app/node_modules
+    command: sh -c "npx prisma migrate deploy && npm run dev -- --hostname 0.0.0.0"
+
+volumes:
+  postgres_data:
