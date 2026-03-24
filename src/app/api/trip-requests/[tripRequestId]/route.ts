@@ -489,14 +489,125 @@ export async function PATCH(
     }
 }
 
-export async function DELETE() {
-    // TODO: Implement trip request cancellation logic.
-    // - Ensure the user is the owner
-    // - Verify status and booking constraints
-    // - Mark request as cancelled
-    // - Notify relevant users
-    return NextResponse.json(
-        { message: "TODO: Trip request cancellation endpoint is not yet implemented." },
-        { status: 501 }
-    );
+export async function DELETE(
+    request: NextRequest,
+    { params }: { params: Promise<{ tripRequestId: string }> }
+) {
+    try {
+        const auth = await requireStetsonAuth(request);
+        if (auth.error) return auth.error;
+
+        const { tripRequestId } = await params;
+        const riderUserId = auth.user.clerkUserId;
+
+        const tripRequest = await prisma.tripRequest.findUnique({
+            where: { id: tripRequestId },
+        });
+
+        if (!tripRequest) {
+            return NextResponse.json(
+                { error: "Not Found", message: "Trip request not found." },
+                { status: 404 }
+            );
+        }
+
+        if (tripRequest.riderUserId !== riderUserId) {
+            return NextResponse.json(
+                { error: "Forbidden", message: "You don't own this trip request." },
+                { status: 403 }
+            );
+        }
+
+        const currentStatus = tripRequest.status as string;
+        if (currentStatus !== EDITABLE_STATUS) {
+            return NextResponse.json(
+                {
+                    error: "Conflict",
+                    code: TRIP_REQUEST_CLOSED_CODE,
+                    message: TRIP_REQUEST_CLOSED_MESSAGE,
+                },
+                { status: 409 }
+            );
+        }
+
+        const updateResult = await prisma.tripRequest.updateMany({
+            where: {
+                id: tripRequestId,
+                riderUserId,
+                status: EDITABLE_STATUS,
+            },
+            data: { status: "CANCELLED" },
+        });
+
+        if (updateResult.count === 0) {
+            const maybeUpdatedTripRequest = await prisma.tripRequest.findUnique({
+                where: { id: tripRequestId },
+            });
+
+            if (!maybeUpdatedTripRequest) {
+                return NextResponse.json(
+                    { error: "Not Found", message: "Trip request not found." },
+                    { status: 404 }
+                );
+            }
+
+            if (maybeUpdatedTripRequest.riderUserId !== riderUserId) {
+                return NextResponse.json(
+                    { error: "Forbidden", message: "You don't own this trip request." },
+                    { status: 403 }
+                );
+            }
+
+            const latestStatus = maybeUpdatedTripRequest.status as string;
+            if (latestStatus !== EDITABLE_STATUS) {
+                return NextResponse.json(
+                    {
+                        error: "Conflict",
+                        code: TRIP_REQUEST_CLOSED_CODE,
+                        message: TRIP_REQUEST_CLOSED_MESSAGE,
+                    },
+                    { status: 409 }
+                );
+            }
+
+            return NextResponse.json(
+                {
+                    error: "Conflict",
+                    message: "Trip request cancellation could not be completed.",
+                },
+                { status: 409 }
+            );
+        }
+
+        const updatedTripRequest = await prisma.tripRequest.findUnique({
+            where: { id: tripRequestId },
+        });
+
+        if (!updatedTripRequest) {
+            return NextResponse.json(
+                { error: "Not Found", message: "Trip request not found." },
+                { status: 404 }
+            );
+        }
+
+        const responseTripRequest = { ...updatedTripRequest } as {
+            bookings?: unknown;
+        };
+        delete responseTripRequest.bookings;
+
+        return NextResponse.json(responseTripRequest, { status: 200 });
+    } catch (error) {
+        console.error(
+            "[DELETE /api/trip-requests/:tripRequestId] Unexpected error:",
+            error
+        );
+        return NextResponse.json(
+            {
+                error: "Internal Server Error",
+                message:
+                    "An unexpected error occurred while cancelling the trip request.",
+            },
+            { status: 500 }
+        );
+    }
 }
