@@ -95,7 +95,11 @@ describe("DELETE /api/trip-requests/:tripRequestId", () => {
 
         expect(res.status).toBe(200);
         expect(mockPrisma.tripRequest.updateMany).toHaveBeenCalledWith({
-            where: { id: "trip-123", status: "ACTIVE" },
+            where: {
+                id: "trip-123",
+                riderUserId: "user_rider_1",
+                status: "ACTIVE",
+            },
             data: { status: "CANCELLED" },
         });
         expect(json).toMatchObject({
@@ -210,6 +214,7 @@ describe("DELETE /api/trip-requests/:tripRequestId", () => {
         expect(mockPrisma.tripRequest.updateMany).toHaveBeenCalledWith({
             where: {
                 id: "trip-123",
+                riderUserId: "user_rider_1",
                 status: "ACTIVE",
             },
             data: { status: "CANCELLED" },

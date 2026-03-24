@@ -533,6 +533,7 @@ export async function DELETE(
         const updateResult = await prisma.tripRequest.updateMany({
             where: {
                 id: tripRequestId,
+                riderUserId,
                 status: EDITABLE_STATUS,
             },
             data: { status: "CANCELLED" },
