@@ -122,7 +122,7 @@ describe("Chat Gateway", () => {
 
     // ── 3. History truncation ─────────────────────────────────────────────
 
-    it("truncates history to last 10 messages", async () => {
+    it("truncates history to last ~10 messages, always starting with a user turn", async () => {
         mockSendMessage.mockResolvedValue({
             text: "Ok",
         });
@@ -130,7 +130,7 @@ describe("Chat Gateway", () => {
         vi.resetModules();
         const { POST } = await import("@/app/api/chat/route");
 
-        // 15 history messages
+        // 15 alternating messages: user(0), assistant(1), user(2), …, user(14)
         const history = Array.from({ length: 15 }, (_, i) => ({
             role: i % 2 === 0 ? "user" : "assistant",
             content: `Message ${i}`,
@@ -141,21 +141,42 @@ describe("Chat Gateway", () => {
 
         expect(mockChatsCreate.mock.calls.length).toBeGreaterThan(0);
         const truncateCalls = mockChatsCreate.mock.calls as unknown as Array<
-            [{ history?: { parts: [{ text: string }] }[] }]
+            [{ history?: { role: string; parts: [{ text: string }] }[] }]
         >;
         const chatConfig = truncateCalls[0]![0];
         const messages = chatConfig.history!;
 
-        // 10 history messages only (already truncated)
-        expect(messages).toHaveLength(10);
+        // Naive slice(-10) would start on Message 5 (assistant). The
+        // normalization bumps forward so it starts on a user turn instead.
+        expect(messages[0].role).toBe("user");
+        expect(messages[0].parts[0].text).toBe("Message 6");
+        expect(messages).toHaveLength(9);
 
-        // First history message should be Message 5 (index 5 of original 15)
-        const firstHistory = messages[0];
-        expect(firstHistory.parts[0].text).toBe("Message 5");
-
-        // Last history message should be Message 14
-        const lastHistory = messages[9];
+        const lastHistory = messages[messages.length - 1];
         expect(lastHistory.parts[0].text).toBe("Message 14");
+    });
+
+    it("drops a leading assistant message from history before sending", async () => {
+        mockSendMessage.mockResolvedValue({ text: "Ok" });
+
+        vi.resetModules();
+        const { POST } = await import("@/app/api/chat/route");
+
+        const history = [
+            { role: "assistant", content: "Stale greeting" },
+            { role: "user", content: "Hello" },
+            { role: "assistant", content: "Hi!" },
+        ];
+
+        await POST(makeRequest({ message: "Next", history }));
+
+        const calls = mockChatsCreate.mock.calls as unknown as Array<
+            [{ history?: { role: string; parts: [{ text: string }] }[] }]
+        >;
+        const sent = calls[0]![0].history!;
+        expect(sent[0].role).toBe("user");
+        expect(sent[0].parts[0].text).toBe("Hello");
+        expect(sent).toHaveLength(2);
     });
 
     // ── 4. Missing Gemini config → 503 ───────────────────────────────────

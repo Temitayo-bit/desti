@@ -179,7 +179,11 @@ export async function POST(request: NextRequest) {
         );
     }
 
-    const truncatedHistory = history.slice(-MAX_HISTORY);
+    // Drop a leading assistant message so history always starts with "user".
+    const normalized = history[0]?.role === "assistant" ? history.slice(1) : history;
+    let start = Math.max(0, normalized.length - MAX_HISTORY);
+    if (normalized[start]?.role === "assistant") start += 1;
+    const truncatedHistory = normalized.slice(start);
     const geminiHistory = truncatedHistory.map((item) => ({
         role: item.role === "assistant" ? "model" : "user",
         parts: [{ text: item.content }],
