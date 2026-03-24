@@ -6,7 +6,7 @@ const { mockRequireStetsonAuth, mockPrisma } = vi.hoisted(() => {
         mockPrisma: {
             tripRequest: {
                 findUnique: vi.fn(),
-                update: vi.fn(),
+                updateMany: vi.fn(),
             },
         },
     };
@@ -75,24 +75,27 @@ function fakeTripRequest(overrides: Record<string, unknown> = {}) {
 
 describe("DELETE /api/trip-requests/:tripRequestId", () => {
     beforeEach(() => {
-        vi.clearAllMocks();
+        mockRequireStetsonAuth.mockReset();
+        mockPrisma.tripRequest.findUnique.mockReset();
+        mockPrisma.tripRequest.updateMany.mockReset();
         mockRequireStetsonAuth.mockResolvedValue(successAuth());
-        mockPrisma.tripRequest.findUnique.mockResolvedValue(fakeTripRequest());
-        mockPrisma.tripRequest.update.mockResolvedValue(
-            fakeTripRequest({ status: "CANCELLED", bookings: [] })
-        );
+        mockPrisma.tripRequest.updateMany.mockResolvedValue({ count: 1 });
         vi.spyOn(console, "error").mockImplementation(() => {});
     });
 
     it("returns 200 with the cancelled trip request when the owner cancels an ACTIVE request", async () => {
+        mockPrisma.tripRequest.findUnique
+            .mockResolvedValueOnce(fakeTripRequest())
+            .mockResolvedValueOnce(fakeTripRequest({ status: "CANCELLED", bookings: [] }));
+
         const res = await DELETE(makeRequest() as never, {
             params: Promise.resolve({ tripRequestId: "trip-123" }),
         });
         const json = await res.json();
 
         expect(res.status).toBe(200);
-        expect(mockPrisma.tripRequest.update).toHaveBeenCalledWith({
-            where: { id: "trip-123" },
+        expect(mockPrisma.tripRequest.updateMany).toHaveBeenCalledWith({
+            where: { id: "trip-123", status: "ACTIVE" },
             data: { status: "CANCELLED" },
         });
         expect(json).toMatchObject({
@@ -117,11 +120,11 @@ describe("DELETE /api/trip-requests/:tripRequestId", () => {
 
         expect(res.status).toBe(401);
         expect(mockPrisma.tripRequest.findUnique).not.toHaveBeenCalled();
-        expect(mockPrisma.tripRequest.update).not.toHaveBeenCalled();
+        expect(mockPrisma.tripRequest.updateMany).not.toHaveBeenCalled();
     });
 
     it("returns 403 when the authenticated user does not own the trip request", async () => {
-        mockPrisma.tripRequest.findUnique.mockResolvedValue(
+        mockPrisma.tripRequest.findUnique.mockResolvedValueOnce(
             fakeTripRequest({ riderUserId: "someone-else" })
         );
 
@@ -135,11 +138,11 @@ describe("DELETE /api/trip-requests/:tripRequestId", () => {
             error: "Forbidden",
             message: "You don't own this trip request.",
         });
-        expect(mockPrisma.tripRequest.update).not.toHaveBeenCalled();
+        expect(mockPrisma.tripRequest.updateMany).not.toHaveBeenCalled();
     });
 
     it("returns 404 when the trip request does not exist", async () => {
-        mockPrisma.tripRequest.findUnique.mockResolvedValue(null);
+        mockPrisma.tripRequest.findUnique.mockResolvedValueOnce(null);
 
         const res = await DELETE(makeRequest() as never, {
             params: Promise.resolve({ tripRequestId: "trip-123" }),
@@ -151,11 +154,11 @@ describe("DELETE /api/trip-requests/:tripRequestId", () => {
             error: "Not Found",
             message: "Trip request not found.",
         });
-        expect(mockPrisma.tripRequest.update).not.toHaveBeenCalled();
+        expect(mockPrisma.tripRequest.updateMany).not.toHaveBeenCalled();
     });
 
     it("returns 409 when the trip request is already CANCELLED", async () => {
-        mockPrisma.tripRequest.findUnique.mockResolvedValue(
+        mockPrisma.tripRequest.findUnique.mockResolvedValueOnce(
             fakeTripRequest({ status: "CANCELLED" })
         );
 
@@ -170,11 +173,11 @@ describe("DELETE /api/trip-requests/:tripRequestId", () => {
             code: "TRIP_REQUEST_CLOSED",
             message: "Trip request cannot be edited because it is no longer active.",
         });
-        expect(mockPrisma.tripRequest.update).not.toHaveBeenCalled();
+        expect(mockPrisma.tripRequest.updateMany).not.toHaveBeenCalled();
     });
 
     it("returns 409 when the trip request is already CLOSED", async () => {
-        mockPrisma.tripRequest.findUnique.mockResolvedValue(
+        mockPrisma.tripRequest.findUnique.mockResolvedValueOnce(
             fakeTripRequest({ status: "CLOSED" })
         );
 
@@ -189,11 +192,37 @@ describe("DELETE /api/trip-requests/:tripRequestId", () => {
             code: "TRIP_REQUEST_CLOSED",
             message: "Trip request cannot be edited because it is no longer active.",
         });
-        expect(mockPrisma.tripRequest.update).not.toHaveBeenCalled();
+        expect(mockPrisma.tripRequest.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("returns 409 with the latest closed state when the conditional cancel loses a race", async () => {
+        mockPrisma.tripRequest.findUnique
+            .mockResolvedValueOnce(fakeTripRequest())
+            .mockResolvedValueOnce(fakeTripRequest({ status: "CLOSED" }));
+        mockPrisma.tripRequest.updateMany.mockResolvedValue({ count: 0 });
+
+        const res = await DELETE(makeRequest() as never, {
+            params: Promise.resolve({ tripRequestId: "trip-123" }),
+        });
+        const json = await res.json();
+
+        expect(res.status).toBe(409);
+        expect(mockPrisma.tripRequest.updateMany).toHaveBeenCalledWith({
+            where: {
+                id: "trip-123",
+                status: "ACTIVE",
+            },
+            data: { status: "CANCELLED" },
+        });
+        expect(json).toEqual({
+            error: "Conflict",
+            code: "TRIP_REQUEST_CLOSED",
+            message: "Trip request cannot be edited because it is no longer active.",
+        });
     });
 
     it("returns 500 when an unexpected exception is thrown", async () => {
-        mockPrisma.tripRequest.findUnique.mockRejectedValue(new Error("db down"));
+        mockPrisma.tripRequest.findUnique.mockRejectedValueOnce(new Error("db down"));
 
         const res = await DELETE(makeRequest() as never, {
             params: Promise.resolve({ tripRequestId: "trip-123" }),
@@ -205,6 +234,6 @@ describe("DELETE /api/trip-requests/:tripRequestId", () => {
             error: "Internal Server Error",
             message: "An unexpected error occurred while cancelling the trip request.",
         });
-        expect(mockPrisma.tripRequest.update).not.toHaveBeenCalled();
+        expect(mockPrisma.tripRequest.updateMany).not.toHaveBeenCalled();
     });
 });

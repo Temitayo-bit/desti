@@ -530,10 +530,64 @@ export async function DELETE(
             );
         }
 
-        const updatedTripRequest = await prisma.tripRequest.update({
-            where: { id: tripRequestId },
+        const updateResult = await prisma.tripRequest.updateMany({
+            where: {
+                id: tripRequestId,
+                status: EDITABLE_STATUS,
+            },
             data: { status: "CANCELLED" },
         });
+
+        if (updateResult.count === 0) {
+            const maybeUpdatedTripRequest = await prisma.tripRequest.findUnique({
+                where: { id: tripRequestId },
+            });
+
+            if (!maybeUpdatedTripRequest) {
+                return NextResponse.json(
+                    { error: "Not Found", message: "Trip request not found." },
+                    { status: 404 }
+                );
+            }
+
+            if (maybeUpdatedTripRequest.riderUserId !== riderUserId) {
+                return NextResponse.json(
+                    { error: "Forbidden", message: "You don't own this trip request." },
+                    { status: 403 }
+                );
+            }
+
+            const latestStatus = maybeUpdatedTripRequest.status as string;
+            if (latestStatus !== EDITABLE_STATUS) {
+                return NextResponse.json(
+                    {
+                        error: "Conflict",
+                        code: TRIP_REQUEST_CLOSED_CODE,
+                        message: TRIP_REQUEST_CLOSED_MESSAGE,
+                    },
+                    { status: 409 }
+                );
+            }
+
+            return NextResponse.json(
+                {
+                    error: "Conflict",
+                    message: "Trip request cancellation could not be completed.",
+                },
+                { status: 409 }
+            );
+        }
+
+        const updatedTripRequest = await prisma.tripRequest.findUnique({
+            where: { id: tripRequestId },
+        });
+
+        if (!updatedTripRequest) {
+            return NextResponse.json(
+                { error: "Not Found", message: "Trip request not found." },
+                { status: 404 }
+            );
+        }
 
         const responseTripRequest = { ...updatedTripRequest } as {
             bookings?: unknown;
