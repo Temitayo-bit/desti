@@ -8,9 +8,22 @@ vi.mock("fs/promises", () => ({
     readFile: (...args: unknown[]) => mockReadFile(...args),
 }));
 
-/* ── Mock: global fetch (Ollama) ───────────────────────────────────────── */
+/* ── Mock: Gemini SDK (@google/genai) ──────────────────────────────────── */
 
-const originalFetch = globalThis.fetch;
+const mockSendMessage = vi.fn();
+const mockChatsCreate = vi.fn(() => ({ sendMessage: mockSendMessage }));
+const mockGoogleGenAI = vi.fn(function MockGoogleGenAI() {
+    return {
+        chats: { create: mockChatsCreate },
+    };
+});
+
+vi.mock("@google/genai", () => ({
+    GoogleGenAI: mockGoogleGenAI,
+}));
+
+const originalGeminiApiKey = process.env.GEMINI_API_KEY;
+const originalGeminiModel = process.env.GEMINI_MODEL;
 
 function makeRequest(body: unknown): NextRequest {
     return new NextRequest("http://localhost:3000/api/chat", {
@@ -27,24 +40,29 @@ describe("Chat Gateway", () => {
         vi.clearAllMocks();
         // Default: knowledge pack loads successfully
         mockReadFile.mockResolvedValue("# Test Knowledge\nSome knowledge content.");
-        // Reset knowledge cache between tests by re-importing fresh module
+        mockSendMessage.mockResolvedValue({
+            text: "Here is your answer!",
+        });
+        process.env.GEMINI_API_KEY = "test-gemini-key";
+        process.env.GEMINI_MODEL = "gemini-test-model";
     });
 
     afterEach(() => {
-        globalThis.fetch = originalFetch;
+        if (originalGeminiApiKey === undefined) {
+            delete process.env.GEMINI_API_KEY;
+        } else {
+            process.env.GEMINI_API_KEY = originalGeminiApiKey;
+        }
+        if (originalGeminiModel === undefined) {
+            delete process.env.GEMINI_MODEL;
+        } else {
+            process.env.GEMINI_MODEL = originalGeminiModel;
+        }
     });
 
-    // ── 1. POST /api/chat returns answer when Ollama responds ────────────
+    // ── 1. POST /api/chat returns answer when Gemini responds ────────────
 
-    it("returns a string answer when Ollama responds successfully", async () => {
-        globalThis.fetch = vi.fn().mockResolvedValue({
-            ok: true,
-            json: async () => ({
-                message: { role: "assistant", content: "Here is your answer!" },
-            }),
-        });
-
-        // Re-import to clear cached knowledge
+    it("returns a string answer when Gemini responds successfully", async () => {
         vi.resetModules();
         const { POST } = await import("@/app/api/chat/route");
 
@@ -56,16 +74,12 @@ describe("Chat Gateway", () => {
         expect(json.answer).toBe("Here is your answer!");
     });
 
-    // ── 2. System prompt and knowledge pack are injected ─────────────────
+    // ── 2. System instruction and history are passed to Gemini ───────────
 
-    it("injects system prompt, knowledge pack, history, and user message into Ollama call", async () => {
-        const mockFetch = vi.fn().mockResolvedValue({
-            ok: true,
-            json: async () => ({
-                message: { role: "assistant", content: "Response" },
-            }),
+    it("injects system prompt, knowledge pack, history, and user message into Gemini call", async () => {
+        mockSendMessage.mockResolvedValue({
+            text: "Response",
         });
-        globalThis.fetch = mockFetch;
 
         vi.resetModules();
         const { POST } = await import("@/app/api/chat/route");
@@ -79,47 +93,44 @@ describe("Chat Gateway", () => {
         });
         await POST(req);
 
-        expect(mockFetch).toHaveBeenCalledOnce();
-        const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+        expect(mockChatsCreate).toHaveBeenCalledWith(
+            expect.objectContaining({
+                model: "gemini-test-model",
+                config: expect.objectContaining({
+                    systemInstruction: expect.stringContaining(
+                        "You are Desti Assistant—help for Desti, a campus transport app for verified Stetson students."
+                    ),
+                }),
+                history: [
+                    { role: "user", parts: [{ text: "Hello" }] },
+                    { role: "model", parts: [{ text: "Hi there!" }] },
+                ],
+            })
+        );
+        expect(mockChatsCreate.mock.calls.length).toBeGreaterThan(0);
+        const createCalls = mockChatsCreate.mock.calls as unknown as Array<
+            [{ config?: { systemInstruction?: string } }]
+        >;
+        const createArg = createCalls[0]![0];
+        expect(createArg.config?.systemInstruction).toContain("Knowledge Pack");
+        expect(createArg.config?.systemInstruction).toContain("Test Knowledge");
 
-        expect(callBody.model).toBe("qwen2.5:7b-instruct");
-
-        const messages = callBody.messages;
-        // First message: system prompt
-        expect(messages[0].role).toBe("system");
-        expect(messages[0].content).toContain("help assistant for a campus transport web app called Desti");
-
-        // Second message: knowledge pack
-        expect(messages[1].role).toBe("system");
-        expect(messages[1].content).toContain("Knowledge Pack");
-        expect(messages[1].content).toContain("Test Knowledge");
-
-        // History messages
-        expect(messages[2]).toEqual({ role: "user", content: "Hello" });
-        expect(messages[3]).toEqual({ role: "assistant", content: "Hi there!" });
-
-        // User message (last)
-        expect(messages[messages.length - 1]).toEqual({
-            role: "user",
-            content: "How do bookings work?",
-        });
+        expect(mockSendMessage).toHaveBeenCalledWith(
+            expect.objectContaining({ message: "How do bookings work?" })
+        );
     });
 
     // ── 3. History truncation ─────────────────────────────────────────────
 
-    it("truncates history to last 10 messages", async () => {
-        const mockFetch = vi.fn().mockResolvedValue({
-            ok: true,
-            json: async () => ({
-                message: { role: "assistant", content: "Ok" },
-            }),
+    it("truncates history to last ~10 messages, always starting with a user turn", async () => {
+        mockSendMessage.mockResolvedValue({
+            text: "Ok",
         });
-        globalThis.fetch = mockFetch;
 
         vi.resetModules();
         const { POST } = await import("@/app/api/chat/route");
 
-        // 15 history messages
+        // 15 alternating messages: user(0), assistant(1), user(2), …, user(14)
         const history = Array.from({ length: 15 }, (_, i) => ({
             role: i % 2 === 0 ? "user" : "assistant",
             content: `Message ${i}`,
@@ -128,27 +139,50 @@ describe("Chat Gateway", () => {
         const req = makeRequest({ message: "Latest question", history });
         await POST(req);
 
-        const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
-        const messages = callBody.messages;
+        expect(mockChatsCreate.mock.calls.length).toBeGreaterThan(0);
+        const truncateCalls = mockChatsCreate.mock.calls as unknown as Array<
+            [{ history?: { role: string; parts: [{ text: string }] }[] }]
+        >;
+        const chatConfig = truncateCalls[0]![0];
+        const messages = chatConfig.history!;
 
-        // 2 system + 10 history (truncated) + 1 user = 13
-        expect(messages).toHaveLength(13);
+        // Naive slice(-10) would start on Message 5 (assistant). The
+        // normalization bumps forward so it starts on a user turn instead.
+        expect(messages[0].role).toBe("user");
+        expect(messages[0].parts[0].text).toBe("Message 6");
+        expect(messages).toHaveLength(9);
 
-        // First history message should be Message 5 (index 5 of original 15)
-        const firstHistory = messages[2]; // after 2 system messages
-        expect(firstHistory.content).toBe("Message 5");
-
-        // Last before user message should be Message 14
-        const lastHistory = messages[11]; // index 11
-        expect(lastHistory.content).toBe("Message 14");
+        const lastHistory = messages[messages.length - 1];
+        expect(lastHistory.parts[0].text).toBe("Message 14");
     });
 
-    // ── 4. Ollama down → 503 ──────────────────────────────────────────────
+    it("drops a leading assistant message from history before sending", async () => {
+        mockSendMessage.mockResolvedValue({ text: "Ok" });
 
-    it("returns 503 when Ollama is unreachable", async () => {
-        globalThis.fetch = vi.fn().mockRejectedValue(
-            new TypeError("fetch failed")
-        );
+        vi.resetModules();
+        const { POST } = await import("@/app/api/chat/route");
+
+        const history = [
+            { role: "assistant", content: "Stale greeting" },
+            { role: "user", content: "Hello" },
+            { role: "assistant", content: "Hi!" },
+        ];
+
+        await POST(makeRequest({ message: "Next", history }));
+
+        const calls = mockChatsCreate.mock.calls as unknown as Array<
+            [{ history?: { role: string; parts: [{ text: string }] }[] }]
+        >;
+        const sent = calls[0]![0].history!;
+        expect(sent[0].role).toBe("user");
+        expect(sent[0].parts[0].text).toBe("Hello");
+        expect(sent).toHaveLength(2);
+    });
+
+    // ── 4. Missing Gemini config → 503 ───────────────────────────────────
+
+    it("returns 503 when Gemini API key is missing", async () => {
+        process.env.GEMINI_API_KEY = "";
 
         vi.resetModules();
         const { POST } = await import("@/app/api/chat/route");
@@ -158,7 +192,7 @@ describe("Chat Gateway", () => {
         const json = await res.json();
 
         expect(res.status).toBe(503);
-        expect(json.error).toBe("Model unavailable. Ensure Ollama is running.");
+        expect(json.error).toBe("AI service unavailable. Missing server configuration.");
     });
 
     // ── 5. Validation: missing message → 400 ─────────────────────────────
@@ -197,6 +231,8 @@ describe("Chat Gateway", () => {
     // ── 7. GET /api/chat/health ──────────────────────────────────────────
 
     it("returns 200 with status ok and model name", async () => {
+        vi.resetModules();
+        process.env.GEMINI_MODEL = "gemini-health-model";
         const { GET } = await import("@/app/api/chat/health/route");
 
         const res = await GET();
@@ -204,6 +240,7 @@ describe("Chat Gateway", () => {
 
         expect(res.status).toBe(200);
         expect(json.status).toBe("ok");
-        expect(json.model).toBe("qwen2.5:7b-instruct");
+        expect(json.provider).toBe("gemini");
+        expect(json.model).toBe("gemini-health-model");
     });
 });

@@ -18,9 +18,23 @@ vi.mock("@clerk/nextjs", () => ({
         children: ReactNode;
         redirectUrl?: string;
     }) => <div data-sign-out-redirect={redirectUrl}>{children}</div>,
-    UserButton: ({ afterSignOutUrl }: { afterSignOutUrl?: string }) => (
-        <div data-user-button-after-sign-out={afterSignOutUrl} />
-    ),
+    UserButton: () => <div data-user-button />,
+    ClerkProvider: ({
+        children,
+        afterSignOutUrl,
+    }: {
+        children: ReactNode;
+        afterSignOutUrl?: string;
+    }) => <div data-clerk-after-sign-out={afterSignOutUrl}>{children}</div>,
+}));
+
+vi.mock("next/font/google", () => ({
+    Geist: () => ({ variable: "geist-sans" }),
+    Geist_Mono: () => ({ variable: "geist-mono" }),
+}));
+
+vi.mock("@/components/AiChatWidget", () => ({
+    AiChatWidget: () => <div data-chat-widget />,
 }));
 
 vi.mock("next/link", () => ({
@@ -55,6 +69,16 @@ describe("access restricted page", () => {
         const markup = renderToStaticMarkup(output as ReactNode);
 
         expect(markup).toContain('data-sign-out-redirect="/"');
-        expect(markup).toContain('data-user-button-after-sign-out="/"');
+    });
+});
+
+describe("RootLayout", () => {
+    it("sets afterSignOutUrl='/' on ClerkProvider", async () => {
+        vi.resetModules();
+        const RootLayout = (await import("@/app/layout")).default;
+        const markup = renderToStaticMarkup(
+            RootLayout({ children: <p>child</p> }) as ReactNode
+        );
+        expect(markup).toContain('data-clerk-after-sign-out="/"');
     });
 });

@@ -63,7 +63,7 @@ describe("AI chat widget UI", () => {
             <AiChatWidgetPanel
                 composerRef={{ current: null }}
                 draft=""
-                errorMessage="Model unavailable. Ensure Ollama is running."
+                errorMessage="AI service unavailable. Please try again later."
                 hasPendingSubmission={true}
                 isSending={true}
                 messages={messages}
@@ -79,7 +79,7 @@ describe("AI chat widget UI", () => {
 
         expect(markup).toContain("How do bookings work?");
         expect(markup).toContain("Bookings appear after an offer is accepted.");
-        expect(markup).toContain("Model unavailable. Ensure Ollama is running.");
+        expect(markup).toContain("AI service unavailable. Please try again later.");
         expect(markup).toContain("Retry");
         expect(markup).toContain("Desti Assistant is thinking...");
         expect(markup).toContain("disabled");
