@@ -1,16 +1,17 @@
 import { NextResponse } from "next/server";
 
-const OLLAMA_MODEL = "qwen2.5:7b-instruct";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
 /**
  * GET /api/chat/health
  *
  * Lightweight health check for the chat gateway.
- * Returns the configured model name. Does not depend on Ollama availability.
+ * Returns provider and configured model. No live upstream check.
  */
 export async function GET() {
     return NextResponse.json({
         status: "ok",
-        model: OLLAMA_MODEL,
+        provider: "gemini",
+        model: GEMINI_MODEL,
     });
 }

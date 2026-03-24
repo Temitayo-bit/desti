@@ -8,9 +8,23 @@ vi.mock("fs/promises", () => ({
     readFile: (...args: unknown[]) => mockReadFile(...args),
 }));
 
-/* ── Mock: global fetch (Ollama) ───────────────────────────────────────── */
+/* ── Mock: Gemini SDK ───────────────────────────────────────────────────── */
 
-const originalFetch = globalThis.fetch;
+const mockSendMessage = vi.fn();
+const mockStartChat = vi.fn(() => ({ sendMessage: mockSendMessage }));
+const mockGetGenerativeModel = vi.fn(() => ({ startChat: mockStartChat }));
+const mockGoogleGenerativeAI = vi.fn(function MockGoogleGenerativeAI() {
+    return {
+        getGenerativeModel: mockGetGenerativeModel,
+    };
+});
+
+vi.mock("@google/generative-ai", () => ({
+    GoogleGenerativeAI: mockGoogleGenerativeAI,
+}));
+
+const originalGeminiApiKey = process.env.GEMINI_API_KEY;
+const originalGeminiModel = process.env.GEMINI_MODEL;
 
 function makeRequest(body: unknown): NextRequest {
     return new NextRequest("http://localhost:3000/api/chat", {
@@ -27,24 +41,23 @@ describe("Chat Gateway", () => {
         vi.clearAllMocks();
         // Default: knowledge pack loads successfully
         mockReadFile.mockResolvedValue("# Test Knowledge\nSome knowledge content.");
-        // Reset knowledge cache between tests by re-importing fresh module
+        mockSendMessage.mockResolvedValue({
+            response: {
+                text: () => "Here is your answer!",
+            },
+        });
+        process.env.GEMINI_API_KEY = "test-gemini-key";
+        process.env.GEMINI_MODEL = "gemini-test-model";
     });
 
     afterEach(() => {
-        globalThis.fetch = originalFetch;
+        process.env.GEMINI_API_KEY = originalGeminiApiKey;
+        process.env.GEMINI_MODEL = originalGeminiModel;
     });
 
-    // ── 1. POST /api/chat returns answer when Ollama responds ────────────
+    // ── 1. POST /api/chat returns answer when Gemini responds ────────────
 
-    it("returns a string answer when Ollama responds successfully", async () => {
-        globalThis.fetch = vi.fn().mockResolvedValue({
-            ok: true,
-            json: async () => ({
-                message: { role: "assistant", content: "Here is your answer!" },
-            }),
-        });
-
-        // Re-import to clear cached knowledge
+    it("returns a string answer when Gemini responds successfully", async () => {
         vi.resetModules();
         const { POST } = await import("@/app/api/chat/route");
 
@@ -56,16 +69,14 @@ describe("Chat Gateway", () => {
         expect(json.answer).toBe("Here is your answer!");
     });
 
-    // ── 2. System prompt and knowledge pack are injected ─────────────────
+    // ── 2. System instruction and history are passed to Gemini ───────────
 
-    it("injects system prompt, knowledge pack, history, and user message into Ollama call", async () => {
-        const mockFetch = vi.fn().mockResolvedValue({
-            ok: true,
-            json: async () => ({
-                message: { role: "assistant", content: "Response" },
-            }),
+    it("injects system prompt, knowledge pack, history, and user message into Gemini call", async () => {
+        mockSendMessage.mockResolvedValue({
+            response: {
+                text: () => "Response",
+            },
         });
-        globalThis.fetch = mockFetch;
 
         vi.resetModules();
         const { POST } = await import("@/app/api/chat/route");
@@ -79,42 +90,35 @@ describe("Chat Gateway", () => {
         });
         await POST(req);
 
-        expect(mockFetch).toHaveBeenCalledOnce();
-        const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+        expect(mockGetGenerativeModel).toHaveBeenCalledWith(
+            expect.objectContaining({
+                model: "gemini-test-model",
+                systemInstruction: expect.stringContaining(
+                    "You are Desti Assistant—help for Desti, a campus transport app for verified Stetson students."
+                ),
+            })
+        );
+        const getModelCallArg = mockGetGenerativeModel.mock.calls[0][0];
+        expect(getModelCallArg.systemInstruction).toContain("Knowledge Pack");
+        expect(getModelCallArg.systemInstruction).toContain("Test Knowledge");
 
-        expect(callBody.model).toBe("qwen2.5:7b-instruct");
-
-        const messages = callBody.messages;
-        // First message: system prompt
-        expect(messages[0].role).toBe("system");
-        expect(messages[0].content).toContain("help assistant for a campus transport web app called Desti");
-
-        // Second message: knowledge pack
-        expect(messages[1].role).toBe("system");
-        expect(messages[1].content).toContain("Knowledge Pack");
-        expect(messages[1].content).toContain("Test Knowledge");
-
-        // History messages
-        expect(messages[2]).toEqual({ role: "user", content: "Hello" });
-        expect(messages[3]).toEqual({ role: "assistant", content: "Hi there!" });
-
-        // User message (last)
-        expect(messages[messages.length - 1]).toEqual({
-            role: "user",
-            content: "How do bookings work?",
+        expect(mockStartChat).toHaveBeenCalledWith({
+            history: [
+                { role: "user", parts: [{ text: "Hello" }] },
+                { role: "model", parts: [{ text: "Hi there!" }] },
+            ],
         });
+        expect(mockSendMessage).toHaveBeenCalledWith("How do bookings work?");
     });
 
     // ── 3. History truncation ─────────────────────────────────────────────
 
     it("truncates history to last 10 messages", async () => {
-        const mockFetch = vi.fn().mockResolvedValue({
-            ok: true,
-            json: async () => ({
-                message: { role: "assistant", content: "Ok" },
-            }),
+        mockSendMessage.mockResolvedValue({
+            response: {
+                text: () => "Ok",
+            },
         });
-        globalThis.fetch = mockFetch;
 
         vi.resetModules();
         const { POST } = await import("@/app/api/chat/route");
@@ -128,27 +132,25 @@ describe("Chat Gateway", () => {
         const req = makeRequest({ message: "Latest question", history });
         await POST(req);
 
-        const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
-        const messages = callBody.messages;
+        const chatConfig = mockStartChat.mock.calls[0][0];
+        const messages = chatConfig.history;
 
-        // 2 system + 10 history (truncated) + 1 user = 13
-        expect(messages).toHaveLength(13);
+        // 10 history messages only (already truncated)
+        expect(messages).toHaveLength(10);
 
         // First history message should be Message 5 (index 5 of original 15)
-        const firstHistory = messages[2]; // after 2 system messages
-        expect(firstHistory.content).toBe("Message 5");
+        const firstHistory = messages[0];
+        expect(firstHistory.parts[0].text).toBe("Message 5");
 
-        // Last before user message should be Message 14
-        const lastHistory = messages[11]; // index 11
-        expect(lastHistory.content).toBe("Message 14");
+        // Last history message should be Message 14
+        const lastHistory = messages[9];
+        expect(lastHistory.parts[0].text).toBe("Message 14");
     });
 
-    // ── 4. Ollama down → 503 ──────────────────────────────────────────────
+    // ── 4. Missing Gemini config → 503 ───────────────────────────────────
 
-    it("returns 503 when Ollama is unreachable", async () => {
-        globalThis.fetch = vi.fn().mockRejectedValue(
-            new TypeError("fetch failed")
-        );
+    it("returns 503 when Gemini API key is missing", async () => {
+        process.env.GEMINI_API_KEY = "";
 
         vi.resetModules();
         const { POST } = await import("@/app/api/chat/route");
@@ -158,7 +160,7 @@ describe("Chat Gateway", () => {
         const json = await res.json();
 
         expect(res.status).toBe(503);
-        expect(json.error).toBe("Model unavailable. Ensure Ollama is running.");
+        expect(json.error).toBe("AI service unavailable. Missing server configuration.");
     });
 
     // ── 5. Validation: missing message → 400 ─────────────────────────────
@@ -197,6 +199,7 @@ describe("Chat Gateway", () => {
     // ── 7. GET /api/chat/health ──────────────────────────────────────────
 
     it("returns 200 with status ok and model name", async () => {
+        process.env.GEMINI_MODEL = "gemini-health-model";
         const { GET } = await import("@/app/api/chat/health/route");
 
         const res = await GET();
@@ -204,6 +207,7 @@ describe("Chat Gateway", () => {
 
         expect(res.status).toBe(200);
         expect(json.status).toBe("ok");
-        expect(json.model).toBe("qwen2.5:7b-instruct");
+        expect(json.provider).toBe("gemini");
+        expect(json.model).toBe("gemini-health-model");
     });
 });
