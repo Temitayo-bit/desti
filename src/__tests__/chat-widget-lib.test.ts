@@ -48,7 +48,7 @@ describe("chat widget helper", () => {
         const history = Array.from(
             { length: CHAT_WIDGET_HISTORY_LIMIT + 4 },
             (_, index) => ({
-                role: index % 2 === 0 ? "user" : "assistant",
+                role: index % 2 === 0 ? ("user" as const) : ("assistant" as const),
                 content: `Message ${index + 1}`,
             })
         );

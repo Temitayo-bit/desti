@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const DEFAULT_MODEL = "gemini-2.5-flash";
 
 /**
  * GET /api/chat/health
@@ -9,9 +9,11 @@ const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
  * Returns provider and configured model. No live upstream check.
  */
 export async function GET() {
+    const model =
+        process.env.GEMINI_MODEL?.trim() || DEFAULT_MODEL;
     return NextResponse.json({
         status: "ok",
         provider: "gemini",
-        model: GEMINI_MODEL,
+        model,
     });
 }

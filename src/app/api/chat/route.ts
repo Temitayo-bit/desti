@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readFile } from "fs/promises";
 import { join } from "path";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 
 /* ── Constants ────────────────────────────────────────────────────────────── */
 
@@ -188,19 +188,19 @@ export async function POST(request: NextRequest) {
 
     // ── Call Gemini ──────────────────────────────────────────────────────
     try {
-        const genAI = new GoogleGenerativeAI(geminiApiKey);
-        const model = genAI.getGenerativeModel({
+        const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+        const chat = ai.chats.create({
             model: GEMINI_MODEL,
-            systemInstruction,
+            config: { systemInstruction },
+            history: geminiHistory,
         });
-        const chat = model.startChat({ history: geminiHistory });
         const result = await Promise.race([
-            chat.sendMessage(message),
+            chat.sendMessage({ message }),
             new Promise<never>((_, reject) =>
                 setTimeout(() => reject(new Error("GEMINI_TIMEOUT")), GEMINI_TIMEOUT_MS)
             ),
         ]);
-        const answer = result.response.text();
+        const answer = result.text ?? "";
 
         if (typeof answer !== "string" || answer.length === 0) {
             console.error("[POST /api/chat] Gemini returned malformed payload.");
@@ -223,11 +223,19 @@ export async function POST(request: NextRequest) {
 
         // Upstream/network failures
         const errMsg = err instanceof Error ? err.message : String(err);
+        const connectionIssue =
+            /\bconnection\s+(?:refused|reset|error|timed\s*out)\b/i.test(
+                errMsg
+            ) ||
+            /\b(?:unable\s+to\s+connect|failed\s+to\s+connect|network\s+request\s+failed)\b/i.test(
+                errMsg
+            );
         const upstream503 =
             errMsg.includes("ECONNREFUSED") ||
             errMsg.includes("fetch failed") ||
-            errMsg.includes("connect") ||
-            errMsg.includes("API key");
+            connectionIssue ||
+            /\bAPI\s*key\b/i.test(errMsg) ||
+            /\bAPI_KEY\b/.test(errMsg);
         if (upstream503) {
             console.error("[POST /api/chat] 503 (upstream/network) — message:", errMsg);
             console.error("[POST /api/chat] 503 — full error object:", err);

@@ -8,19 +8,18 @@ vi.mock("fs/promises", () => ({
     readFile: (...args: unknown[]) => mockReadFile(...args),
 }));
 
-/* ── Mock: Gemini SDK ───────────────────────────────────────────────────── */
+/* ── Mock: Gemini SDK (@google/genai) ──────────────────────────────────── */
 
 const mockSendMessage = vi.fn();
-const mockStartChat = vi.fn(() => ({ sendMessage: mockSendMessage }));
-const mockGetGenerativeModel = vi.fn(() => ({ startChat: mockStartChat }));
-const mockGoogleGenerativeAI = vi.fn(function MockGoogleGenerativeAI() {
+const mockChatsCreate = vi.fn(() => ({ sendMessage: mockSendMessage }));
+const mockGoogleGenAI = vi.fn(function MockGoogleGenAI() {
     return {
-        getGenerativeModel: mockGetGenerativeModel,
+        chats: { create: mockChatsCreate },
     };
 });
 
-vi.mock("@google/generative-ai", () => ({
-    GoogleGenerativeAI: mockGoogleGenerativeAI,
+vi.mock("@google/genai", () => ({
+    GoogleGenAI: mockGoogleGenAI,
 }));
 
 const originalGeminiApiKey = process.env.GEMINI_API_KEY;
@@ -42,9 +41,7 @@ describe("Chat Gateway", () => {
         // Default: knowledge pack loads successfully
         mockReadFile.mockResolvedValue("# Test Knowledge\nSome knowledge content.");
         mockSendMessage.mockResolvedValue({
-            response: {
-                text: () => "Here is your answer!",
-            },
+            text: "Here is your answer!",
         });
         process.env.GEMINI_API_KEY = "test-gemini-key";
         process.env.GEMINI_MODEL = "gemini-test-model";
@@ -73,9 +70,7 @@ describe("Chat Gateway", () => {
 
     it("injects system prompt, knowledge pack, history, and user message into Gemini call", async () => {
         mockSendMessage.mockResolvedValue({
-            response: {
-                text: () => "Response",
-            },
+            text: "Response",
         });
 
         vi.resetModules();
@@ -90,34 +85,38 @@ describe("Chat Gateway", () => {
         });
         await POST(req);
 
-        expect(mockGetGenerativeModel).toHaveBeenCalledWith(
+        expect(mockChatsCreate).toHaveBeenCalledWith(
             expect.objectContaining({
                 model: "gemini-test-model",
-                systemInstruction: expect.stringContaining(
-                    "You are Desti Assistant—help for Desti, a campus transport app for verified Stetson students."
-                ),
+                config: expect.objectContaining({
+                    systemInstruction: expect.stringContaining(
+                        "You are Desti Assistant—help for Desti, a campus transport app for verified Stetson students."
+                    ),
+                }),
+                history: [
+                    { role: "user", parts: [{ text: "Hello" }] },
+                    { role: "model", parts: [{ text: "Hi there!" }] },
+                ],
             })
         );
-        const getModelCallArg = mockGetGenerativeModel.mock.calls[0][0];
-        expect(getModelCallArg.systemInstruction).toContain("Knowledge Pack");
-        expect(getModelCallArg.systemInstruction).toContain("Test Knowledge");
+        expect(mockChatsCreate.mock.calls.length).toBeGreaterThan(0);
+        const createCalls = mockChatsCreate.mock.calls as unknown as Array<
+            [{ config?: { systemInstruction?: string } }]
+        >;
+        const createArg = createCalls[0]![0];
+        expect(createArg.config?.systemInstruction).toContain("Knowledge Pack");
+        expect(createArg.config?.systemInstruction).toContain("Test Knowledge");
 
-        expect(mockStartChat).toHaveBeenCalledWith({
-            history: [
-                { role: "user", parts: [{ text: "Hello" }] },
-                { role: "model", parts: [{ text: "Hi there!" }] },
-            ],
+        expect(mockSendMessage).toHaveBeenCalledWith({
+            message: "How do bookings work?",
         });
-        expect(mockSendMessage).toHaveBeenCalledWith("How do bookings work?");
     });
 
     // ── 3. History truncation ─────────────────────────────────────────────
 
     it("truncates history to last 10 messages", async () => {
         mockSendMessage.mockResolvedValue({
-            response: {
-                text: () => "Ok",
-            },
+            text: "Ok",
         });
 
         vi.resetModules();
@@ -132,8 +131,12 @@ describe("Chat Gateway", () => {
         const req = makeRequest({ message: "Latest question", history });
         await POST(req);
 
-        const chatConfig = mockStartChat.mock.calls[0][0];
-        const messages = chatConfig.history;
+        expect(mockChatsCreate.mock.calls.length).toBeGreaterThan(0);
+        const truncateCalls = mockChatsCreate.mock.calls as unknown as Array<
+            [{ history?: { parts: [{ text: string }] }[] }]
+        >;
+        const chatConfig = truncateCalls[0]![0];
+        const messages = chatConfig.history!;
 
         // 10 history messages only (already truncated)
         expect(messages).toHaveLength(10);
@@ -199,6 +202,7 @@ describe("Chat Gateway", () => {
     // ── 7. GET /api/chat/health ──────────────────────────────────────────
 
     it("returns 200 with status ok and model name", async () => {
+        vi.resetModules();
         process.env.GEMINI_MODEL = "gemini-health-model";
         const { GET } = await import("@/app/api/chat/health/route");
 
