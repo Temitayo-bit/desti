@@ -72,7 +72,7 @@ This is the easiest way to run the project on another machine because Docker han
 
 This repo includes a local Docker development setup for the app and PostgreSQL database.
 
-### Prerequisites
+#### Prerequisites
 
 - Docker Desktop
 - Clerk keys for authentication
