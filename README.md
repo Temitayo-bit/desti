@@ -86,7 +86,7 @@ The `worker/` directory contains a standalone Cloudflare Worker that serves as t
 | Package | Version | Purpose |
 |---|---|---|
 | [Wrangler](https://developers.cloudflare.com/workers/wrangler/) | `^4.14.0` | Cloudflare Workers CLI for local dev and deployment |
-| [@cloudflare/workers-types](https://github.com/cloudflare/workerd) | `^4.20250109.0` | TypeScript type definitions for Workers and R2 |
+| [@cloudflare/workers-types](https://github.com/cloudflare/workerd) | `^4.20241230.0` | TypeScript type definitions for Workers and R2 |
 
 The worker exposes three operations on an R2 bucket (`desti-profile-pictures`):
 
@@ -149,6 +149,7 @@ NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
 
 # Cloudflare Worker for profile picture uploads
 WORKER_UPLOAD_URL=https://desti-profile-pictures.YOUR-ACCOUNT.workers.dev
+# Generate a strong key: openssl rand -hex 32
 WORKER_UPLOAD_API_KEY=your_shared_api_key_here
 
 # Optional — only needed for the AI chat assistant
@@ -245,6 +246,7 @@ NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
 
 # Cloudflare Worker for profile picture uploads
 WORKER_UPLOAD_URL=https://desti-profile-pictures.YOUR-ACCOUNT.workers.dev
+# Generate a strong key: openssl rand -hex 32
 WORKER_UPLOAD_API_KEY=your_shared_api_key_here
 
 # Optional — only needed for the AI chat assistant
@@ -287,7 +289,6 @@ The profile picture storage worker is deployed separately to Cloudflare. This is
 
 - A [Cloudflare](https://dash.cloudflare.com/) account
 - [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/install-and-update/) (`npm install -g wrangler`)
-- An R2 bucket named `desti-profile-pictures` created in your Cloudflare dashboard
 
 #### Steps
 
@@ -339,12 +340,20 @@ WORKER_UPLOAD_URL=https://desti-profile-pictures.YOUR-ACCOUNT.workers.dev
 
 To run the worker locally for development:
 
+1. Create a `worker/.dev.vars` file with your upload API key so `wrangler dev` can read it:
+
+```env
+UPLOAD_API_KEY=your_shared_api_key_here
+```
+
+2. Start the local worker:
+
 ```bash
 cd worker
 npm run dev
 ```
 
-This starts the worker on `http://localhost:8787`. Set `WORKER_UPLOAD_URL=http://localhost:8787` in your `.env` if testing locally.
+This starts the worker on `http://localhost:8787`. Set `WORKER_UPLOAD_URL=http://localhost:8787` in the project root `.env` to route uploads to your local worker. Note that `PUT` and `DELETE` requests still require a valid `UPLOAD_API_KEY` — the local dev server does not bypass authentication.
 
 ## Available Scripts
 
@@ -366,6 +375,6 @@ This starts the worker on `http://localhost:8787`. Set `WORKER_UPLOAD_URL=http:/
 | `NEXT_PUBLIC_CLERK_SIGN_IN_URL` | Yes | Sign-in route path (`/sign-in`) |
 | `NEXT_PUBLIC_CLERK_SIGN_UP_URL` | Yes | Sign-up route path (`/sign-up`) |
 | `WORKER_UPLOAD_URL` | Yes | Cloudflare Worker URL for profile picture uploads |
-| `WORKER_UPLOAD_API_KEY` | Yes | Shared secret for authenticating upload/delete requests to the worker |
+| `WORKER_UPLOAD_API_KEY` | Yes | Shared secret for authenticating upload/delete requests to the worker (generate with `openssl rand -hex 32`) |
 | `GEMINI_API_KEY` | No | Google Gemini API key for the AI assistant |
 | `GEMINI_MODEL` | No | Override the default Gemini model (`gemini-2.5-flash`) |
