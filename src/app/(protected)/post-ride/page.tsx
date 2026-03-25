@@ -279,36 +279,32 @@ export default function PostRidePage() {
                 Departure Window
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="min-w-0 flex flex-col items-center md:items-stretch">
-                  <div className="w-full max-w-[16rem] md:max-w-none">
-                    <label htmlFor="earliestDepartAt" className="block text-sm font-medium text-zinc-600 mb-1">
-                      Earliest
-                    </label>
-                    <input
-                      id="earliestDepartAt"
-                      type="datetime-local"
-                      value={formValues.earliestDepartAt}
-                      onChange={(e) => updateField("earliestDepartAt", e.target.value)}
-                      className="block w-full min-w-0 max-w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-2.5 text-sm text-zinc-900 shadow-sm outline-none"
-                    />
-                  </div>
+                <div className="min-w-0">
+                  <label htmlFor="earliestDepartAt" className="block text-sm font-medium text-zinc-600 mb-1">
+                    Earliest
+                  </label>
+                  <input
+                    id="earliestDepartAt"
+                    type="datetime-local"
+                    value={formValues.earliestDepartAt}
+                    onChange={(e) => updateField("earliestDepartAt", e.target.value)}
+                    className="block w-full min-w-0 bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-2.5 text-sm text-zinc-900 shadow-sm outline-none"
+                  />
                   {fieldErrors.earliestDepartAt && (
                     <p className="mt-1 text-sm text-red-600">{fieldErrors.earliestDepartAt}</p>
                   )}
                 </div>
-                <div className="min-w-0 flex flex-col items-center md:items-stretch">
-                  <div className="w-full max-w-[16rem] md:max-w-none">
-                    <label htmlFor="latestDepartAt" className="block text-sm font-medium text-zinc-600 mb-1">
-                      Latest
-                    </label>
-                    <input
-                      id="latestDepartAt"
-                      type="datetime-local"
-                      value={formValues.latestDepartAt}
-                      onChange={(e) => updateField("latestDepartAt", e.target.value)}
-                      className="block w-full min-w-0 max-w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-2.5 text-sm text-zinc-900 shadow-sm outline-none"
-                    />
-                  </div>
+                <div className="min-w-0">
+                  <label htmlFor="latestDepartAt" className="block text-sm font-medium text-zinc-600 mb-1">
+                    Latest
+                  </label>
+                  <input
+                    id="latestDepartAt"
+                    type="datetime-local"
+                    value={formValues.latestDepartAt}
+                    onChange={(e) => updateField("latestDepartAt", e.target.value)}
+                    className="block w-full min-w-0 bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-2.5 text-sm text-zinc-900 shadow-sm outline-none"
+                  />
                   {fieldErrors.latestDepartAt && (
                     <p className="mt-1 text-sm text-red-600">{fieldErrors.latestDepartAt}</p>
                   )}
