@@ -34,9 +34,13 @@ export async function POST(request: NextRequest) {
         if (auth.error) return auth.error;
 
         // TEMP DEBUG — remove after diagnosing Vercel 401
-        console.log("[DEBUG upload] WORKER_UPLOAD_URL:", WORKER_UPLOAD_URL || "(empty)");
-        console.log("[DEBUG upload] WORKER_UPLOAD_API_KEY length:", WORKER_UPLOAD_API_KEY.length, "starts:", WORKER_UPLOAD_API_KEY.slice(0, 8));
-
+        console.log("[DEBUG upload] WORKER_UPLOAD_URL configured:", Boolean(WORKER_UPLOAD_URL));
+        console.log(
+            "[DEBUG upload] WORKER_UPLOAD_API_KEY configured:",
+            Boolean(WORKER_UPLOAD_API_KEY),
+            "length:",
+            WORKER_UPLOAD_API_KEY.length
+        );
         if (!WORKER_UPLOAD_URL || !WORKER_UPLOAD_API_KEY) {
             return NextResponse.json(
                 {
