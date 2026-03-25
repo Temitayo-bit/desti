@@ -34,6 +34,9 @@ const tripRequestSummarySelect = {
     status: true,
     createdAt: true,
     updatedAt: true,
+    rider: {
+        select: { name: true, profilePictureUrl: true },
+    },
 } satisfies Prisma.TripRequestSelect;
 
 type TripRequestSummary = Prisma.TripRequestGetPayload<{

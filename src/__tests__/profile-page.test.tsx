@@ -30,6 +30,11 @@ vi.mock("@clerk/nextjs", () => ({
 
 vi.mock("next/navigation", () => ({
     redirect: mockRedirect,
+    useRouter: () => ({ refresh: vi.fn(), push: vi.fn(), replace: vi.fn() }),
+}));
+
+vi.mock("next/image", () => ({
+    default: (props: Record<string, unknown>) => <img {...props} />,
 }));
 
 vi.mock("next/link", () => ({
@@ -84,6 +89,7 @@ describe("protected profile page", () => {
             gender: "MALE",
             age: 20,
             onboardingComplete: true,
+            profilePictureUrl: null,
         });
 
         vi.resetModules();

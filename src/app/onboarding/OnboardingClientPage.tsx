@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type ChangeEvent, type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -31,6 +31,7 @@ interface MeResponse {
         age?: number | null;
         yearAtStetson?: OnboardingYearValue | null;
         gender?: OnboardingGenderValue | null;
+        profilePictureUrl?: string | null;
         onboardingComplete?: boolean | null;
     };
 }
@@ -40,6 +41,7 @@ const fieldNameMap: Record<string, keyof OnboardingFieldErrors> = {
     age: "age",
     yearAtStetson: "yearAtStetson",
     gender: "gender",
+    profilePicture: "profilePicture",
 };
 
 async function parseOnboardingErrorResponse(
@@ -126,6 +128,12 @@ export function OnboardingClientPage({
     const [isSuccess, setIsSuccess] = useState(false);
     const [bootstrapToken, setBootstrapToken] = useState(0);
 
+    const [profilePictureUrl, setProfilePictureUrl] = useState<string | null>(null);
+    const [profilePicturePreview, setProfilePicturePreview] = useState<string | null>(null);
+    const [isUploading, setIsUploading] = useState(false);
+    const [uploadError, setUploadError] = useState<string | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
     useEffect(() => {
         if (!isSuccess) {
             return;
@@ -174,6 +182,11 @@ export function OnboardingClientPage({
                         gender: payload.localUser?.gender ?? null,
                     })
                 );
+
+                if (payload.localUser?.profilePictureUrl) {
+                    setProfilePictureUrl(payload.localUser.profilePictureUrl);
+                    setProfilePicturePreview(payload.localUser.profilePictureUrl);
+                }
             } catch (error: unknown) {
                 if (controller.signal.aborted || cancelled) {
                     return;
@@ -207,6 +220,52 @@ export function OnboardingClientPage({
         return "Complete onboarding";
     }, [isSubmitting]);
 
+    const canSubmit = !isSubmitting && !isUploading && !!profilePictureUrl;
+
+    const handleFileSelect = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        const previewUrl = URL.createObjectURL(file);
+        setProfilePicturePreview(previewUrl);
+        setUploadError(null);
+        setFieldErrors((prev) => ({ ...prev, profilePicture: undefined }));
+        setIsUploading(true);
+
+        try {
+            const formData = new FormData();
+            formData.append("file", file);
+
+            const response = await fetch("/api/user/profile-picture", {
+                method: "POST",
+                body: formData,
+            });
+
+            if (!response.ok) {
+                const data = await response.json().catch(() => null);
+                const msg =
+                    (data as { message?: string } | null)?.message ??
+                    "Failed to upload photo. Please try again.";
+                setUploadError(msg);
+                setProfilePicturePreview(null);
+                URL.revokeObjectURL(previewUrl);
+                return;
+            }
+
+            const data = (await response.json()) as { profilePictureUrl: string };
+            setProfilePictureUrl(data.profilePictureUrl);
+        } catch {
+            setUploadError("Network error while uploading photo.");
+            setProfilePicturePreview(null);
+            URL.revokeObjectURL(previewUrl);
+        } finally {
+            setIsUploading(false);
+            if (fileInputRef.current) {
+                fileInputRef.current.value = "";
+            }
+        }
+    }, []);
+
     function updateField<K extends keyof OnboardingFormValues>(
         field: K,
         value: OnboardingFormValues[K]
@@ -224,10 +283,18 @@ export function OnboardingClientPage({
 
         setSubmitError(null);
         const buildResult = buildOnboardingPayload(formValues);
-        setFieldErrors(buildResult.fieldErrors);
+        const combinedErrors = { ...buildResult.fieldErrors };
 
-        if (!buildResult.payload) {
-            setSubmitError(buildResult.submitError);
+        if (!profilePictureUrl) {
+            combinedErrors.profilePicture = "Please upload a profile picture.";
+        }
+
+        setFieldErrors(combinedErrors);
+
+        if (!buildResult.payload || !profilePictureUrl) {
+            setSubmitError(
+                buildResult.submitError ?? "Please fix the highlighted fields and try again."
+            );
             return;
         }
 
@@ -378,6 +445,72 @@ export function OnboardingClientPage({
                                     ) : null}
 
                                     <div>
+                                        <label className="mb-2 block text-sm font-semibold text-emerald-800">
+                                            Profile picture <span className="text-red-500">*</span>
+                                        </label>
+                                        <div className="flex items-center gap-4">
+                                            <button
+                                                type="button"
+                                                onClick={() => fileInputRef.current?.click()}
+                                                disabled={isUploading || isSubmitting}
+                                                className="group relative flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-dashed border-zinc-300 bg-zinc-50 transition-colors hover:border-emerald-400 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                            >
+                                                {profilePicturePreview ? (
+                                                    <>
+                                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                        <img
+                                                            src={profilePicturePreview}
+                                                            alt="Profile preview"
+                                                            className="h-full w-full object-cover"
+                                                        />
+                                                        <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+                                                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                                                                <circle cx="12" cy="13" r="4" />
+                                                            </svg>
+                                                        </div>
+                                                    </>
+                                                ) : (
+                                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-400 transition-colors group-hover:text-emerald-600">
+                                                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                                                        <circle cx="12" cy="13" r="4" />
+                                                    </svg>
+                                                )}
+                                                {isUploading ? (
+                                                    <div className="absolute inset-0 flex items-center justify-center bg-white/80">
+                                                        <div className="h-6 w-6 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent" />
+                                                    </div>
+                                                ) : null}
+                                            </button>
+                                            <div className="min-w-0">
+                                                <p className="text-sm text-zinc-600">
+                                                    {profilePictureUrl
+                                                        ? "Photo uploaded. Click to change."
+                                                        : "Click to upload a photo."}
+                                                </p>
+                                                <p className="mt-1 text-xs text-zinc-400">
+                                                    JPEG, PNG, or WebP. Max 5 MB.
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <input
+                                            ref={fileInputRef}
+                                            type="file"
+                                            accept="image/jpeg,image/png,image/webp"
+                                            onChange={handleFileSelect}
+                                            className="hidden"
+                                        />
+                                        {uploadError ? (
+                                            <p className="mt-1 text-sm text-red-600">{uploadError}</p>
+                                        ) : null}
+                                        {fieldErrors.profilePicture ? (
+                                            <p className="mt-1 text-sm text-red-600">
+                                                {fieldErrors.profilePicture}
+                                            </p>
+                                        ) : null}
+                                    </div>
+
+                                    <div>
                                         <label
                                             htmlFor="onboarding-name"
                                             className="mb-2 block text-sm font-semibold text-emerald-800"
@@ -498,7 +631,7 @@ export function OnboardingClientPage({
 
                                     <button
                                         type="submit"
-                                        disabled={isSubmitting}
+                                        disabled={!canSubmit}
                                         className="w-full rounded-2xl bg-emerald-600 px-4 py-3 text-base font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-zinc-300"
                                     >
                                         {submitButtonLabel}

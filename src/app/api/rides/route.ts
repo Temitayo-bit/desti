@@ -37,6 +37,9 @@ const rideSummarySelect = {
     status: true,
     createdAt: true,
     updatedAt: true,
+    driver: {
+        select: { name: true, profilePictureUrl: true },
+    },
 } satisfies Prisma.RideSelect;
 
 type RideSummary = Prisma.RideGetPayload<{ select: typeof rideSummarySelect }>;

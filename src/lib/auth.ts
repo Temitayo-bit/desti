@@ -35,6 +35,8 @@ interface RouteMethodPath {
 const ONBOARDING_EXEMPT_ROUTES: readonly RouteMethodPath[] = [
     { method: "GET", pathname: "/api/me" },
     { method: "POST", pathname: "/api/user/onboarding" },
+    { method: "POST", pathname: "/api/user/profile-picture" },
+    { method: "DELETE", pathname: "/api/user/profile-picture" },
 ];
 
 function normalizePathname(pathname: string): string {

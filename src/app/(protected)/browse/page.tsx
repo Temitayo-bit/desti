@@ -15,6 +15,7 @@ import {
   type BrowseRidesQuickFilter,
 } from "@/lib/browse-trip-requests";
 import { normalizeRidesView } from "@/lib/ride-view";
+import { UserAvatar } from "@/components/UserAvatar";
 
 // --- Advanced filter types ---
 interface AdvancedFilters {
@@ -72,6 +73,10 @@ interface RideSummary {
   status: RideStatus;
   createdAt: string;
   updatedAt: string;
+  driver?: {
+    name: string | null;
+    profilePictureUrl: string | null;
+  };
 }
 
 interface EditRideFormData {
@@ -661,6 +666,12 @@ export default function BrowseRidesPage() {
                           <p className="text-sm text-zinc-500 mt-0.5">from {ride.originText}</p>
                         </div>
                       </div>
+                      {ride.driver && (
+                        <div className="flex items-center gap-2 mt-3">
+                          <UserAvatar src={ride.driver.profilePictureUrl} name={ride.driver.name} size="sm" />
+                          <span className="text-sm font-medium text-zinc-700">{ride.driver.name ?? "Driver"}</span>
+                        </div>
+                      )}
                     </div>
 
                     <div className="mt-5 flex items-end justify-between">
@@ -861,7 +872,16 @@ export default function BrowseRidesPage() {
                   </motion.div>
                 ) : (
                   <motion.div key="view" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                    <h2 id="rideDetailsTitle" className="text-2xl font-bold mb-8 pr-12 text-zinc-900">Ride Details</h2>
+                    <h2 id="rideDetailsTitle" className="text-2xl font-bold mb-4 pr-12 text-zinc-900">Ride Details</h2>
+                    {selectedRide.driver && (
+                      <div className="flex items-center gap-3 mb-6 p-3 bg-zinc-50 border border-zinc-200 rounded-xl">
+                        <UserAvatar src={selectedRide.driver.profilePictureUrl} name={selectedRide.driver.name} size="md" />
+                        <div>
+                          <p className="text-sm font-semibold text-zinc-900">{selectedRide.driver.name ?? "Driver"}</p>
+                          <p className="text-xs text-zinc-500">Driver</p>
+                        </div>
+                      </div>
+                    )}
                     {/* --- VIEW MODE --- */}
                     <div className="space-y-6">
                       {/* Origin & Destination */}
