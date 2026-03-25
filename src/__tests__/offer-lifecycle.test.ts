@@ -335,4 +335,88 @@ describe("Offer Lifecycle Integration Tests", () => {
         const updatedBooking = await prisma.booking.findUnique({ where: { id: booking.id } });
         expect(updatedBooking?.status).toBe("CANCELLED");
     });
+
+    test("11. Race: driver cancel rejected when offer was concurrently accepted", async () => {
+        // Simulates the race where a driver's cancel request passes the
+        // pre-transaction PENDING check, but by the time the transaction
+        // reads the row the offer has already been accepted.
+        //
+        // With the fix, all guards run inside the transaction so this
+        // scenario returns 409 instead of silently cancelling an accepted offer.
+
+        const tr = await prisma.tripRequest.create({
+            data: {
+                riderUserId: RIDER_ID,
+                originText: "RaceTest",
+                destinationText: "Test",
+                earliestDesiredAt: new Date(),
+                latestDesiredAt: new Date(),
+                distanceCategory: "SHORT",
+                seatsNeeded: 1,
+                status: "ACTIVE",
+            },
+        });
+
+        const offer = await prisma.offer.create({
+            data: {
+                tripRequestId: tr.id,
+                driverUserId: DRIVER_ID,
+                riderUserId: RIDER_ID,
+                seatsOffered: 1,
+                priceCents: 1000,
+                status: "PENDING",
+            },
+        });
+
+        // Step 1: Rider accepts the offer (transitions to ACCEPTED)
+        mockAuth(RIDER_ID);
+        const acceptReq = createReq(
+            `http://localhost/api/offers/${offer.id}/accept`,
+            {},
+            {}
+        );
+        const acceptRes = await acceptOffer(acceptReq, {
+            params: Promise.resolve({ offerId: offer.id }),
+        });
+        expect(acceptRes.status).toBe(200);
+
+        // Verify the offer is now ACCEPTED
+        const acceptedOffer = await prisma.offer.findUnique({
+            where: { id: offer.id },
+        });
+        expect(acceptedOffer?.status).toBe("ACCEPTED");
+
+        // Step 2: Driver tries to cancel — should be rejected with 409
+        mockAuth(DRIVER_ID);
+        const cancelReq = createReq(
+            `http://localhost/api/offers/${offer.id}/cancel`,
+            {},
+            {}
+        );
+        const cancelRes = await cancelOffer(cancelReq, {
+            params: Promise.resolve({ offerId: offer.id }),
+        });
+        expect(cancelRes.status).toBe(409);
+
+        const cancelJson = await cancelRes.json();
+        expect(cancelJson.message).toContain("Drivers cannot cancel");
+
+        // Verify the offer is still ACCEPTED (not overwritten)
+        const finalOffer = await prisma.offer.findUnique({
+            where: { id: offer.id },
+        });
+        expect(finalOffer?.status).toBe("ACCEPTED");
+
+        // Verify the booking is still CONFIRMED
+        const booking = await prisma.booking.findFirst({
+            where: { tripRequestId: tr.id, status: "CONFIRMED" },
+        });
+        expect(booking).not.toBeNull();
+
+        // Verify the trip request is still CLOSED
+        const finalTR = await prisma.tripRequest.findUnique({
+            where: { id: tr.id },
+        });
+        expect(finalTR?.status).toBe("CLOSED");
+    });
 });
