@@ -56,6 +56,18 @@ describe("browse rides hub page", () => {
         expect(markup).not.toContain("data-testid=\"my-rides-view\"");
     });
 
+    it("renders the Advanced Filters button as enabled", async () => {
+        mockUseSearchParams.mockReturnValue(new URLSearchParams());
+
+        vi.resetModules();
+        const Page = (await import("@/app/(protected)/browse/page")).default;
+        const markup = renderToStaticMarkup(<Page />);
+
+        expect(markup).toContain("Advanced Filters");
+        expect(markup).not.toContain("aria-disabled=\"true\"");
+        expect(markup).not.toContain("cursor-not-allowed");
+    });
+
     it("renders the my rides view when view=my", async () => {
         mockUseSearchParams.mockReturnValue(new URLSearchParams("view=my"));
 
