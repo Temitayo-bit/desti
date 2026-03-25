@@ -220,7 +220,7 @@ export function OnboardingClientPage({
         return "Complete onboarding";
     }, [isSubmitting]);
 
-    const canSubmit = !isSubmitting && !isUploading && !!profilePictureUrl;
+    const canSubmit = !isSubmitting && !isUploading;
 
     const handleFileSelect = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
@@ -287,13 +287,9 @@ export function OnboardingClientPage({
         const buildResult = buildOnboardingPayload(formValues);
         const combinedErrors = { ...buildResult.fieldErrors };
 
-        if (!profilePictureUrl) {
-            combinedErrors.profilePicture = "Please upload a profile picture.";
-        }
-
         setFieldErrors(combinedErrors);
 
-        if (!buildResult.payload || !profilePictureUrl) {
+        if (!buildResult.payload) {
             setSubmitError(
                 buildResult.submitError ?? "Please fix the highlighted fields and try again."
             );

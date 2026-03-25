@@ -182,21 +182,7 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        if (!bootstrappedUser.profilePictureUrl) {
-            return NextResponse.json(
-                {
-                    error: "Bad Request",
-                    message: "A profile picture is required to complete onboarding.",
-                    fieldErrors: [
-                        {
-                            field: "profilePicture",
-                            message: "Please upload a profile picture.",
-                        },
-                    ],
-                },
-                { status: 400 }
-            );
-        }
+        // Profile picture is optional — users can upload one later from their profile page.
 
         const updateResult = await prisma.user.updateMany({
             where: {
