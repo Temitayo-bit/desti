@@ -528,13 +528,6 @@ export default function DashboardPage() {
   const nextTrip = sortedBookings[0] ?? null;
   const sentOffers = dashboard?.upcoming.offers.sent ?? [];
   const receivedOffers = dashboard?.upcoming.offers.received ?? [];
-  const ridesDriving = dashboard?.upcoming.ridesDriving ?? [];
-
-  const hasAnyActivity =
-    confirmedBookings.length > 0 ||
-    sentOffers.length > 0 ||
-    receivedOffers.length > 0 ||
-    ridesDriving.length > 0;
 
   const hasReceivedOffersCard = receivedOffers.length > 0;
   const hasNextTripCard = Boolean(nextTrip);
@@ -686,18 +679,6 @@ export default function DashboardPage() {
                       }
                       tone="emerald"
                     />
-                  ) : null}
-
-                  {!hasAnyActivity ? (
-                    <div className="rounded-2xl border border-dashed border-zinc-300 bg-zinc-50 p-6 md:col-span-2">
-                      <p className="text-lg font-semibold tracking-tight text-zinc-900">
-                        You’re all set to start.
-                      </p>
-                      <p className="mt-2 text-sm text-zinc-500">
-                        Post a ride, browse rides, or create a trip request to start using
-                        Desti.
-                      </p>
-                    </div>
                   ) : null}
                 </div>
               </div>

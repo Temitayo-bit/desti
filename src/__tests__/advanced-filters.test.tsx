@@ -36,45 +36,56 @@ vi.mock("@/app/(protected)/my-rides/MyRidesView", () => ({
     MyRidesView: () => <div data-testid="my-rides-view" />,
 }));
 
-describe("browse rides hub page", () => {
+describe("Advanced Filters feature", () => {
     beforeEach(() => {
         vi.clearAllMocks();
     });
 
-    it("defaults to browse mode when no view query is present", async () => {
+    it("renders the Advanced Filters button (not disabled)", async () => {
         mockUseSearchParams.mockReturnValue(new URLSearchParams());
-
-        vi.resetModules();
-        const Page = (await import("@/app/(protected)/browse/page")).default;
-        const markup = renderToStaticMarkup(<Page />);
-
-        expect(markup).toContain("Rides");
-        expect(markup).toContain("Browse");
-        expect(markup).toContain("My Rides");
-        expect(markup).toContain("Post a Ride");
-        expect(markup).toContain('href="/post-ride"');
-        expect(markup).not.toContain("data-testid=\"my-rides-view\"");
-    });
-
-    it("renders the Advanced Filters button as enabled", async () => {
-        mockUseSearchParams.mockReturnValue(new URLSearchParams());
-
         vi.resetModules();
         const Page = (await import("@/app/(protected)/browse/page")).default;
         const markup = renderToStaticMarkup(<Page />);
 
         expect(markup).toContain("Advanced Filters");
-        expect(markup).not.toContain("aria-disabled=\"true\"");
         expect(markup).not.toContain("cursor-not-allowed");
+        expect(markup).not.toContain('disabled=""');
+        expect(markup).not.toContain("aria-disabled");
     });
 
-    it("renders the my rides view when view=my", async () => {
-        mockUseSearchParams.mockReturnValue(new URLSearchParams("view=my"));
-
+    it("renders all quick filter pills", async () => {
+        mockUseSearchParams.mockReturnValue(new URLSearchParams());
         vi.resetModules();
         const Page = (await import("@/app/(protected)/browse/page")).default;
         const markup = renderToStaticMarkup(<Page />);
 
-        expect(markup).toContain("data-testid=\"my-rides-view\"");
+        expect(markup).toContain("All");
+        expect(markup).toContain("Soon");
+        expect(markup).toContain("Later");
+        expect(markup).toContain("2+ Seats");
+        expect(markup).toContain("Short Trip");
+        expect(markup).toContain("Advanced Filters");
+    });
+
+    it("renders search input for destinations", async () => {
+        mockUseSearchParams.mockReturnValue(new URLSearchParams());
+        vi.resetModules();
+        const Page = (await import("@/app/(protected)/browse/page")).default;
+        const markup = renderToStaticMarkup(<Page />);
+
+        expect(markup).toContain("Search destinations...");
+    });
+
+    it("does not render the advanced filters modal by default", async () => {
+        mockUseSearchParams.mockReturnValue(new URLSearchParams());
+        vi.resetModules();
+        const Page = (await import("@/app/(protected)/browse/page")).default;
+        const markup = renderToStaticMarkup(<Page />);
+
+        expect(markup).not.toContain("advancedFiltersTitle");
+        expect(markup).not.toContain("Departure Date Range");
+        expect(markup).not.toContain("Price Range (per seat)");
+        expect(markup).not.toContain("Distance Category");
+        expect(markup).not.toContain("Minimum Available Seats");
     });
 });
