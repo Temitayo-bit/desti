@@ -1,192 +1,271 @@
 # Desti
-A full-stack campus transport platform where verified students can post rides, request future trips, and connect through intelligent matching and booking workflows.
+
+A full-stack campus transport platform where verified Stetson University students can post rides, request future trips, and connect through intelligent matching, booking, and messaging workflows.
 
 ## Project Description
 
-Desti is a campus transport web application built for verified Stetson University students. It lets drivers post rides, riders post trip requests, drivers send offers, riders book seats, and both sides coordinate through in-app messaging.
+Desti is a campus ride-sharing web application built exclusively for verified Stetson University students. The platform connects drivers who have open seats with riders who need transportation, supporting the full lifecycle from posting through booking to in-app coordination.
 
-Core capabilities in the current codebase include:
+### What Users Can Do
 
-- Verified student authentication using Clerk
-- User onboarding for first-time users
-- Ride posting and ride browsing
-- Trip request posting and trip request browsing
-- Booking and offer workflows
-- In-app conversations and messaging
-- Dashboard views for rides, bookings, offers, and trip requests
-- Optional in-app AI help assistant
+- **Drivers** post rides with origin, destination, departure windows, pricing, and seat availability
+- **Riders** browse and book seats on available rides
+- **Riders** post trip requests describing where and when they need to travel
+- **Drivers** browse trip requests and send offers with pricing and seat details
+- **Riders** accept or decline driver offers, which automatically create bookings
+- **Both sides** communicate through in-app messaging tied to bookings and offers
+- **Everyone** manages their activity from a central dashboard showing upcoming trips, pending offers, and confirmed bookings
+
+### Key Features
+
+- **Verified student authentication** — sign-in restricted to `@stetson.edu` email addresses via Clerk
+- **User onboarding** — first-time users complete a profile (name, year, gender, age) before accessing the platform
+- **Ride posting and browsing** — drivers post rides; riders search and filter by destination, date, price, distance, and seat count
+- **Advanced ride filters** — modal-based filtering by date range, price range, distance category, and minimum available seats
+- **Trip request posting and browsing** — riders post future travel needs; drivers browse and send offers
+- **Booking and offer workflows** — idempotent creation, acceptance, cancellation with transactional consistency
+- **Race-condition-safe offer handling** — cancel and accept operations use in-transaction guards to prevent concurrent state corruption
+- **In-app conversations and messaging** — conversations anchored to bookings or offers with real-time message threads
+- **Dashboard** — aggregated view of active rides, confirmed bookings, pending offers sent and received, with attention cards and quick actions
+- **AI help assistant** — optional in-app chat widget powered by Google Gemini for user guidance
 
 ## Libraries, Packages, and Frameworks
 
-The app currently uses the following primary libraries, packages, and frameworks.
+### Core Application Stack
 
-### Core App Stack
-
-- Next.js `16.1.6`
-- React `19.2.3`
-- React DOM `19.2.3`
-- TypeScript `^5`
+| Package | Version | Purpose |
+|---|---|---|
+| [Next.js](https://nextjs.org/) | `16.1.6` | React framework with App Router, API routes, and Turbopack |
+| [React](https://react.dev/) | `19.2.3` | UI component library |
+| [React DOM](https://react.dev/) | `19.2.3` | React renderer for the browser |
+| [TypeScript](https://www.typescriptlang.org/) | `^5` | Static type checking |
 
 ### Authentication and Database
 
-- Clerk `^7.0.6` via `@clerk/nextjs`
-- Prisma ORM `^6.19.2`
-- Prisma Client `^6.19.2` via `@prisma/client`
-- PostgreSQL as the database
+| Package | Version | Purpose |
+|---|---|---|
+| [@clerk/nextjs](https://clerk.com/docs/quickstarts/nextjs) | `^7.0.6` | Authentication and session management (restricted to `@stetson.edu` emails) |
+| [Prisma ORM](https://www.prisma.io/) | `^6.19.2` | Database toolkit, migrations, and query builder |
+| [@prisma/client](https://www.prisma.io/client) | `^6.19.2` | Auto-generated type-safe database client |
+| [PostgreSQL](https://www.postgresql.org/) | `16` | Relational database (via Docker or local install) |
+
+### AI Integration
+
+| Package | Version | Purpose |
+|---|---|---|
+| [@google/genai](https://ai.google.dev/) | `^1.46.0` | Google Gemini API client for the AI help assistant |
 
 ### UI and Styling
 
-- Tailwind CSS `^3.4.1`
-- PostCSS `^8.5.8`
-- Autoprefixer `^10.4.19`
-- Framer Motion `^12.35.0`
-- Lucide React `^0.577.0`
-- date-fns `^4.1.0`
+| Package | Version | Purpose |
+|---|---|---|
+| [Tailwind CSS](https://tailwindcss.com/) | `^3.4.1` | Utility-first CSS framework |
+| [PostCSS](https://postcss.org/) | `^8.5.8` | CSS transformation pipeline |
+| [Autoprefixer](https://github.com/postcss/autoprefixer) | `^10.4.19` | Automatic vendor prefixing |
+| [Framer Motion](https://www.framer.com/motion/) | `^12.35.0` | Animation library for React |
+| [Lucide React](https://lucide.dev/) | `^0.577.0` | Icon library |
+| [date-fns](https://date-fns.org/) | `^4.1.0` | Date utility functions |
 
 ### Tooling and Testing
 
-- ESLint `^9`
-- eslint-config-next `16.1.6`
-- Vitest `^4.0.18`
-- dotenv `^17.2.4`
-- `@types/node` `^20`
-- `@types/react` `^19`
-- `@types/react-dom` `^19`
+| Package | Version | Purpose |
+|---|---|---|
+| [ESLint](https://eslint.org/) | `^9` | JavaScript/TypeScript linter |
+| [eslint-config-next](https://nextjs.org/docs/app/api-reference/config/eslint) | `16.1.6` | Next.js ESLint configuration |
+| [Vitest](https://vitest.dev/) | `^4.0.18` | Unit and integration test framework |
+| [dotenv](https://github.com/motdotla/dotenv) | `^17.2.4` | Environment variable loading |
+| @types/node | `^20` | Node.js type definitions |
+| @types/react | `^19` | React type definitions |
+| @types/react-dom | `^19` | React DOM type definitions |
 
 ### External Runtime Services
 
-- Clerk for authentication
-- PostgreSQL for persistent storage
-- Gemini for the AI assistant backend
-- Gemini API access for AI-powered in-app help
+| Service | Required | Purpose |
+|---|---|---|
+| [Clerk](https://clerk.com/) | Yes | Authentication, session management, email verification |
+| [PostgreSQL](https://www.postgresql.org/) | Yes | Persistent data storage for all application data |
+| [Google Gemini](https://ai.google.dev/) | No | AI-powered in-app help assistant (gracefully degrades if unavailable) |
 
 ## Steps to Install or Recreate the Project on Another Machine
 
-There are two supported ways to recreate the project: Docker or a local manual setup.
+There are two supported ways to set up the project: **Docker** (recommended) or **local manual setup**.
 
-### Option 1: Docker Setup
+### Option 1: Docker Setup (Recommended)
 
-This is the easiest way to run the project on another machine because Docker handles the app runtime and PostgreSQL database consistently.
-
-## Docker Setup
-
-This repo includes a local Docker development setup for the app and PostgreSQL database.
+Docker handles the app runtime and PostgreSQL database in isolated containers, making setup consistent across machines.
 
 #### Prerequisites
 
-- Docker Desktop
-- Clerk keys for authentication
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed and running
+- A [Clerk](https://clerk.com/) account with a project configured for `@stetson.edu` emails
 
-### Environment Variables
+#### Steps
 
-Create `.env` from `.env.example`.
+1. **Clone the repository:**
 
-For Docker, use this database URL:
-
-```env
-DATABASE_URL="postgresql://postgres:postgres@db:5432/desti?schema=public"
+```bash
+git clone https://github.com/Temitayo-bit/desti.git
+cd desti
 ```
 
-You also need:
+2. **Create your environment file:**
 
-- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
-- `CLERK_SECRET_KEY`
-- `NEXT_PUBLIC_CLERK_SIGN_IN_URL`
-- `NEXT_PUBLIC_CLERK_SIGN_UP_URL`
+```bash
+cp .env.example .env
+```
 
-If you want the AI assistant feature to work, make sure your environment is configured for Gemini access.
+3. **Edit `.env`** and set the following values:
 
-### Start The Stack
+```env
+# Database — use this exact URL for Docker
+DATABASE_URL="postgresql://postgres:postgres@db:5432/desti?schema=public"
 
-From the project root:
+# Clerk — get these from your Clerk dashboard
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_YOUR_KEY
+CLERK_SECRET_KEY=sk_test_YOUR_KEY
+
+# Clerk redirect URLs
+NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
+NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
+
+# Optional — only needed for the AI chat assistant
+GEMINI_API_KEY=YOUR_GEMINI_API_KEY
+```
+
+4. **Start the stack:**
 
 ```bash
 docker compose up --build
 ```
 
-The app will be available at `http://localhost:3000`.
+5. **Open the app** at [http://localhost:3000](http://localhost:3000).
 
-### What Docker Runs
+On startup, the `web` container automatically runs all Prisma migrations and starts the Next.js development server.
 
-- `web`: the Next.js app
-- `db`: PostgreSQL 16
+#### What Docker Runs
 
-On startup, the `web` container runs the committed Prisma migrations and then starts the development server.
+| Container | Image | Purpose |
+|---|---|---|
+| `desti-web` | Built from `Dockerfile` (Node 20) | Next.js app with hot reload |
+| `desti-db` | `postgres:16` | PostgreSQL database |
 
-### Useful Commands
-
-Start in the background:
+#### Useful Docker Commands
 
 ```bash
+# Start in the background
 docker compose up --build -d
-```
 
-Stop everything:
-
-```bash
+# Stop everything
 docker compose down
-```
 
-Stop everything and remove the database volume:
-
-```bash
+# Stop and remove the database volume (full reset)
 docker compose down -v
-```
 
-Run Prisma commands inside the app container:
-
-```bash
+# Run Prisma Studio inside the container
 docker compose exec web npx prisma studio
+
+# Run a new migration inside the container
 docker compose exec web npx prisma migrate dev
 ```
 
-### Option 2: Local Manual Setup Without Docker
+---
 
-Use this option if you want to run everything directly on your machine without containers.
+### Option 2: Local Manual Setup (Without Docker)
+
+Use this option if you prefer to run everything directly on your machine.
 
 #### Prerequisites
 
-- Node.js `20.9+`
-- npm
-- PostgreSQL
-- Clerk account and project keys
+- [Node.js](https://nodejs.org/) `20.9` or later
+- npm (comes with Node.js)
+- [PostgreSQL](https://www.postgresql.org/download/) `14` or later (16 recommended)
+- A [Clerk](https://clerk.com/) account with a project configured for `@stetson.edu` emails
 
 #### Steps
 
-1. Clone the repository.
-2. Enter the project directory:
+1. **Clone the repository:**
 
 ```bash
+git clone https://github.com/Temitayo-bit/desti.git
 cd desti
 ```
 
-3. Install dependencies:
+2. **Install dependencies:**
 
 ```bash
 npm install
 ```
 
-4. Create `.env` from `.env.example`.
-5. Set a working PostgreSQL connection string in `DATABASE_URL`.
-6. Add your Clerk keys.
-7. Run Prisma migrations:
+This also runs `prisma generate` automatically via the `postinstall` hook.
+
+3. **Create your environment file:**
+
+```bash
+cp .env.example .env
+```
+
+4. **Edit `.env`** and configure your database and Clerk keys:
+
+```env
+# Database — point to your local PostgreSQL instance
+DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:5432/desti?schema=public"
+
+# Clerk keys
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_YOUR_KEY
+CLERK_SECRET_KEY=sk_test_YOUR_KEY
+
+# Clerk redirect URLs
+NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
+NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
+
+# Optional — only needed for the AI chat assistant
+GEMINI_API_KEY=YOUR_GEMINI_API_KEY
+```
+
+5. **Create the database** (if it does not already exist):
+
+```bash
+createdb desti
+```
+
+Or via `psql`:
+
+```sql
+CREATE DATABASE desti;
+```
+
+6. **Run database migrations:**
 
 ```bash
 npx prisma migrate deploy
 ```
 
-8. Start the development server:
+7. **Start the development server:**
 
 ```bash
 npm run dev
 ```
 
-9. Open the app at `http://localhost:3000`.
+8. **Open the app** at [http://localhost:3000](http://localhost:3000).
 
 ## Available Scripts
 
-- `npm run dev` starts the Next.js development server
-- `npm run build` generates Prisma client and builds the production app
-- `npm run start` runs the production server
-- `npm run lint` runs ESLint
-- `npm run test` runs the Vitest test suite
+| Command | Description |
+|---|---|
+| `npm run dev` | Start the Next.js development server with Turbopack |
+| `npm run build` | Generate Prisma client and build the production app |
+| `npm run start` | Run the production server (requires `npm run build` first) |
+| `npm run lint` | Run ESLint across the codebase |
+| `npm run test` | Run the Vitest test suite |
+
+## Environment Variables
+
+| Variable | Required | Description |
+|---|---|---|
+| `DATABASE_URL` | Yes | PostgreSQL connection string |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Yes | Clerk publishable key (from Clerk dashboard) |
+| `CLERK_SECRET_KEY` | Yes | Clerk secret key (from Clerk dashboard) |
+| `NEXT_PUBLIC_CLERK_SIGN_IN_URL` | Yes | Sign-in route path (`/sign-in`) |
+| `NEXT_PUBLIC_CLERK_SIGN_UP_URL` | Yes | Sign-up route path (`/sign-up`) |
+| `GEMINI_API_KEY` | No | Google Gemini API key for the AI assistant |
+| `GEMINI_MODEL` | No | Override the default Gemini model (`gemini-2.5-flash`) |
