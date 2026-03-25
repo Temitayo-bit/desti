@@ -16,6 +16,43 @@ import {
 } from "@/lib/browse-trip-requests";
 import { normalizeRidesView } from "@/lib/ride-view";
 
+// --- Advanced filter types ---
+interface AdvancedFilters {
+  distanceCategory: string;
+  seatsMin: string;
+  earliestAfter: string;
+  latestBefore: string;
+  priceMin: string;
+  priceMax: string;
+}
+
+const EMPTY_ADVANCED_FILTERS: AdvancedFilters = {
+  distanceCategory: "",
+  seatsMin: "",
+  earliestAfter: "",
+  latestBefore: "",
+  priceMin: "",
+  priceMax: "",
+};
+
+function isAdvancedFiltersActive(filters: AdvancedFilters): boolean {
+  return Object.values(filters).some((v) => v !== "");
+}
+
+function countActiveAdvancedFilters(filters: AdvancedFilters): number {
+  return Object.values(filters).filter((v) => v !== "").length;
+}
+
+function buildApiQueryString(filters: AdvancedFilters): string {
+  const params = new URLSearchParams();
+  if (filters.distanceCategory) params.set("distanceCategory", filters.distanceCategory);
+  if (filters.seatsMin) params.set("seatsMin", filters.seatsMin);
+  if (filters.earliestAfter) params.set("earliestAfter", new Date(filters.earliestAfter).toISOString());
+  if (filters.latestBefore) params.set("latestBefore", new Date(filters.latestBefore).toISOString());
+  const qs = params.toString();
+  return qs ? `?${qs}` : "";
+}
+
 // --- Types ---
 type RideStatus = "ACTIVE" | "CANCELLED";
 interface RideSummary {
@@ -106,6 +143,9 @@ export default function BrowseRidesPage() {
   } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<BrowseRidesQuickFilter>("All");
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [advancedFilters, setAdvancedFilters] = useState<AdvancedFilters>({ ...EMPTY_ADVANCED_FILTERS });
+  const [pendingAdvancedFilters, setPendingAdvancedFilters] = useState<AdvancedFilters>({ ...EMPTY_ADVANCED_FILTERS });
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [bookingInProgress, setBookingInProgress] = useState(false);
@@ -127,7 +167,8 @@ export default function BrowseRidesPage() {
     async function fetchRides() {
       try {
         setLoading(true);
-        const res = await fetch("/api/rides", { signal: controller.signal });
+        const qs = buildApiQueryString(advancedFilters);
+        const res = await fetch(`/api/rides${qs}`, { signal: controller.signal });
         if (!res.ok) throw new Error("Failed to fetch rides");
         const data = await res.json();
         if (!controller.signal.aborted) {
@@ -190,7 +231,7 @@ export default function BrowseRidesPage() {
     return () => {
       controller.abort();
     };
-  }, [currentView]);
+  }, [currentView, advancedFilters]);
 
   useEffect(() => {
     if (!selectedRide) return;
@@ -220,6 +261,16 @@ export default function BrowseRidesPage() {
     currentUserId: currentUser?.clerkUserId ?? null,
     searchQuery,
     activeFilter,
+  }).filter((ride) => {
+    if (advancedFilters.priceMin) {
+      const minCents = Math.round(Number(advancedFilters.priceMin) * 100);
+      if (Number.isFinite(minCents) && ride.priceCents < minCents) return false;
+    }
+    if (advancedFilters.priceMax) {
+      const maxCents = Math.round(Number(advancedFilters.priceMax) * 100);
+      if (Number.isFinite(maxCents) && ride.priceCents > maxCents) return false;
+    }
+    return true;
   });
   const quickFilters = ["All", "Soon", "Later", "2+ Seats", "Short Trip"] as const;
 
@@ -520,20 +571,25 @@ export default function BrowseRidesPage() {
                   {filterOpt}
                 </button>
               ))}
-              {/* TODO: Implement Advanced Filters button state (showAdvancedFilters)
-                  and integrate advancedFilters selections into filteredRides logic.
-                  - Add modal/dropdown for advanced filter options
-                  - Include filters for: price range, specific departure times, distance category combinations
-                  - Add state management for advanced filter selections
-                  - Update filteredRides logic to apply advanced filters */}
               <button
                 type="button"
-                disabled
-                aria-disabled="true"
-                className="px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap bg-zinc-100 border border-zinc-300 text-zinc-400 cursor-not-allowed transition-colors flex items-center gap-2"
+                onClick={() => {
+                  setPendingAdvancedFilters({ ...advancedFilters });
+                  setShowAdvancedFilters(true);
+                }}
+                className={`px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-colors flex items-center gap-2 ${
+                  isAdvancedFiltersActive(advancedFilters)
+                    ? "bg-emerald-800 text-white shadow-sm"
+                    : "bg-zinc-50 text-zinc-600 hover:bg-zinc-100 border border-zinc-200"
+                }`}
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg>
                 Advanced Filters
+                {isAdvancedFiltersActive(advancedFilters) && (
+                  <span className="bg-white text-emerald-800 text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center">
+                    {countActiveAdvancedFilters(advancedFilters)}
+                  </span>
+                )}
               </button>
             </div>
           </div>
@@ -559,9 +615,12 @@ export default function BrowseRidesPage() {
                 </div>
                 <h3 className="text-lg font-bold text-zinc-900 mb-1">No rides found</h3>
                 <p className="text-zinc-500 max-w-sm mx-auto">We couldn&apos;t find any rides matching your current search and filter criteria.</p>
-                {activeFilter !== "All" && (
+                {(activeFilter !== "All" || isAdvancedFiltersActive(advancedFilters)) && (
                   <button
-                    onClick={() => setActiveFilter("All")}
+                    onClick={() => {
+                      setActiveFilter("All");
+                      setAdvancedFilters({ ...EMPTY_ADVANCED_FILTERS });
+                    }}
                     className="mt-4 text-emerald-700 font-medium hover:underline"
                   >
                     Clear filters
@@ -995,6 +1054,169 @@ export default function BrowseRidesPage() {
                   </motion.div>
                 )}
               </AnimatePresence>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Advanced Filters Modal */}
+      {showAdvancedFilters && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/40 backdrop-blur-sm"
+          onClick={() => setShowAdvancedFilters(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="advancedFiltersTitle"
+            className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6 md:p-8">
+              <div className="flex items-center justify-between mb-6">
+                <h2 id="advancedFiltersTitle" className="text-xl font-bold text-zinc-900">Advanced Filters</h2>
+                <button
+                  onClick={() => setShowAdvancedFilters(false)}
+                  aria-label="Close advanced filters"
+                  className="p-2 text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 rounded-full transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="space-y-5">
+                {/* Date Range */}
+                <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-5">
+                  <div className="flex items-center gap-2 mb-4 text-emerald-800 font-bold">
+                    <ClockIcon /> Departure Date Range
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label htmlFor="af-earliest" className="block text-sm font-medium text-zinc-600 mb-1">From</label>
+                      <input
+                        id="af-earliest"
+                        type="datetime-local"
+                        value={pendingAdvancedFilters.earliestAfter}
+                        onChange={(e) => setPendingAdvancedFilters({ ...pendingAdvancedFilters, earliestAfter: e.target.value })}
+                        className="w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-2.5 text-sm text-zinc-900 shadow-sm outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="af-latest" className="block text-sm font-medium text-zinc-600 mb-1">To</label>
+                      <input
+                        id="af-latest"
+                        type="datetime-local"
+                        value={pendingAdvancedFilters.latestBefore}
+                        onChange={(e) => setPendingAdvancedFilters({ ...pendingAdvancedFilters, latestBefore: e.target.value })}
+                        className="w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-2.5 text-sm text-zinc-900 shadow-sm outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Price Range */}
+                <div>
+                  <label className="flex items-center gap-2 mb-3 text-emerald-800 font-bold">
+                    <span className="font-bold text-lg leading-none">$</span> Price Range (per seat)
+                  </label>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label htmlFor="af-price-min" className="block text-sm font-medium text-zinc-600 mb-1">Min ($)</label>
+                      <input
+                        id="af-price-min"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="0.00"
+                        value={pendingAdvancedFilters.priceMin}
+                        onChange={(e) => setPendingAdvancedFilters({ ...pendingAdvancedFilters, priceMin: e.target.value })}
+                        className="w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-2.5 text-sm text-zinc-900 shadow-sm outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="af-price-max" className="block text-sm font-medium text-zinc-600 mb-1">Max ($)</label>
+                      <input
+                        id="af-price-max"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="Any"
+                        value={pendingAdvancedFilters.priceMax}
+                        onChange={(e) => setPendingAdvancedFilters({ ...pendingAdvancedFilters, priceMax: e.target.value })}
+                        className="w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-2.5 text-sm text-zinc-900 shadow-sm outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Distance Category */}
+                <div>
+                  <label htmlFor="af-distance" className="flex items-center gap-2 mb-3 text-emerald-800 font-bold">
+                    <MapPinIcon /> Distance Category
+                  </label>
+                  <select
+                    id="af-distance"
+                    value={pendingAdvancedFilters.distanceCategory}
+                    onChange={(e) => setPendingAdvancedFilters({ ...pendingAdvancedFilters, distanceCategory: e.target.value })}
+                    className="w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-3 text-zinc-900 shadow-sm outline-none"
+                  >
+                    <option value="">Any distance</option>
+                    <option value="SHORT">Short</option>
+                    <option value="MEDIUM">Medium</option>
+                    <option value="LONG">Long</option>
+                  </select>
+                </div>
+
+                {/* Minimum Available Seats */}
+                <div>
+                  <label htmlFor="af-seats" className="flex items-center gap-2 mb-3 text-emerald-800 font-bold">
+                    <UsersIcon /> Minimum Available Seats
+                  </label>
+                  <select
+                    id="af-seats"
+                    value={pendingAdvancedFilters.seatsMin}
+                    onChange={(e) => setPendingAdvancedFilters({ ...pendingAdvancedFilters, seatsMin: e.target.value })}
+                    className="w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-3 text-zinc-900 shadow-sm outline-none"
+                  >
+                    <option value="">Any</option>
+                    <option value="1">1+</option>
+                    <option value="2">2+</option>
+                    <option value="3">3+</option>
+                    <option value="4">4+</option>
+                    <option value="5">5+</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="mt-8 pt-6 border-t border-zinc-100 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setPendingAdvancedFilters({ ...EMPTY_ADVANCED_FILTERS })}
+                  className="text-sm text-zinc-500 hover:text-zinc-700 font-medium transition-colors"
+                >
+                  Clear all
+                </button>
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvancedFilters(false)}
+                    className="px-5 py-2.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 font-medium rounded-xl transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAdvancedFilters({ ...pendingAdvancedFilters });
+                      setShowAdvancedFilters(false);
+                    }}
+                    className="px-8 py-2.5 bg-emerald-800 hover:bg-emerald-900 text-white font-medium rounded-xl shadow-sm transition-colors"
+                  >
+                    Apply Filters
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
