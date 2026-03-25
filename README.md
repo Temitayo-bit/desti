@@ -27,6 +27,7 @@ Desti is a campus ride-sharing web application built exclusively for verified St
 - **Race-condition-safe offer handling** — cancel and accept operations use in-transaction guards to prevent concurrent state corruption
 - **In-app conversations and messaging** — conversations anchored to bookings or offers with real-time message threads
 - **Dashboard** — aggregated view of active rides, confirmed bookings, pending offers sent and received, with attention cards and quick actions
+- **Profile picture uploads** — photos stored on Cloudflare R2 via a dedicated Cloudflare Worker, with API-key-protected writes and public reads
 - **AI help assistant** — optional in-app chat widget powered by Google Gemini for user guidance
 
 ## Libraries, Packages, and Frameworks
@@ -78,12 +79,30 @@ Desti is a campus ride-sharing web application built exclusively for verified St
 | @types/react | `^19` | React type definitions |
 | @types/react-dom | `^19` | React DOM type definitions |
 
+### Profile Picture Storage (Cloudflare Worker)
+
+The `worker/` directory contains a standalone Cloudflare Worker that serves as the image storage layer for user profile pictures.
+
+| Package | Version | Purpose |
+|---|---|---|
+| [Wrangler](https://developers.cloudflare.com/workers/wrangler/) | `^4.14.0` | Cloudflare Workers CLI for local dev and deployment |
+| [@cloudflare/workers-types](https://github.com/cloudflare/workerd) | `^4.20250109.0` | TypeScript type definitions for Workers and R2 |
+
+The worker exposes three operations on an R2 bucket (`desti-profile-pictures`):
+
+| Method | Auth Required | Description |
+|---|---|---|
+| `GET /:key` | No | Public read with caching and ETag support |
+| `PUT /:key` | Yes (`X-Upload-Api-Key`) | Upload an image (jpeg/png/webp, max 5 MB) |
+| `DELETE /:key` | Yes (`X-Upload-Api-Key`) | Remove an image |
+
 ### External Runtime Services
 
 | Service | Required | Purpose |
 |---|---|---|
 | [Clerk](https://clerk.com/) | Yes | Authentication, session management, email verification |
 | [PostgreSQL](https://www.postgresql.org/) | Yes | Persistent data storage for all application data |
+| [Cloudflare Workers + R2](https://developers.cloudflare.com/r2/) | Yes | Profile picture storage and serving |
 | [Google Gemini](https://ai.google.dev/) | No | AI-powered in-app help assistant (gracefully degrades if unavailable) |
 
 ## Steps to Install or Recreate the Project on Another Machine
@@ -128,6 +147,10 @@ CLERK_SECRET_KEY=sk_test_YOUR_KEY
 NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
 NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
 
+# Cloudflare Worker for profile picture uploads
+WORKER_UPLOAD_URL=https://desti-profile-pictures.YOUR-ACCOUNT.workers.dev
+WORKER_UPLOAD_API_KEY=your_shared_api_key_here
+
 # Optional — only needed for the AI chat assistant
 GEMINI_API_KEY=YOUR_GEMINI_API_KEY
 ```
@@ -141,6 +164,8 @@ docker compose up --build
 5. **Open the app** at [http://localhost:3000](http://localhost:3000).
 
 On startup, the `web` container automatically runs all Prisma migrations and starts the Next.js development server.
+
+> **Picking up new environment variables:** If you add or change values in `.env` after the containers are already running, restart with `docker compose down && docker compose up --build` — env vars are read at container startup.
 
 #### What Docker Runs
 
@@ -218,6 +243,10 @@ CLERK_SECRET_KEY=sk_test_YOUR_KEY
 NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
 NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
 
+# Cloudflare Worker for profile picture uploads
+WORKER_UPLOAD_URL=https://desti-profile-pictures.YOUR-ACCOUNT.workers.dev
+WORKER_UPLOAD_API_KEY=your_shared_api_key_here
+
 # Optional — only needed for the AI chat assistant
 GEMINI_API_KEY=YOUR_GEMINI_API_KEY
 ```
@@ -248,6 +277,75 @@ npm run dev
 
 8. **Open the app** at [http://localhost:3000](http://localhost:3000).
 
+---
+
+### Cloudflare Worker Setup (Profile Pictures)
+
+The profile picture storage worker is deployed separately to Cloudflare. This is required for profile picture uploads to work.
+
+#### Prerequisites
+
+- A [Cloudflare](https://dash.cloudflare.com/) account
+- [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/install-and-update/) (`npm install -g wrangler`)
+- An R2 bucket named `desti-profile-pictures` created in your Cloudflare dashboard
+
+#### Steps
+
+1. **Navigate to the worker directory:**
+
+```bash
+cd worker
+```
+
+2. **Install dependencies:**
+
+```bash
+npm install
+```
+
+3. **Authenticate with Cloudflare:**
+
+```bash
+wrangler login
+```
+
+4. **Create the R2 bucket** (if not already created):
+
+```bash
+wrangler r2 bucket create desti-profile-pictures
+```
+
+5. **Set the upload API key secret:**
+
+```bash
+wrangler secret put UPLOAD_API_KEY
+```
+
+When prompted, enter the same value you used for `WORKER_UPLOAD_API_KEY` in the main app's `.env`.
+
+6. **Deploy the worker:**
+
+```bash
+npm run deploy
+```
+
+7. **Update your `.env`** in the project root with the deployed worker URL:
+
+```env
+WORKER_UPLOAD_URL=https://desti-profile-pictures.YOUR-ACCOUNT.workers.dev
+```
+
+#### Local Worker Development
+
+To run the worker locally for development:
+
+```bash
+cd worker
+npm run dev
+```
+
+This starts the worker on `http://localhost:8787`. Set `WORKER_UPLOAD_URL=http://localhost:8787` in your `.env` if testing locally.
+
 ## Available Scripts
 
 | Command | Description |
@@ -267,5 +365,7 @@ npm run dev
 | `CLERK_SECRET_KEY` | Yes | Clerk secret key (from Clerk dashboard) |
 | `NEXT_PUBLIC_CLERK_SIGN_IN_URL` | Yes | Sign-in route path (`/sign-in`) |
 | `NEXT_PUBLIC_CLERK_SIGN_UP_URL` | Yes | Sign-up route path (`/sign-up`) |
+| `WORKER_UPLOAD_URL` | Yes | Cloudflare Worker URL for profile picture uploads |
+| `WORKER_UPLOAD_API_KEY` | Yes | Shared secret for authenticating upload/delete requests to the worker |
 | `GEMINI_API_KEY` | No | Google Gemini API key for the AI assistant |
 | `GEMINI_MODEL` | No | Override the default Gemini model (`gemini-2.5-flash`) |
