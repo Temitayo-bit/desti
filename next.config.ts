@@ -6,7 +6,7 @@ const nextConfig: NextConfig = {
     remotePatterns: [
       {
         protocol: "https",
-        hostname: "*.workers.dev",
+        hostname: "desti-profile-pictures.desti.workers.dev",
       },
     ],
   },

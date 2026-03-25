@@ -254,6 +254,8 @@ export function OnboardingClientPage({
 
             const data = (await response.json()) as { profilePictureUrl: string };
             setProfilePictureUrl(data.profilePictureUrl);
+            setProfilePicturePreview(data.profilePictureUrl);
+            URL.revokeObjectURL(previewUrl);
         } catch {
             setUploadError("Network error while uploading photo.");
             setProfilePicturePreview(null);

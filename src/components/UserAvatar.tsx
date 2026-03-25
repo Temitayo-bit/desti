@@ -26,11 +26,12 @@ function getInitial(name: string | null | undefined): string {
 
 export function UserAvatar({ src, name, size = "md", className = "" }: UserAvatarProps) {
     const { container, text, px } = sizeMap[size];
+    const normalizedSrc = src?.trim() || null;
 
-    if (src) {
+    if (normalizedSrc) {
         return (
             <Image
-                src={src}
+                src={normalizedSrc}
                 alt={name?.trim() || "User avatar"}
                 width={px}
                 height={px}
