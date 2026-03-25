@@ -157,32 +157,10 @@ export default function BrowseRidesPage() {
   const closeRideDialogButtonRef = useRef<HTMLButtonElement | null>(null);
   const lastFocusedElementRef = useRef<HTMLElement | null>(null);
 
+  // Fetch user and bookings once when the browse view mounts
   useEffect(() => {
-    if (currentView !== "browse") {
-      return;
-    }
-
+    if (currentView !== "browse") return;
     const controller = new AbortController();
-
-    async function fetchRides() {
-      try {
-        setLoading(true);
-        const qs = buildApiQueryString(advancedFilters);
-        const res = await fetch(`/api/rides${qs}`, { signal: controller.signal });
-        if (!res.ok) throw new Error("Failed to fetch rides");
-        const data = await res.json();
-        if (!controller.signal.aborted) {
-          setRides(excludeCancelledRides(data.items));
-        }
-      } catch (err) {
-        if (err instanceof Error && err.name === "AbortError") return;
-        console.error("Error fetching rides:", err);
-      } finally {
-        if (!controller.signal.aborted) {
-          setLoading(false);
-        }
-      }
-    }
 
     async function fetchUser() {
       try {
@@ -224,13 +202,40 @@ export default function BrowseRidesPage() {
       }
     }
 
-    fetchRides();
     fetchUser();
     fetchUserBookings();
 
-    return () => {
-      controller.abort();
-    };
+    return () => { controller.abort(); };
+  }, [currentView]);
+
+  // Fetch rides whenever filters change
+  useEffect(() => {
+    if (currentView !== "browse") return;
+    const controller = new AbortController();
+
+    async function fetchRides() {
+      try {
+        setLoading(true);
+        const qs = buildApiQueryString(advancedFilters);
+        const res = await fetch(`/api/rides${qs}`, { signal: controller.signal });
+        if (!res.ok) throw new Error("Failed to fetch rides");
+        const data = await res.json();
+        if (!controller.signal.aborted) {
+          setRides(excludeCancelledRides(data.items));
+        }
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") return;
+        console.error("Error fetching rides:", err);
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    fetchRides();
+
+    return () => { controller.abort(); };
   }, [currentView, advancedFilters]);
 
   useEffect(() => {
@@ -392,8 +397,8 @@ export default function BrowseRidesPage() {
           delete next[rideId];
           return next;
         });
-        // We might want to refresh rides since seatsAvailable increased
-        const refreshRes = await fetch("/api/rides");
+        const qs = buildApiQueryString(advancedFilters);
+        const refreshRes = await fetch(`/api/rides${qs}`);
         if (refreshRes.ok) {
           const data = await refreshRes.json();
           const activeRides = excludeCancelledRides(data.items);
@@ -598,9 +603,22 @@ export default function BrowseRidesPage() {
         {/* Content Layout */}
         <div className="w-full max-w-5xl mx-auto">
           <div className="w-full min-w-0 bg-white rounded-2xl p-4 md:p-6 lg:p-8 shadow-sm border border-zinc-100">
-            <p className="text-sm font-medium text-zinc-500 mb-4 md:mb-6 text-center">
-              {filteredRides.length} {filteredRides.length === 1 ? 'ride' : 'rides'} available
-            </p>
+            <div className="text-sm font-medium text-zinc-500 mb-4 md:mb-6 text-center">
+              <p>{filteredRides.length} {filteredRides.length === 1 ? 'ride' : 'rides'} available</p>
+              {isAdvancedFiltersActive(advancedFilters) && (
+                <p className="mt-1 flex items-center justify-center gap-2 text-xs text-emerald-700">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  Advanced filters active
+                  <button
+                    type="button"
+                    onClick={() => setAdvancedFilters({ ...EMPTY_ADVANCED_FILTERS })}
+                    className="underline hover:text-emerald-900"
+                  >
+                    Clear
+                  </button>
+                </p>
+              )}
+            </div>
 
             {loading ? (
               <div className="flex flex-col gap-4">
