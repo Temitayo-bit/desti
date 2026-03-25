@@ -52,6 +52,7 @@ export async function GET(request?: NextRequest) {
             yearAtStetson: localUser.yearAtStetson,
             gender: localUser.gender,
             age: localUser.age,
+            profilePictureUrl: localUser.profilePictureUrl,
             onboardingComplete: localUser.onboardingComplete,
             createdAt: localUser.createdAt,
             updatedAt: localUser.updatedAt,

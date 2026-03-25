@@ -2,6 +2,14 @@ import type { NextConfig } from "next";
 import path from "path";
 
 const nextConfig: NextConfig = {
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "desti-profile-pictures.desti.workers.dev",
+      },
+    ],
+  },
   outputFileTracingIncludes: {
     "/*": [
       "./node_modules/.prisma/client/**/*",

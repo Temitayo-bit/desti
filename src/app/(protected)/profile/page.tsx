@@ -5,6 +5,8 @@ import type { Gender, YearAtStetson } from "@prisma/client";
 import { redirect } from "next/navigation";
 import { ProtectedShell } from "../_components/ProtectedShell";
 import { prisma } from "@/lib/prisma";
+import { UserAvatar } from "@/components/UserAvatar";
+import { ProfilePictureUpload } from "./ProfilePictureUpload";
 
 function formatYearLabel(yearAtStetson: YearAtStetson | null): string {
     if (yearAtStetson === "FRESHMAN") return "Freshman";
@@ -28,11 +30,6 @@ function formatAgeLabel(age: number | null): string {
     }
 
     return `${age} years old`;
-}
-
-function getDisplayInitial(name: string | null, email: string): string {
-    const source = name?.trim() || email.trim();
-    return source.charAt(0).toUpperCase() || "D";
 }
 
 function AccountRow({
@@ -112,6 +109,7 @@ export default async function ProfilePage() {
             gender: true,
             age: true,
             onboardingComplete: true,
+            profilePictureUrl: true,
         },
     });
 
@@ -126,7 +124,6 @@ export default async function ProfilePage() {
             ? `${yearLabel} at Stetson`
             : "Stetson student";
     const profileEmail = localUser.email;
-    const initial = getDisplayInitial(localUser.name, profileEmail);
 
     return (
         <ProtectedShell activeNav="profile">
@@ -161,9 +158,16 @@ export default async function ProfilePage() {
 
             <section className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
                 <article className="h-fit self-start rounded-2xl border border-zinc-200 bg-white p-6 text-center shadow-sm">
-                    <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-emerald-800 text-3xl font-bold text-white shadow-[0_12px_28px_rgba(6,95,70,0.22)]">
-                        {initial}
+                    <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full shadow-[0_12px_28px_rgba(6,95,70,0.22)]">
+                        <UserAvatar
+                            src={localUser.profilePictureUrl}
+                            name={localUser.name}
+                            size="xl"
+                        />
                     </div>
+                    <ProfilePictureUpload
+                        currentUrl={localUser.profilePictureUrl}
+                    />
                     <h2 className="mt-6 text-2xl font-bold tracking-tight text-zinc-900">
                         {displayName}
                     </h2>

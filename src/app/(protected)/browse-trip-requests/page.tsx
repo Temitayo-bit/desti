@@ -20,6 +20,7 @@ import {
   type TripRequestSummary,
 } from "@/lib/browse-trip-requests";
 import { normalizeTripRequestsView } from "@/lib/trip-request-view";
+import { UserAvatar } from "@/components/UserAvatar";
 
 interface CurrentUserSummary {
   clerkUserId: string;
@@ -624,6 +625,12 @@ export default function BrowseTripRequestsPage() {
                         </p>
                       </div>
                     </div>
+                    {tripRequest.rider && (
+                      <div className="flex items-center gap-2 mt-3">
+                        <UserAvatar src={tripRequest.rider.profilePictureUrl} name={tripRequest.rider.name} size="sm" />
+                        <span className="text-sm font-medium text-zinc-700">{tripRequest.rider.name ?? "Rider"}</span>
+                      </div>
+                    )}
                   </div>
 
                   <div className="mt-5 flex items-end justify-between">
@@ -723,10 +730,19 @@ export default function BrowseTripRequestsPage() {
                   >
                     <h2
                       id="tripRequestDetailsTitle"
-                      className="text-2xl font-bold mb-8 pr-12 text-zinc-900"
+                      className="text-2xl font-bold mb-4 pr-12 text-zinc-900"
                     >
                       Trip Request Details
                     </h2>
+                    {selectedTripRequest.rider && (
+                      <div className="flex items-center gap-3 mb-6 p-3 bg-zinc-50 border border-zinc-200 rounded-xl">
+                        <UserAvatar src={selectedTripRequest.rider.profilePictureUrl} name={selectedTripRequest.rider.name} size="md" />
+                        <div>
+                          <p className="text-sm font-semibold text-zinc-900">{selectedTripRequest.rider.name ?? "Rider"}</p>
+                          <p className="text-xs text-zinc-500">Rider</p>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="space-y-6">
                       <div className="space-y-4">

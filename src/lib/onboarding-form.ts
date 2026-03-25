@@ -29,7 +29,7 @@ export interface OnboardingPayload {
     gender: OnboardingGenderValue;
 }
 
-export type OnboardingFieldKey = "name" | "age" | "yearAtStetson" | "gender";
+export type OnboardingFieldKey = "name" | "age" | "yearAtStetson" | "gender" | "profilePicture";
 export type OnboardingFieldErrors = Partial<Record<OnboardingFieldKey, string>>;
 
 export interface BuildOnboardingPayloadResult {

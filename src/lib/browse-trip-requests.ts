@@ -29,6 +29,10 @@ export interface TripRequestSummary {
   status: "ACTIVE";
   createdAt: string;
   updatedAt: string;
+  rider?: {
+    name: string | null;
+    profilePictureUrl: string | null;
+  };
 }
 
 export interface PendingOfferSummary {

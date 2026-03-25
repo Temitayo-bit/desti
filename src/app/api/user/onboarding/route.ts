@@ -167,6 +167,7 @@ export async function POST(request: NextRequest) {
             },
             select: {
                 onboardingComplete: true,
+                profilePictureUrl: true,
             },
         });
 
@@ -178,6 +179,22 @@ export async function POST(request: NextRequest) {
                     message: "Onboarding has already been completed.",
                 },
                 { status: 409 }
+            );
+        }
+
+        if (!bootstrappedUser.profilePictureUrl) {
+            return NextResponse.json(
+                {
+                    error: "Bad Request",
+                    message: "A profile picture is required to complete onboarding.",
+                    fieldErrors: [
+                        {
+                            field: "profilePicture",
+                            message: "Please upload a profile picture.",
+                        },
+                    ],
+                },
+                { status: 400 }
             );
         }
 
