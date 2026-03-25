@@ -25,6 +25,7 @@ import {
     resolveSelectedConversationId,
     type ConversationMessageItem,
 } from "@/lib/messages";
+import { useAdaptivePolling } from "@/lib/use-adaptive-polling";
 
 interface ConversationListItem {
     id: string;
@@ -162,7 +163,6 @@ export default function MessagesPage() {
 
     const messagesRef = useRef<ConversationMessageItem[]>([]);
     const threadRequestIdRef = useRef(0);
-    const pollingInFlightRef = useRef(false);
     const selectedConversationIdRef = useRef<string | null>(null);
 
     useEffect(() => {
@@ -272,14 +272,47 @@ export default function MessagesPage() {
 
     useEffect(() => {
         void refreshConversations(false);
-        const intervalId = window.setInterval(() => {
-            void refreshConversations(true);
-        }, 20000);
-
-        return () => {
-            window.clearInterval(intervalId);
-        };
     }, [refreshConversations]);
+
+    const conversationListFetcher = useCallback(async () => {
+        const response = await fetch("/api/conversations");
+        if (!response.ok) throw new Error("poll failed");
+        return (await response.json()) as ConversationsResponse;
+    }, []);
+
+    const conversationListFingerprint = useCallback(
+        (data: ConversationsResponse): string => {
+            const items = data.items ?? [];
+            const last = items[0];
+            return `${items.length}:${last?.id ?? ""}:${last?.updatedAt ?? ""}`;
+        },
+        []
+    );
+
+    const onNewConversationListData = useCallback(
+        (data: ConversationsResponse) => {
+            const sorted = sortConversationsByUpdatedAt(data.items ?? []);
+            setConversations(sorted);
+            setConversationsError(null);
+            setSelectedConversationId((previous) =>
+                resolveSelectedConversationId({
+                    conversations: sorted,
+                    previousSelectedConversationId: previous,
+                    requestedConversationId,
+                })
+            );
+        },
+        [requestedConversationId]
+    );
+
+    useAdaptivePolling({
+        fetcher: conversationListFetcher,
+        fingerprint: conversationListFingerprint,
+        onNewData: onNewConversationListData,
+        enabled: true,
+        baseIntervalMs: 20_000,
+        maxIntervalMs: 120_000,
+    });
 
     useEffect(() => {
         if (!requestedConversationId) return;
@@ -373,58 +406,68 @@ export default function MessagesPage() {
         })();
     }, [loadFullConversationHistory, selectedConversationId, threadReloadToken]);
 
-    useEffect(() => {
-        if (!selectedConversationId) return;
+    const threadFetcher = useCallback(async () => {
+        const conversationId = selectedConversationIdRef.current;
+        if (!conversationId) throw new Error("no thread");
 
-        const pollForNewMessages = async () => {
-            if (pollingInFlightRef.current || loadingThread) return;
-            pollingInFlightRef.current = true;
-            const pollConversationId = selectedConversationId;
-            const pollRequestId = threadRequestIdRef.current;
+        const lastMessage = messagesRef.current.at(-1);
+        const search = new URLSearchParams({ limit: "50" });
+        if (lastMessage) {
+            search.set("cursor", encodeMessageCursorFromItem(lastMessage));
+        }
 
-            try {
-                const lastMessage = messagesRef.current.at(-1);
-                const search = new URLSearchParams({ limit: "50" });
-                if (lastMessage) {
-                    search.set("cursor", encodeMessageCursorFromItem(lastMessage));
-                }
+        const response = await fetch(
+            `/api/conversations/${conversationId}/messages?${search.toString()}`
+        );
+        if (!response.ok) throw new Error("poll failed");
 
-                const response = await fetch(
-                    `/api/conversations/${selectedConversationId}/messages?${search.toString()}`
-                );
-                if (!response.ok) {
-                    return;
-                }
+        const payload = (await response.json()) as ConversationMessagesResponse;
+        return {
+            conversationId,
+            requestId: threadRequestIdRef.current,
+            items: payload.items ?? [],
+        };
+    }, []);
 
-                const payload =
-                    (await response.json()) as ConversationMessagesResponse;
-                const incoming = payload.items ?? [];
-                if (incoming.length === 0) return;
-                if (
-                    threadRequestIdRef.current !== pollRequestId ||
-                    selectedConversationIdRef.current !== pollConversationId
-                ) {
-                    return;
-                }
+    const threadFingerprint = useCallback(
+        (data: { items: ConversationMessageItem[] }): string => {
+            const last = data.items.at(-1);
+            return `${data.items.length}:${last?.id ?? ""}:${last?.createdAt ?? ""}`;
+        },
+        []
+    );
 
-                setMessages((previous) => appendUniqueMessages(previous, incoming));
-                updateConversationPreview(
-                    pollConversationId,
-                    incoming[incoming.length - 1]
-                );
-            } finally {
-                pollingInFlightRef.current = false;
+    const onNewThreadData = useCallback(
+        (data: {
+            conversationId: string;
+            requestId: number;
+            items: ConversationMessageItem[];
+        }) => {
+            if (data.items.length === 0) return;
+            if (
+                threadRequestIdRef.current !== data.requestId ||
+                selectedConversationIdRef.current !== data.conversationId
+            ) {
+                return;
             }
-        };
 
-        const intervalId = window.setInterval(() => {
-            void pollForNewMessages();
-        }, 5000);
+            setMessages((previous) => appendUniqueMessages(previous, data.items));
+            updateConversationPreview(
+                data.conversationId,
+                data.items[data.items.length - 1]
+            );
+        },
+        [updateConversationPreview]
+    );
 
-        return () => {
-            window.clearInterval(intervalId);
-        };
-    }, [loadingThread, selectedConversationId, updateConversationPreview]);
+    useAdaptivePolling({
+        fetcher: threadFetcher,
+        fingerprint: threadFingerprint,
+        onNewData: onNewThreadData,
+        enabled: !!selectedConversationId && !loadingThread,
+        baseIntervalMs: 5_000,
+        maxIntervalMs: 60_000,
+    });
 
     const onSelectConversation = (conversationId: string) => {
         setSelectedConversationId(conversationId);
