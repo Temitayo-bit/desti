@@ -93,10 +93,20 @@ export async function POST(request: NextRequest) {
         });
 
         if (!workerResponse.ok) {
-            const text = await workerResponse.text().catch(() => "");
+            const workerBody = await workerResponse
+                .json()
+                .catch(() => null) as { error?: string } | null;
+
+            if (workerResponse.status === 400 && workerBody?.error) {
+                return NextResponse.json(
+                    { error: "Bad Request", message: workerBody.error },
+                    { status: 400 }
+                );
+            }
+
             console.error(
                 `[POST /api/user/profile-picture] Worker upload failed (${workerResponse.status}):`,
-                text
+                workerBody
             );
             return NextResponse.json(
                 { error: "Internal Server Error", message: "Failed to upload profile picture." },
