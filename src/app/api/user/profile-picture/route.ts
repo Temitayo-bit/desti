@@ -12,13 +12,64 @@ const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
 
 const WORKER_UPLOAD_URL = process.env.WORKER_UPLOAD_URL ?? "";
 const WORKER_UPLOAD_API_KEY = process.env.WORKER_UPLOAD_API_KEY ?? "";
+const WORKER_UPLOAD_BASE_URL = WORKER_UPLOAD_URL.replace(/\/+$/, "");
 
-function buildObjectKey(clerkUserId: string): string {
+const MIME_TYPE_TO_EXTENSION: Record<string, string> = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+};
+
+function buildLegacyObjectKey(clerkUserId: string): string {
     return `profile-pictures/${clerkUserId}`;
 }
 
+function buildVersionedObjectKey(clerkUserId: string, mimeType: string): string {
+    const extension = MIME_TYPE_TO_EXTENSION[mimeType] ?? "bin";
+    const versionSegment = `${Date.now()}-${crypto.randomUUID()}`;
+    return `profile-pictures/${clerkUserId}/${versionSegment}.${extension}`;
+}
+
 function buildPublicUrl(key: string): string {
-    return `${WORKER_UPLOAD_URL}/${key}`;
+    return `${WORKER_UPLOAD_BASE_URL}/${key}`;
+}
+
+function extractObjectKeyFromWorkerUrl(url: string): string | null {
+    if (!WORKER_UPLOAD_BASE_URL) {
+        return null;
+    }
+
+    try {
+        const workerBaseUrl = new URL(`${WORKER_UPLOAD_BASE_URL}/`);
+        const storedUrl = new URL(url);
+
+        if (storedUrl.origin !== workerBaseUrl.origin) {
+            return null;
+        }
+
+        const workerPathPrefix = workerBaseUrl.pathname;
+        if (!storedUrl.pathname.startsWith(workerPathPrefix)) {
+            return null;
+        }
+
+        const key = storedUrl.pathname.slice(workerPathPrefix.length);
+        return key.length > 0 ? key : null;
+    } catch {
+        return null;
+    }
+}
+
+async function deleteWorkerObject(objectKey: string): Promise<void> {
+    const workerResponse = await fetch(`${WORKER_UPLOAD_BASE_URL}/${objectKey}`, {
+        method: "DELETE",
+        headers: {
+            "X-Upload-Api-Key": WORKER_UPLOAD_API_KEY,
+        },
+    });
+
+    if (!workerResponse.ok && workerResponse.status !== 404) {
+        throw new Error(`Worker delete failed with status ${workerResponse.status}.`);
+    }
 }
 
 /**
@@ -79,10 +130,15 @@ export async function POST(request: NextRequest) {
         }
 
         const { clerkUserId } = auth.user;
-        const objectKey = buildObjectKey(clerkUserId);
+        const existingUser = await prisma.user.findUnique({
+            where: { clerkUserId },
+            select: { profilePictureUrl: true },
+        });
+
+        const objectKey = buildVersionedObjectKey(clerkUserId, file.type);
         const fileBuffer = await file.arrayBuffer();
 
-        const workerResponse = await fetch(`${WORKER_UPLOAD_URL}/${objectKey}`, {
+        const workerResponse = await fetch(`${WORKER_UPLOAD_BASE_URL}/${objectKey}`, {
             method: "PUT",
             headers: {
                 "Content-Type": file.type,
@@ -126,6 +182,21 @@ export async function POST(request: NextRequest) {
             },
         });
 
+        const previousObjectKey = existingUser?.profilePictureUrl
+            ? extractObjectKeyFromWorkerUrl(existingUser.profilePictureUrl)
+            : null;
+
+        if (previousObjectKey) {
+            try {
+                await deleteWorkerObject(previousObjectKey);
+            } catch (error) {
+                console.error(
+                    `[POST /api/user/profile-picture] Failed to delete previous profile picture (${previousObjectKey}):`,
+                    error
+                );
+            }
+        }
+
         return NextResponse.json({ profilePictureUrl: publicUrl });
     } catch (error) {
         console.error("[POST /api/user/profile-picture] Unexpected error:", error);
@@ -157,19 +228,25 @@ export async function DELETE(request: NextRequest) {
         }
 
         const { clerkUserId } = auth.user;
-        const objectKey = buildObjectKey(clerkUserId);
-
-        const workerResponse = await fetch(`${WORKER_UPLOAD_URL}/${objectKey}`, {
-            method: "DELETE",
-            headers: {
-                "X-Upload-Api-Key": WORKER_UPLOAD_API_KEY,
-            },
+        const existingUser = await prisma.user.findUnique({
+            where: { clerkUserId },
+            select: { profilePictureUrl: true },
         });
 
-        if (!workerResponse.ok && workerResponse.status !== 404) {
-            console.error(
-                `[DELETE /api/user/profile-picture] Worker delete failed (${workerResponse.status})`
-            );
+        const objectKey =
+            existingUser?.profilePictureUrl == null
+                ? buildLegacyObjectKey(clerkUserId)
+                : extractObjectKeyFromWorkerUrl(existingUser.profilePictureUrl);
+
+        if (objectKey) {
+            try {
+                await deleteWorkerObject(objectKey);
+            } catch (error) {
+                console.error(
+                    `[DELETE /api/user/profile-picture] Worker delete failed (${objectKey}):`,
+                    error
+                );
+            }
         }
 
         await prisma.user.updateMany({
