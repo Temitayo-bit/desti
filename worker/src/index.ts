@@ -1,7 +1,16 @@
 interface Env {
   BUCKET: R2Bucket;
   UPLOAD_API_KEY: string;
+  AI: Ai;
 }
+
+interface DetectionResult {
+  score: number;
+  label: string;
+  box: { xmin: number; ymin: number; xmax: number; ymax: number };
+}
+
+const PERSON_CONFIDENCE_THRESHOLD = 0.3;
 
 const ALLOWED_CONTENT_TYPES = new Set([
   "image/jpeg",
@@ -42,6 +51,24 @@ function isAuthorized(request: Request, env: Env): boolean {
 function getObjectKey(url: URL): string | null {
   const key = url.pathname.slice(1);
   return key.length > 0 ? key : null;
+}
+
+async function validateHumanImage(
+  env: Env,
+  imageBytes: ArrayBuffer
+): Promise<boolean> {
+  try {
+    const results = (await env.AI.run("@cf/facebook/detr-resnet-50", {
+      image: [...new Uint8Array(imageBytes)],
+    })) as DetectionResult[];
+
+    return results.some(
+      (d) => d.label === "person" && d.score >= PERSON_CONFIDENCE_THRESHOLD
+    );
+  } catch (err) {
+    console.error("Workers AI detection failed:", err);
+    return true;
+  }
 }
 
 async function handleGet(
@@ -108,6 +135,17 @@ async function handlePut(
     return jsonResponse(
       { error: "File too large. Maximum size is 5 MB." },
       413,
+      origin
+    );
+  }
+
+  const humanDetected = await validateHumanImage(env, body);
+  if (!humanDetected) {
+    return jsonResponse(
+      {
+        error: "No human detected in the uploaded image. Please upload a clear photo of yourself.",
+      },
+      400,
       origin
     );
   }

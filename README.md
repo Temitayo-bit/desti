@@ -28,6 +28,7 @@ Desti is a campus ride-sharing web application built exclusively for verified St
 - **In-app conversations and messaging** — conversations anchored to bookings or offers with real-time message threads
 - **Dashboard** — aggregated view of active rides, confirmed bookings, pending offers sent and received, with attention cards and quick actions
 - **Profile picture uploads** — photos stored on Cloudflare R2 via a dedicated Cloudflare Worker, with API-key-protected writes and public reads
+- **AI-powered profile picture verification** — every uploaded profile picture is run through Cloudflare Workers AI object detection (`@cf/facebook/detr-resnet-50`) to verify it contains a human before storing; non-human images are rejected with a user-friendly error
 - **AI help assistant** — optional in-app chat widget powered by Google Gemini for user guidance
 
 ## Libraries, Packages, and Frameworks
@@ -79,21 +80,30 @@ Desti is a campus ride-sharing web application built exclusively for verified St
 | @types/react | `^19` | React type definitions |
 | @types/react-dom | `^19` | React DOM type definitions |
 
-### Profile Picture Storage (Cloudflare Worker)
+### Profile Picture Storage and Verification (Cloudflare Worker)
 
-The `worker/` directory contains a standalone Cloudflare Worker that serves as the image storage layer for user profile pictures.
+The `worker/` directory contains a standalone Cloudflare Worker that serves as the image storage and verification layer for user profile pictures.
 
 | Package | Version | Purpose |
 |---|---|---|
 | [Wrangler](https://developers.cloudflare.com/workers/wrangler/) | `^4.14.0` | Cloudflare Workers CLI for local dev and deployment |
-| [@cloudflare/workers-types](https://github.com/cloudflare/workerd) | `^4.20241230.0` | TypeScript type definitions for Workers and R2 |
+| [@cloudflare/workers-types](https://github.com/cloudflare/workerd) | `^4.20241230.0` | TypeScript type definitions for Workers, R2, and Workers AI |
 
-The worker exposes three operations on an R2 bucket (`desti-profile-pictures`):
+The worker uses two Cloudflare bindings:
+
+| Binding | Resource | Purpose |
+|---|---|---|
+| `env.BUCKET` | R2 bucket (`desti-profile-pictures`) | Image storage |
+| `env.AI` | [Workers AI](https://developers.cloudflare.com/workers-ai/) | Human detection via `@cf/facebook/detr-resnet-50` object detection |
+
+On every `PUT` request, the worker runs the uploaded image through the DETR object detection model before storing it. If no "person" is detected with a confidence score of at least 0.3, the upload is rejected with a 400 error. If the Workers AI service is unavailable, the upload is allowed through (fail-open).
+
+The worker exposes three operations:
 
 | Method | Auth Required | Description |
 |---|---|---|
 | `GET /:key` | No | Public read with caching and ETag support |
-| `PUT /:key` | Yes (`X-Upload-Api-Key`) | Upload an image (jpeg/png/webp, max 5 MB) |
+| `PUT /:key` | Yes (`X-Upload-Api-Key`) | Upload an image (jpeg/png/webp, max 5 MB) — verified for human presence via Workers AI |
 | `DELETE /:key` | Yes (`X-Upload-Api-Key`) | Remove an image |
 
 ### External Runtime Services
@@ -103,6 +113,7 @@ The worker exposes three operations on an R2 bucket (`desti-profile-pictures`):
 | [Clerk](https://clerk.com/) | Yes | Authentication, session management, email verification |
 | [PostgreSQL](https://www.postgresql.org/) | Yes | Persistent data storage for all application data |
 | [Cloudflare Workers + R2](https://developers.cloudflare.com/r2/) | Yes | Profile picture storage and serving |
+| [Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai/) | Yes | Human detection on profile picture uploads (free tier: ~14,700 validations/day) |
 | [Google Gemini](https://ai.google.dev/) | No | AI-powered in-app help assistant (gracefully degrades if unavailable) |
 
 ## Steps to Install or Recreate the Project on Another Machine
