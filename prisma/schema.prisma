@@ -77,6 +77,14 @@ enum TripRequestStatus {
   CLOSED
 }
 
+/// Lifecycle state of a persisted trip-request-to-ride match.
+enum MatchState {
+  SUGGESTED
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
 /// Current status of a booking.
 enum BookingStatus {
   CONFIRMED
@@ -112,6 +120,7 @@ model TripRequest {
   idempotencyKeys IdempotencyKey[]
   offers          Offer[]
   bookings        Booking[]
+  matches         Match[]
 
   @@index([earliestDesiredAt, id])
   @@map("trip_requests")
@@ -174,9 +183,36 @@ model Ride {
   driver          User             @relation("DriverRides", fields: [driverUserId], references: [clerkUserId])
   bookings        Booking[]
   idempotencyKeys IdempotencyKey[]
+  matches         Match[]
 
   @@index([earliestDepartAt, id])
   @@map("rides")
+}
+
+/// Persisted lifecycle record for a trip-request-to-ride match suggestion.
+model Match {
+  id                          String     @id @default(uuid())
+  tripRequestId               String     @map("trip_request_id")
+  rideId                      String     @map("ride_id")
+  state                       MatchState @default(SUGGESTED)
+  scoreSnapshot               Float      @map("score_snapshot") @db.DoublePrecision
+  originDistanceSnapshot      Float      @map("origin_distance_snapshot") @db.DoublePrecision
+  destinationDistanceSnapshot Float      @map("destination_distance_snapshot") @db.DoublePrecision
+  timeDifferenceSnapshot      Float      @map("time_difference_snapshot") @db.DoublePrecision
+  acceptedAt                  DateTime?  @map("accepted_at")
+  rejectedAt                  DateTime?  @map("rejected_at")
+  expiredAt                   DateTime?  @map("expired_at")
+  expirationReason            String?    @map("expiration_reason")
+  createdAt                   DateTime   @default(now()) @map("created_at")
+  updatedAt                   DateTime   @updatedAt @map("updated_at")
+
+  tripRequest TripRequest @relation(fields: [tripRequestId], references: [id])
+  ride        Ride        @relation(fields: [rideId], references: [id])
+
+  @@unique([tripRequestId, rideId])
+  @@index([tripRequestId, state, createdAt, id])
+  @@index([rideId])
+  @@map("matches")
 }
 
 /// A booking made by a rider for a ride.

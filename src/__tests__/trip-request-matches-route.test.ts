@@ -1,16 +1,50 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockRequireStetsonAuth, mockFindCandidateRidesForTripRequest } =
-    vi.hoisted(() => {
-        return {
-            mockRequireStetsonAuth: vi.fn(),
-            mockFindCandidateRidesForTripRequest: vi.fn(),
-        };
-    });
+const {
+    mockRequireStetsonAuth,
+    mockGetActiveMatchesForTripRequest,
+} = vi.hoisted(() => {
+    return {
+        mockRequireStetsonAuth: vi.fn(),
+        mockGetActiveMatchesForTripRequest: vi.fn(),
+    };
+});
 
 vi.mock("@/lib/auth", () => ({
     requireStetsonAuth: (...args: unknown[]) => mockRequireStetsonAuth(...args),
 }));
+
+vi.mock("@/services/trip-request-match-lifecycle-service", () => {
+    class MockMatchLifecycleError extends Error {
+        statusCode: number;
+        error: string;
+        code: string;
+
+        constructor(
+            message: string,
+            {
+                statusCode,
+                error,
+                code,
+            }: {
+                statusCode: number;
+                error: string;
+                code: string;
+            }
+        ) {
+            super(message);
+            this.statusCode = statusCode;
+            this.error = error;
+            this.code = code;
+        }
+    }
+
+    return {
+        getActiveMatchesForTripRequest: (...args: unknown[]) =>
+            mockGetActiveMatchesForTripRequest(...args),
+        MatchLifecycleError: MockMatchLifecycleError,
+    };
+});
 
 vi.mock("@/services/trip-request-ride-matching-service", () => {
     class MockTripRequestRideMatchingError extends Error {
@@ -38,13 +72,12 @@ vi.mock("@/services/trip-request-ride-matching-service", () => {
     }
 
     return {
-        findCandidateRidesForTripRequest: (...args: unknown[]) =>
-            mockFindCandidateRidesForTripRequest(...args),
         TripRequestRideMatchingError: MockTripRequestRideMatchingError,
     };
 });
 
 import { GET } from "@/app/api/trip-requests/[tripRequestId]/matches/route";
+import { MatchLifecycleError } from "@/services/trip-request-match-lifecycle-service";
 import { TripRequestRideMatchingError } from "@/services/trip-request-ride-matching-service";
 
 function makeRequest(): Request {
@@ -66,7 +99,7 @@ describe("GET /api/trip-requests/:tripRequestId/matches", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mockRequireStetsonAuth.mockResolvedValue(successAuth());
-        mockFindCandidateRidesForTripRequest.mockResolvedValue([]);
+        mockGetActiveMatchesForTripRequest.mockResolvedValue([]);
     });
 
     it("returns auth error responses directly (onboarding/auth guard)", async () => {
@@ -86,12 +119,37 @@ describe("GET /api/trip-requests/:tripRequestId/matches", () => {
         });
 
         expect(response.status).toBe(403);
-        expect(mockFindCandidateRidesForTripRequest).not.toHaveBeenCalled();
+        expect(mockGetActiveMatchesForTripRequest).not.toHaveBeenCalled();
+    });
+
+    it("returns 403 when actor does not own trip request", async () => {
+        mockGetActiveMatchesForTripRequest.mockRejectedValue(
+            new MatchLifecycleError(
+                "You are not allowed to access matches for this trip request.",
+                {
+                    statusCode: 403,
+                    error: "Forbidden",
+                    code: "TRIP_REQUEST_MATCH_FORBIDDEN",
+                }
+            )
+        );
+
+        const response = await GET(makeRequest() as never, {
+            params: Promise.resolve({ tripRequestId: "trip-1" }),
+        });
+        const json = await response.json();
+
+        expect(response.status).toBe(403);
+        expect(json).toEqual({
+            error: "Forbidden",
+            code: "TRIP_REQUEST_MATCH_FORBIDDEN",
+            message: "You are not allowed to access matches for this trip request.",
+        });
     });
 
     it("returns 404 when trip request is not found", async () => {
-        mockFindCandidateRidesForTripRequest.mockRejectedValue(
-            new TripRequestRideMatchingError("Trip request not found.", {
+        mockGetActiveMatchesForTripRequest.mockRejectedValue(
+            new MatchLifecycleError("Trip request not found.", {
                 statusCode: 404,
                 error: "Not Found",
                 code: "TRIP_REQUEST_NOT_FOUND",
@@ -111,8 +169,33 @@ describe("GET /api/trip-requests/:tripRequestId/matches", () => {
         });
     });
 
-    it("returns an empty array when there are no matches", async () => {
-        mockFindCandidateRidesForTripRequest.mockResolvedValue([]);
+    it("passes through trip request coordinate errors", async () => {
+        mockGetActiveMatchesForTripRequest.mockRejectedValue(
+            new TripRequestRideMatchingError(
+                "Trip request is missing required coordinates.",
+                {
+                    statusCode: 400,
+                    error: "Bad Request",
+                    code: "TRIP_REQUEST_COORDINATES_REQUIRED",
+                }
+            )
+        );
+
+        const response = await GET(makeRequest() as never, {
+            params: Promise.resolve({ tripRequestId: "trip-1" }),
+        });
+        const json = await response.json();
+
+        expect(response.status).toBe(400);
+        expect(json).toEqual({
+            error: "Bad Request",
+            code: "TRIP_REQUEST_COORDINATES_REQUIRED",
+            message: "Trip request is missing required coordinates.",
+        });
+    });
+
+    it("returns an empty array when there are no active suggested matches", async () => {
+        mockGetActiveMatchesForTripRequest.mockResolvedValue([]);
 
         const response = await GET(makeRequest() as never, {
             params: Promise.resolve({ tripRequestId: "trip-1" }),
@@ -123,18 +206,20 @@ describe("GET /api/trip-requests/:tripRequestId/matches", () => {
         expect(json).toEqual({ items: [] });
     });
 
-    it("returns candidate rides from the matching service", async () => {
-        mockFindCandidateRidesForTripRequest.mockResolvedValue([
+    it("returns active suggested matches from lifecycle service", async () => {
+        mockGetActiveMatchesForTripRequest.mockResolvedValue([
             {
+                matchId: "match-1",
                 rideId: "ride-1",
+                state: "SUGGESTED",
+                scoreSnapshot: 0.312,
+                originDistanceSnapshot: 0.4,
+                destinationDistanceSnapshot: 0.5,
+                timeDifferenceSnapshot: 30,
                 originText: "Stetson University",
                 destinationText: "Daytona Beach",
                 departureTime: "2030-01-01T10:30:00.000Z",
                 availableSeats: 2,
-                originDistance: 0.4,
-                destinationDistance: 0.5,
-                timeDifference: 30,
-                score: 6.36,
             },
         ]);
 
@@ -144,18 +229,24 @@ describe("GET /api/trip-requests/:tripRequestId/matches", () => {
         const json = await response.json();
 
         expect(response.status).toBe(200);
+        expect(mockGetActiveMatchesForTripRequest).toHaveBeenCalledWith(
+            "trip-1",
+            "rider-1"
+        );
         expect(json).toEqual({
             items: [
                 {
+                    matchId: "match-1",
                     rideId: "ride-1",
+                    state: "SUGGESTED",
+                    scoreSnapshot: 0.312,
+                    originDistanceSnapshot: 0.4,
+                    destinationDistanceSnapshot: 0.5,
+                    timeDifferenceSnapshot: 30,
                     originText: "Stetson University",
                     destinationText: "Daytona Beach",
                     departureTime: "2030-01-01T10:30:00.000Z",
                     availableSeats: 2,
-                    originDistance: 0.4,
-                    destinationDistance: 0.5,
-                    timeDifference: 30,
-                    score: 6.36,
                 },
             ],
         });

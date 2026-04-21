@@ -1,33 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireStetsonAuth } from "@/lib/auth";
 import {
-    getActiveMatchesForTripRequest,
+    acceptMatch,
     MatchLifecycleError,
 } from "@/services/trip-request-match-lifecycle-service";
-import {
-    TripRequestRideMatchingError,
-} from "@/services/trip-request-ride-matching-service";
+import { TripRequestRideMatchingError } from "@/services/trip-request-ride-matching-service";
 
 /**
- * GET /api/trip-requests/:tripRequestId/matches
+ * POST /api/matches/:matchId/accept
  *
- * Returns active persisted SUGGESTED matches for the given trip request.
+ * Transitions a match from SUGGESTED -> ACCEPTED for the trip request owner.
  */
-export async function GET(
+export async function POST(
     request: NextRequest,
-    { params }: { params: Promise<{ tripRequestId: string }> }
+    { params }: { params: Promise<{ matchId: string }> }
 ) {
     try {
         const auth = await requireStetsonAuth(request);
         if (auth.error) return auth.error;
 
-        const { tripRequestId } = await params;
-        const items = await getActiveMatchesForTripRequest(
-            tripRequestId,
-            auth.user.clerkUserId
-        );
+        const { matchId } = await params;
+        const item = await acceptMatch(matchId, auth.user.clerkUserId);
 
-        return NextResponse.json({ items }, { status: 200 });
+        return NextResponse.json({ item }, { status: 200 });
     } catch (error) {
         if (error instanceof MatchLifecycleError) {
             return NextResponse.json(
@@ -51,15 +46,11 @@ export async function GET(
             );
         }
 
-        console.error(
-            "[GET /api/trip-requests/:tripRequestId/matches] Unexpected error:",
-            error
-        );
+        console.error("[POST /api/matches/:matchId/accept] Unexpected error:", error);
         return NextResponse.json(
             {
                 error: "Internal Server Error",
-                message:
-                    "An unexpected error occurred while fetching ride matches.",
+                message: "An unexpected error occurred while accepting the match.",
             },
             { status: 500 }
         );
