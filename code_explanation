@@ -1,5 +1,169 @@
 # Code Explanation
 
+## 2026-04-21 — Matches Test UI Network Error Handling Hardening
+
+### Overview
+
+Verified and fixed missing network-error handling in the dummy frontend test page handlers.
+
+### File Changed
+
+#### `src/app/(protected)/matches-mvp2-test/MatchesMvp2TestClient.tsx` (MODIFIED)
+
+- Added `getErrorMessage(error: unknown)` helper to safely extract `error.message` with fallback to `"Network error"`.
+- Updated `handleCreateRide`:
+  - Added `catch` to surface rejected fetch/parsing errors using:
+    - `setRideCreateResult({ status: 0, body: { message } })`
+  - Kept `setIsRideCreating(false)` in existing `finally`.
+- Updated `handleCreateTripRequest`:
+  - Added `catch` to surface rejected fetch/parsing errors using:
+    - `setTripCreateResult({ status: 0, body: { message } })`
+  - Kept `setIsTripCreating(false)` in existing `finally`.
+- Updated `handleSubmit`:
+  - Added `catch` for fetch/json failures using:
+    - `setResponseStatus(0)`
+    - `setRawBody({ message })`
+    - `setErrorMessage(\`Network error: \${message}\`)`
+  - Kept `setIsLoading(false)` in existing `finally`.
+
+## 2026-04-21 — MVP 2 Core Phase 1: Read-Only Ride Candidates for Trip Requests
+
+### Overview
+
+Implements a read-only matching slice that returns candidate rides for a given trip request:
+- New matching service: `findCandidateRidesForTripRequest(tripRequestId: string)`
+- New endpoint: `GET /api/trip-requests/:tripRequestId/matches`
+- New dummy protected test UI page: `/matches-mvp2-test`
+- No schema changes, no new tables, no lifecycle state machine, and no DB writes for matching
+- Candidate filtering by validity + origin/destination proximity + time proximity
+- Deterministic ranking by a weighted score (lower is better)
+
+### Files Changed
+
+#### `src/services/trip-request-ride-matching-service.ts` (NEW)
+
+Added a dedicated, testable service that owns all matching logic.
+
+- Exported constants for demo-safe matching thresholds:
+  - `ORIGIN_THRESHOLD_KM = 15`
+  - `DESTINATION_THRESHOLD_KM = 15`
+  - `TIME_WINDOW_MINUTES = 90`
+- Added bounded candidate-fetch controls:
+  - `MAX_RIDE_CANDIDATES = 250`
+  - DB prefilter for ride status/availability/ownership/time overlap/coordinate presence
+- Added backend Haversine distance utility:
+  - `haversineDistanceKm(latitudeA, longitudeA, latitudeB, longitudeB)`
+  - No external API usage
+- Added service error type:
+  - `TripRequestRideMatchingError`
+  - Carries HTTP-ready metadata (`statusCode`, `error`, `code`)
+- Added `findCandidateRidesForTripRequest(tripRequestId)`:
+  1. Fetches trip request by ID
+  2. Returns `404` if missing
+  3. Validates trip request coordinates exist (`400` if not)
+  4. Builds a rough DB time window around the trip reference time to avoid unbounded scans
+  5. Fetches bounded rides (`take: 250`) with baseline DB filters:
+     - `status: ACTIVE`
+     - `seatsAvailable > 0`
+     - `driverUserId != tripRequest.riderUserId`
+     - non-null origin/destination coordinates
+     - temporal overlap with `[tripTime - TIME_WINDOW, tripTime + TIME_WINDOW]`
+  6. Applies strict application-level filters:
+     - active ride
+     - non-full ride
+     - non-self ride
+     - `originDistance <= ORIGIN_THRESHOLD_KM`
+     - `destinationDistance <= DESTINATION_THRESHOLD_KM`
+     - `timeDifference <= TIME_WINDOW_MINUTES`
+  7. Computes score and sorts ascending by score, then timeDifference, then rideId for deterministic order
+- Added response candidate shape:
+  - `rideId`
+  - `originText`
+  - `destinationText`
+  - `departureTime` (preferred depart time when present, otherwise earliest depart time)
+  - `availableSeats`
+  - `originDistance`
+  - `destinationDistance`
+  - `timeDifference` (minutes)
+  - `score`
+- Matching score formula:
+  - `score = originDistanceKm * 0.4 + destinationDistanceKm * 0.4 + timeDifferenceMinutes * 0.2`
+  - Lower score means better match
+
+#### `src/app/api/trip-requests/[tripRequestId]/matches/route.ts` (NEW)
+
+Added a read-only REST endpoint for trip-request ride candidates.
+
+- Route: `GET /api/trip-requests/:tripRequestId/matches`
+- Applies existing auth/onboarding gate via:
+  - `requireStetsonAuth(request)`
+- Delegates all matching work to the shared service:
+  - `findCandidateRidesForTripRequest(tripRequestId)`
+- Response behavior:
+  - Success: `200` with `{ items: RideMatchCandidate[] }`
+  - Trip request missing: `404`
+  - Trip request missing coordinates: `400`
+  - No matches: `200` with `{ items: [] }`
+- No writes in handler (strictly read-only)
+
+#### `src/__tests__/trip-request-ride-matching-service.test.ts` (NEW)
+
+Added service-level tests with mocked Prisma reads:
+
+- verifies valid matches are returned
+- excludes rides outside distance threshold
+- excludes rides outside time window
+- excludes self rides
+- excludes full rides
+- verifies sorting puts best match first
+- verifies empty result returns `[]`
+- verifies `404` for missing trip request
+- verifies `400` for missing trip request coordinates
+- verifies DB prefilter uses configured time window bounds
+
+#### `src/__tests__/trip-request-matches-route.test.ts` (NEW)
+
+Added route-level tests:
+
+- auth/onboarding guard errors are returned directly
+- `404` behavior from matching service is mapped correctly
+- no matches returns `{ items: [] }`
+- successful response returns candidate ride payload fields
+
+#### `src/app/(protected)/matches-mvp2-test/page.tsx` (NEW)
+
+Added a dev-safe wrapper page for the dummy test UI.
+
+- Renders `MatchesMvp2TestClient`
+- Uses the same production-guard pattern as other internal test pages:
+  - page is hidden in production unless `ENABLE_MATCHES_MVP2_TEST=true`
+
+#### `src/app/(protected)/matches-mvp2-test/MatchesMvp2TestClient.tsx` (NEW)
+
+Added a minimal testing frontend for manual verification of the new endpoint.
+
+- Includes seed-data forms to create:
+  - a Ride (`POST /api/rides`)
+  - a Trip Request (`POST /api/trip-requests`)
+- Auto-fills the matches query input with newly created `tripRequestId`
+- Input form for `tripRequestId`
+- Calls `GET /api/trip-requests/:tripRequestId/matches`
+- Shows:
+  - request status
+  - summary/error message
+  - candidate table (`rideId`, texts, departure, seats, distances, time difference, score)
+  - raw JSON response body for debugging
+- Uses existing `ProtectedShell` to stay inside authenticated/onboarded protected UX
+
+### Scope Guard / Non-Changes
+
+- No existing product frontend flows modified (only a new isolated dummy test page added)
+- No Prisma schema changes
+- No migrations added
+- No write paths added to matching flow
+- No offer/booking/cancellation/editing logic changed
+- No lifecycle state machine, duplicate/rejection suppression, route-overlap, map APIs, background jobs, or persistence introduced
+
 ## First-time Onboarding Gate — POST onboarding + Guard (Chat D)
 
 ### Overview
