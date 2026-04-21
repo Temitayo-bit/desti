@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockRequireStetsonAuth, mockPrisma } = vi.hoisted(() => {
+const {
+    mockRequireStetsonAuth,
+    mockPrisma,
+    mockResolveLocationOrThrow,
+    mockAssertDistinctResolvedLocationsOrThrow,
+} = vi.hoisted(() => {
     return {
         mockRequireStetsonAuth: vi.fn(),
         mockPrisma: {
@@ -14,6 +19,8 @@ const { mockRequireStetsonAuth, mockPrisma } = vi.hoisted(() => {
                     Promise.all(queries)
                 ),
         },
+        mockResolveLocationOrThrow: vi.fn(),
+        mockAssertDistinctResolvedLocationsOrThrow: vi.fn(),
     };
 });
 
@@ -23,6 +30,21 @@ vi.mock("@/lib/auth", () => ({
 
 vi.mock("@/lib/prisma", () => ({
     prisma: mockPrisma,
+}));
+
+vi.mock("@/lib/geocoding", () => ({
+    resolveLocationOrThrow: (...args: unknown[]) =>
+        mockResolveLocationOrThrow(...args),
+    assertDistinctResolvedLocationsOrThrow: (...args: unknown[]) =>
+        mockAssertDistinctResolvedLocationsOrThrow(...args),
+    GeocodingError: class extends Error {
+        code: string;
+        constructor(code: string, message: string) {
+            super(message);
+            this.name = "GeocodingError";
+            this.code = code;
+        }
+    },
 }));
 
 vi.mock("@prisma/client", () => ({
@@ -74,7 +96,13 @@ function fakeTripRequest(
         id: "trip-123",
         riderUserId: "user_rider_1",
         originText: "Stetson University",
+        originResolvedAddress: "Stetson University, DeLand, Florida, United States",
+        originLatitude: 29.0361,
+        originLongitude: -81.302,
         destinationText: "Orlando Airport",
+        destinationResolvedAddress: "Orlando, Florida, United States",
+        destinationLatitude: 28.5383,
+        destinationLongitude: -81.3792,
         earliestDesiredAt: earliest,
         latestDesiredAt: latest,
         preferredDepartAt: null,
@@ -94,6 +122,13 @@ describe("PATCH /api/trip-requests/:tripRequestId", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mockRequireStetsonAuth.mockResolvedValue(successAuth());
+        mockResolveLocationOrThrow.mockImplementation(async (input: string) => ({
+            inputText: input.trim(),
+            resolvedAddress: `${input.trim()} (resolved)`,
+            latitude: 29.1,
+            longitude: -81.1,
+        }));
+        mockAssertDistinctResolvedLocationsOrThrow.mockImplementation(() => undefined);
     });
 
     it("1) Owner can edit when no CONFIRMED booking exists", async () => {
@@ -131,10 +166,35 @@ describe("PATCH /api/trip-requests/:tripRequestId", () => {
                 }),
                 data: expect.objectContaining({
                     destinationText: "Sanford Airport",
+                    destinationResolvedAddress: "Sanford Airport (resolved)",
+                    destinationLatitude: 29.1,
+                    destinationLongitude: -81.1,
                     seatsNeeded: 3,
                 }),
             })
         );
+        expect(mockResolveLocationOrThrow).toHaveBeenCalledTimes(1);
+        expect(mockResolveLocationOrThrow).toHaveBeenCalledWith("Sanford Airport");
+    });
+
+    it("1b) does not re-geocode unchanged location text after trimming", async () => {
+        const currentTripRequest = fakeTripRequest();
+
+        mockPrisma.tripRequest.findUnique
+            .mockResolvedValueOnce(currentTripRequest)
+            .mockResolvedValueOnce(currentTripRequest);
+        mockPrisma.tripRequest.updateMany.mockResolvedValue({ count: 1 });
+
+        const res = await PATCH(
+            makeRequest({
+                originText: "  Stetson University  ",
+                seatsNeeded: 2,
+            }) as never,
+            { params: Promise.resolve({ tripRequestId: "trip-123" }) }
+        );
+
+        expect(res.status).toBe(200);
+        expect(mockResolveLocationOrThrow).not.toHaveBeenCalled();
     });
 
     it("2) Owner cannot edit after CONFIRMED booking exists (409)", async () => {

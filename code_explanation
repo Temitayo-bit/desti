@@ -1804,3 +1804,271 @@ No direct schema/model edits were made by SWE II; branch integration pulled thos
   - All targeted messaging tests passed.
 - `npx tsc --noEmit`
   - TypeScript compile passed.
+
+## MVP 2 Backend Slice: OSM/Nominatim Geocoding + Direct Location Storage (2026-04-21)
+
+### Scope Implemented
+
+This change set implements a narrow backend-only MVP 2 slice for geocoding and coordinate storage on Ride and TripRequest create/update flows.
+
+Implemented:
+- Server-side Nominatim geocoding integration (OSM public search endpoint)
+- Shared backend geocoding utility with deterministic query settings
+- Schema/migration changes to store resolved addresses + coordinates directly on `rides` and `trip_requests`
+- Ride and TripRequest create flow enforcement: both origin and destination must geocode successfully
+- Ride and TripRequest edit flow updates: re-geocode only changed location fields
+- Clear API error handling for missing/invalid input, no-result resolution, invalid coordinates, provider failure, and timeout
+- Test updates with mocked geocoder behavior (no live external calls)
+
+Explicitly not implemented in this slice:
+- proximity filtering
+- match suggestions
+- route overlap
+- autocomplete
+- map rendering
+- route geometry
+- stop requests, negotiation, trust/completion features
+
+---
+
+### Files Changed
+
+#### `src/lib/geocoding.ts` (NEW)
+
+Added a shared backend geocoding utility used by Ride/TripRequest APIs.
+
+Key behavior:
+- Exposes `resolveLocationOrThrow(inputText)`
+- Uses Nominatim Search API with deterministic params:
+  - `format=jsonv2`
+  - `limit=1`
+  - `countrycodes=us`
+  - `q=<trimmed-input>`
+- Uses top result only (no ranking logic beyond first result)
+- Validates and returns:
+  - `inputText` (trimmed original)
+  - `resolvedAddress` (`display_name` fallback to input)
+  - `latitude`
+  - `longitude`
+- Validates coordinate ranges:
+  - latitude `[-90, 90]`
+  - longitude `[-180, 180]`
+- Sends `User-Agent` header (`desti-mvp2-geocoder/1.0` with optional contact email)
+- Includes optional `email` query param when `GEOCODER_CONTACT_EMAIL` is configured
+- Supports timeout (`GEOCODER_TIMEOUT_MS = 8000`) via `AbortController`
+- Throws typed `GeocodingError` codes:
+  - `MISSING_INPUT`
+  - `RESOLUTION_FAILED`
+  - `INVALID_RESULT`
+  - `PROVIDER_FAILURE`
+  - `PROVIDER_TIMEOUT`
+  - `SAME_COORDINATES`
+- Adds `assertDistinctResolvedLocationsOrThrow` helper for origin/destination effective-coordinate equality checks.
+
+Config handling in this module:
+- `NOMINATIM_BASE_URL` optional, validated with URL parse, fallback to `https://nominatim.openstreetmap.org`
+- `GEOCODER_CONTACT_EMAIL` optional, format-validated, ignored if invalid
+- Config is server-only and not exposed to client-side code
+
+#### `prisma/schema.prisma`
+
+Added direct location storage fields to both models.
+
+`Ride` additions:
+- `originResolvedAddress String? @map("origin_resolved_address")`
+- `originLatitude Float? @map("origin_latitude") @db.DoublePrecision`
+- `originLongitude Float? @map("origin_longitude") @db.DoublePrecision`
+- `destinationResolvedAddress String? @map("destination_resolved_address")`
+- `destinationLatitude Float? @map("destination_latitude") @db.DoublePrecision`
+- `destinationLongitude Float? @map("destination_longitude") @db.DoublePrecision`
+
+`TripRequest` additions:
+- `originResolvedAddress String? @map("origin_resolved_address")`
+- `originLatitude Float? @map("origin_latitude") @db.DoublePrecision`
+- `originLongitude Float? @map("origin_longitude") @db.DoublePrecision`
+- `destinationResolvedAddress String? @map("destination_resolved_address")`
+- `destinationLatitude Float? @map("destination_latitude") @db.DoublePrecision`
+- `destinationLongitude Float? @map("destination_longitude") @db.DoublePrecision`
+
+`originText`/`destinationText` already existed and remain required.
+
+#### `prisma/migrations/20260421143000_add_geocoded_location_columns/migration.sql` (NEW)
+
+Safe migration strategy implemented:
+- Adds all six geocoded fields to `rides` as nullable columns
+- Adds all six geocoded fields to `trip_requests` as nullable columns
+
+Why nullable:
+- Preserves compatibility for existing rows without backfill
+- Avoids migration breakage on non-empty databases
+- Runtime API now enforces required geocoding for new creates and changed location edits
+
+#### `src/app/api/rides/route.ts`
+
+Updated `POST /api/rides` create flow.
+
+Changes:
+- Imports shared geocoder utility
+- Adds `geocodingErrorResponse` mapper:
+  - provider failure/timeout => `503 Service Unavailable`
+  - resolution/validation failures => `400 Validation Error` with field details
+- Keeps existing auth/idempotency/user-upsert invariants intact
+- For non-idempotent create path:
+  - geocodes `originText`
+  - geocodes `destinationText`
+  - rejects same effective coordinates
+  - writes raw text + resolved address + coordinates
+- No partial writes: geocoding happens before transaction write
+
+Invariant preservation:
+- Idempotency replay still returns existing entity (`200`) and skips new create
+- Existing auth and onboarding restrictions unchanged
+
+#### `src/app/api/trip-requests/route.ts`
+
+Updated `POST /api/trip-requests` create flow with same pattern as rides.
+
+Changes:
+- Imports shared geocoder utility
+- Adds `geocodingErrorResponse` mapper with same status semantics (`400`/`503`)
+- After idempotency check (and stale-key cleanup path), geocodes both origin and destination
+- Rejects same effective coordinates
+- Writes text + resolved address + coordinates in create data
+- No partial writes on geocoding failure
+
+Invariant preservation:
+- Existing auth/idempotency logic and stale-idempotency cleanup remain intact
+
+#### `src/app/api/rides/[rideId]/route.ts`
+
+Updated `PATCH /api/rides/:rideId` edit flow.
+
+Changes:
+- Imports shared geocoder utility
+- Adds `geocodingErrorResponse` mapper for edit path
+- Preserves existing edit restrictions:
+  - ownership check
+  - edit lock after confirmed booking (`RIDE_EDIT_LOCKED_CONFIRMED`)
+- Tracks whether `originText` and/or `destinationText` are effectively changed (after trim)
+- Re-geocodes only changed location field(s)
+- Keeps unchanged location fields untouched (no unnecessary geocode calls)
+- Stores updated text + resolved address + coordinates for changed fields
+- Runs same-coordinate check when both coordinate pairs are available
+- Includes location fields in update payload alongside existing ride-edit fields
+
+Invariant preservation:
+- confirmed-booking edit lock still enforced before mutation
+- seat/instruction/date validations unchanged
+
+#### `src/app/api/trip-requests/[tripRequestId]/route.ts`
+
+Updated `PATCH /api/trip-requests/:tripRequestId` edit flow.
+
+Changes mirror ride edit path:
+- geocoder import + error mapper
+- preserve existing edit restrictions:
+  - ownership
+  - active-only (`TRIP_REQUEST_CLOSED`)
+  - confirmed-booking lock (`TRIP_REQUEST_EDIT_LOCKED_CONFIRMED`)
+- re-geocode only changed origin/destination text fields
+- keep unchanged location fields without unnecessary geocode calls
+- persist text + resolved address + coordinates for changed fields
+- same-coordinate rejection when both coordinate pairs are present
+
+#### `.env.example`
+
+Added optional server-side geocoder env vars:
+- `NOMINATIM_BASE_URL`
+- `GEOCODER_CONTACT_EMAIL`
+
+#### `README.md`
+
+Updated env setup examples + environment variable table to document:
+- `NOMINATIM_BASE_URL` (optional)
+- `GEOCODER_CONTACT_EMAIL` (optional)
+
+#### Tests Updated
+
+`src/__tests__/ride-create.test.ts`
+- Added geocoder module mocks
+- Added success assertions that geocoded fields are stored on create
+- Added idempotency replay assertion that geocoder is not called
+- Added failure test for no geocode result (`400 Validation Error`)
+- Added failure test for provider failure (`503 Service Unavailable`)
+
+`src/__tests__/trip-request-create.test.ts`
+- Added geocoder module mocks
+- Added success assertions that geocoded fields are stored on create
+- Added idempotency replay assertion that geocoder is not called
+- Added provider failure test (`503 Service Unavailable`)
+
+`src/__tests__/ride-edit.test.ts`
+- Added geocoder module mocks
+- Added coverage that changed destination text triggers re-geocoding and coordinate updates
+- Added coverage that unchanged location text (after trimming) does not trigger geocoding
+- Existing edit-lock behavior tests remain and pass
+
+`src/__tests__/trip-request-edit.test.ts`
+- Added geocoder module mocks
+- Added assertions that changed destination re-geocodes and stores resolved coordinates
+- Added coverage that unchanged location text does not trigger geocoding
+- Existing edit restrictions remain covered and passing
+
+---
+
+### API Behavior Changes (Summary)
+
+Create (`POST /api/rides`, `POST /api/trip-requests`):
+- now requires successful geocoding of both origin and destination
+- now persists resolved address and coordinates for both endpoints
+- fails closed:
+  - `400` for validation/resolution/unusable coordinate issues
+  - `503` for provider failure/timeout
+
+Edit (`PATCH /api/rides/:rideId`, `PATCH /api/trip-requests/:tripRequestId`):
+- if origin/destination text changes, changed field is re-geocoded and updated
+- if text is unchanged after trimming, geocoder is not called
+- existing edit restrictions (ownership/status/confirmed-booking locks) remain enforced
+
+---
+
+### Migration / Compatibility Notes
+
+- DB migration adds nullable geocoded columns only (safe for existing non-empty data)
+- No backfill system added in this task
+- Runtime enforcement guarantees new create records have resolved coordinates
+- Legacy rows remain readable and editable under existing business rules without forced backfill
+
+---
+
+### Verification Performed
+
+- `npx prisma generate` (after schema changes)
+- `npm run test -- src/__tests__/ride-create.test.ts src/__tests__/trip-request-create.test.ts src/__tests__/ride-edit.test.ts src/__tests__/trip-request-edit.test.ts`
+  - All targeted tests passed
+- `npx tsc --noEmit`
+  - TypeScript compile passed
+
+### Follow-up: Manual Verification Page (2026-04-21)
+
+#### `src/app/(protected)/geocode-mvp2-test/page.tsx` (NEW)
+
+Added a protected, dummy frontend page for manual verification of MVP2 geocoding backend flows.
+
+Route:
+- `/geocode-mvp2-test`
+
+Purpose:
+- Quickly exercise backend-only geocoding changes without touching primary product flows.
+
+Includes 4 lightweight test forms:
+- Create Ride (`POST /api/rides`)
+- Create Trip Request (`POST /api/trip-requests`)
+- Patch Ride locations (`PATCH /api/rides/:rideId`)
+- Patch Trip Request locations (`PATCH /api/trip-requests/:tripRequestId`)
+
+Behavior:
+- Shows raw status + JSON response body for each operation.
+- Auto-populates patch IDs from successful create responses.
+- Sends idempotency keys for create calls.
+- Designed as a temporary class-demo test harness.

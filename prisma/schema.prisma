@@ -90,7 +90,13 @@ model TripRequest {
   id                  String            @id @default(uuid())
   riderUserId         String            @map("rider_user_id")
   originText          String            @map("origin_text")
+  originResolvedAddress String?         @map("origin_resolved_address")
+  originLatitude      Float?            @map("origin_latitude") @db.DoublePrecision
+  originLongitude     Float?            @map("origin_longitude") @db.DoublePrecision
   destinationText     String            @map("destination_text")
+  destinationResolvedAddress String?    @map("destination_resolved_address")
+  destinationLatitude Float?            @map("destination_latitude") @db.DoublePrecision
+  destinationLongitude Float?           @map("destination_longitude") @db.DoublePrecision
   earliestDesiredAt   DateTime          @map("earliest_desired_at")
   latestDesiredAt     DateTime          @map("latest_desired_at")
   distanceCategory    DistanceCategory  @map("distance_category")
@@ -145,7 +151,13 @@ model Ride {
   id                  String           @id @default(uuid())
   driverUserId        String           @map("driver_user_id")
   originText          String           @map("origin_text")
+  originResolvedAddress String?        @map("origin_resolved_address")
+  originLatitude      Float?           @map("origin_latitude") @db.DoublePrecision
+  originLongitude     Float?           @map("origin_longitude") @db.DoublePrecision
   destinationText     String           @map("destination_text")
+  destinationResolvedAddress String?   @map("destination_resolved_address")
+  destinationLatitude Float?           @map("destination_latitude") @db.DoublePrecision
+  destinationLongitude Float?          @map("destination_longitude") @db.DoublePrecision
   earliestDepartAt    DateTime         @map("earliest_depart_at")
   latestDepartAt      DateTime         @map("latest_depart_at")
   distanceCategory    DistanceCategory @map("distance_category")

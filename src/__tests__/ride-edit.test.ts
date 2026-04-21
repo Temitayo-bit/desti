@@ -1,7 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── Mock setup ───────────────────────────────────────────────────────────────
-const { mockRequireStetsonAuth, mockPrisma } = vi.hoisted(() => {
+const {
+    mockRequireStetsonAuth,
+    mockPrisma,
+    mockResolveLocationOrThrow,
+    mockAssertDistinctResolvedLocationsOrThrow,
+} = vi.hoisted(() => {
     return {
         mockRequireStetsonAuth: vi.fn(),
         mockPrisma: {
@@ -12,6 +17,8 @@ const { mockRequireStetsonAuth, mockPrisma } = vi.hoisted(() => {
             },
             $transaction: vi.fn().mockImplementation((promises) => Promise.all(promises)),
         },
+        mockResolveLocationOrThrow: vi.fn(),
+        mockAssertDistinctResolvedLocationsOrThrow: vi.fn(),
     };
 });
 
@@ -21,6 +28,21 @@ vi.mock("@/lib/auth", () => ({
 
 vi.mock("@/lib/prisma", () => ({
     prisma: mockPrisma,
+}));
+
+vi.mock("@/lib/geocoding", () => ({
+    resolveLocationOrThrow: (...args: unknown[]) =>
+        mockResolveLocationOrThrow(...args),
+    assertDistinctResolvedLocationsOrThrow: (...args: unknown[]) =>
+        mockAssertDistinctResolvedLocationsOrThrow(...args),
+    GeocodingError: class extends Error {
+        code: string;
+        constructor(code: string, message: string) {
+            super(message);
+            this.name = "GeocodingError";
+            this.code = code;
+        }
+    },
 }));
 
 vi.mock("@prisma/client", () => ({
@@ -77,7 +99,13 @@ function fakeRide(overrides: Record<string, unknown> = {}, booked = false) {
         id: "ride-123",
         driverUserId: "user_test123",
         originText: "Stetson University",
+        originResolvedAddress: "Stetson University, DeLand, Florida, United States",
+        originLatitude: 29.0361,
+        originLongitude: -81.302,
         destinationText: "Daytona Beach",
+        destinationResolvedAddress: "Daytona Beach, Florida, United States",
+        destinationLatitude: 29.2108,
+        destinationLongitude: -81.0228,
         earliestDepartAt: earliest,
         latestDepartAt: latest,
         distanceCategory: "MEDIUM",
@@ -98,6 +126,13 @@ describe("PATCH /api/rides/:rideId", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mockRequireStetsonAuth.mockResolvedValue(successAuth());
+        mockResolveLocationOrThrow.mockImplementation(async (input: string) => ({
+            inputText: input.trim(),
+            resolvedAddress: `${input.trim()} (resolved)`,
+            latitude: 29.1,
+            longitude: -81.1,
+        }));
+        mockAssertDistinctResolvedLocationsOrThrow.mockImplementation(() => undefined);
     });
 
     it("1) Owner can edit when no CONFIRMED booking exists", async () => {
@@ -118,6 +153,63 @@ describe("PATCH /api/rides/:rideId", () => {
                 data: expect.objectContaining({ priceCents: 600 })
             })
         );
+        expect(mockResolveLocationOrThrow).not.toHaveBeenCalled();
+    });
+
+    it("1b) re-geocodes changed destinationText and stores resolved coordinates", async () => {
+        const dbRide = fakeRide();
+        const updatedRide = fakeRide({
+            destinationText: "Orlando",
+            destinationResolvedAddress: "Orlando, Florida, United States",
+            destinationLatitude: 28.5383,
+            destinationLongitude: -81.3792,
+        });
+
+        mockResolveLocationOrThrow.mockResolvedValueOnce({
+            inputText: "Orlando",
+            resolvedAddress: "Orlando, Florida, United States",
+            latitude: 28.5383,
+            longitude: -81.3792,
+        });
+
+        mockPrisma.ride.findUnique
+            .mockResolvedValueOnce(dbRide)
+            .mockResolvedValueOnce(updatedRide);
+        mockPrisma.ride.updateMany.mockResolvedValue({ count: 1 });
+
+        const req = makeRequest({ destinationText: "  Orlando " });
+        const params = { rideId: "ride-123" };
+        const res = await PATCH(req as never, { params: Promise.resolve(params) });
+
+        expect(res.status).toBe(200);
+        expect(mockResolveLocationOrThrow).toHaveBeenCalledTimes(1);
+        expect(mockResolveLocationOrThrow).toHaveBeenCalledWith("Orlando");
+        expect(mockPrisma.ride.updateMany).toHaveBeenCalledWith(
+            expect.objectContaining({
+                data: expect.objectContaining({
+                    destinationText: "Orlando",
+                    destinationResolvedAddress:
+                        "Orlando, Florida, United States",
+                    destinationLatitude: 28.5383,
+                    destinationLongitude: -81.3792,
+                }),
+            })
+        );
+    });
+
+    it("1c) does not geocode when submitted originText is unchanged after trimming", async () => {
+        const dbRide = fakeRide();
+        mockPrisma.ride.findUnique
+            .mockResolvedValueOnce(dbRide)
+            .mockResolvedValueOnce(dbRide);
+        mockPrisma.ride.updateMany.mockResolvedValue({ count: 1 });
+
+        const req = makeRequest({ originText: "  Stetson University  " });
+        const params = { rideId: "ride-123" };
+        const res = await PATCH(req as never, { params: Promise.resolve(params) });
+
+        expect(res.status).toBe(200);
+        expect(mockResolveLocationOrThrow).not.toHaveBeenCalled();
     });
 
     it("2) Owner cannot edit after CONFIRMED booking exists (409)", async () => {

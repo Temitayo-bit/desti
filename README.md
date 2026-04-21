@@ -165,6 +165,10 @@ WORKER_UPLOAD_API_KEY=your_shared_api_key_here
 
 # Optional — only needed for the AI chat assistant
 GEMINI_API_KEY=YOUR_GEMINI_API_KEY
+
+# Optional — demo geocoder settings (backend only)
+NOMINATIM_BASE_URL=https://nominatim.openstreetmap.org
+GEOCODER_CONTACT_EMAIL=you@example.com
 ```
 
 4. **Start the stack:**
@@ -262,6 +266,10 @@ WORKER_UPLOAD_API_KEY=your_shared_api_key_here
 
 # Optional — only needed for the AI chat assistant
 GEMINI_API_KEY=YOUR_GEMINI_API_KEY
+
+# Optional — demo geocoder settings (backend only)
+NOMINATIM_BASE_URL=https://nominatim.openstreetmap.org
+GEOCODER_CONTACT_EMAIL=you@example.com
 ```
 
 5. **Create the database** (if it does not already exist):
@@ -389,3 +397,5 @@ This starts the worker on `http://localhost:8787`. Set `WORKER_UPLOAD_URL=http:/
 | `WORKER_UPLOAD_API_KEY` | Yes | Shared secret for authenticating upload/delete requests to the worker (generate with `openssl rand -hex 32`) |
 | `GEMINI_API_KEY` | No | Google Gemini API key for the AI assistant |
 | `GEMINI_MODEL` | No | Override the default Gemini model (`gemini-2.5-flash`) |
+| `NOMINATIM_BASE_URL` | No | Override geocoder base URL (default: `https://nominatim.openstreetmap.org`) |
+| `GEOCODER_CONTACT_EMAIL` | No | Optional contact email included with Nominatim requests |
