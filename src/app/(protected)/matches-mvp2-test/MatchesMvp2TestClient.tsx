@@ -77,6 +77,13 @@ async function parseApiResult(response: Response): Promise<ApiResult> {
     return { status: response.status, body };
 }
 
+function getErrorMessage(error: unknown): string {
+    if (error instanceof Error && error.message.trim().length > 0) {
+        return error.message;
+    }
+    return "Network error";
+}
+
 export default function MatchesMvp2TestClient() {
     const now = useMemo(() => new Date(), []);
     const earliest = useMemo(
@@ -163,6 +170,11 @@ export default function MatchesMvp2TestClient() {
             });
 
             setRideCreateResult(await parseApiResult(response));
+        } catch (error) {
+            setRideCreateResult({
+                status: 0,
+                body: { message: getErrorMessage(error) },
+            });
         } finally {
             setIsRideCreating(false);
         }
@@ -213,6 +225,11 @@ export default function MatchesMvp2TestClient() {
             if (typeof maybeId === "string" && maybeId.trim().length > 0) {
                 setTripRequestId(maybeId);
             }
+        } catch (error) {
+            setTripCreateResult({
+                status: 0,
+                body: { message: getErrorMessage(error) },
+            });
         } finally {
             setIsTripCreating(false);
         }
@@ -269,6 +286,11 @@ export default function MatchesMvp2TestClient() {
                 ? (payload.items as MatchCandidate[])
                 : [];
             setMatches(items);
+        } catch (error) {
+            const message = getErrorMessage(error);
+            setResponseStatus(0);
+            setRawBody({ message });
+            setErrorMessage(`Network error: ${message}`);
         } finally {
             setIsLoading(false);
         }

@@ -1,5 +1,31 @@
 # Code Explanation
 
+## 2026-04-21 — Matches Test UI Network Error Handling Hardening
+
+### Overview
+
+Verified and fixed missing network-error handling in the dummy frontend test page handlers.
+
+### File Changed
+
+#### `src/app/(protected)/matches-mvp2-test/MatchesMvp2TestClient.tsx` (MODIFIED)
+
+- Added `getErrorMessage(error: unknown)` helper to safely extract `error.message` with fallback to `"Network error"`.
+- Updated `handleCreateRide`:
+  - Added `catch` to surface rejected fetch/parsing errors using:
+    - `setRideCreateResult({ status: 0, body: { message } })`
+  - Kept `setIsRideCreating(false)` in existing `finally`.
+- Updated `handleCreateTripRequest`:
+  - Added `catch` to surface rejected fetch/parsing errors using:
+    - `setTripCreateResult({ status: 0, body: { message } })`
+  - Kept `setIsTripCreating(false)` in existing `finally`.
+- Updated `handleSubmit`:
+  - Added `catch` for fetch/json failures using:
+    - `setResponseStatus(0)`
+    - `setRawBody({ message })`
+    - `setErrorMessage(\`Network error: \${message}\`)`
+  - Kept `setIsLoading(false)` in existing `finally`.
+
 ## 2026-04-21 — MVP 2 Core Phase 1: Read-Only Ride Candidates for Trip Requests
 
 ### Overview
