@@ -2,6 +2,8 @@ const DEFAULT_NOMINATIM_BASE_URL = "https://nominatim.openstreetmap.org";
 const GEOCODER_TIMEOUT_MS = 8_000;
 const GEOCODER_USER_AGENT_PREFIX = "desti-mvp2-geocoder/1.0";
 const COORDINATE_EQUALITY_EPSILON = 1e-6;
+const GEOCODER_CACHE_TTL_MS = 5 * 60 * 1000;
+const GEOCODER_MIN_REQUEST_INTERVAL_MS = 1_000;
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -36,6 +38,15 @@ interface GeocoderConfig {
     userAgent: string;
 }
 
+interface CachedResolvedLocation {
+    value: ResolvedLocation;
+    expiresAtMs: number;
+}
+
+const locationCache = new Map<string, CachedResolvedLocation>();
+let nextAllowedRequestAtMs = 0;
+let requestQueue: Promise<void> = Promise.resolve();
+
 function resolveNominatimBaseUrl(rawBaseUrl: string | undefined): string {
     const candidate = rawBaseUrl?.trim();
     if (!candidate) {
@@ -46,10 +57,9 @@ function resolveNominatimBaseUrl(rawBaseUrl: string | undefined): string {
         const parsed = new URL(candidate);
         return parsed.toString();
     } catch {
-        console.warn(
-            `[geocoding] Invalid NOMINATIM_BASE_URL \"${candidate}\". Falling back to default ${DEFAULT_NOMINATIM_BASE_URL}.`
+        throw new Error(
+            "Invalid NOMINATIM_BASE_URL configured."
         );
-        return DEFAULT_NOMINATIM_BASE_URL;
     }
 }
 
@@ -89,7 +99,9 @@ function parseCoordinate(
         typeof value === "number"
             ? value
             : typeof value === "string"
-              ? Number.parseFloat(value)
+              ? value.trim().length > 0
+                  ? Number(value.trim())
+                  : Number.NaN
               : Number.NaN;
 
     if (!Number.isFinite(numeric)) {
@@ -122,6 +134,46 @@ interface NominatimResult {
     display_name?: string;
 }
 
+function getCachedLocationOrNull(cacheKey: string): ResolvedLocation | null {
+    const cached = locationCache.get(cacheKey);
+    if (!cached) {
+        return null;
+    }
+
+    if (cached.expiresAtMs <= Date.now()) {
+        locationCache.delete(cacheKey);
+        return null;
+    }
+
+    return cached.value;
+}
+
+function storeCachedLocation(cacheKey: string, value: ResolvedLocation) {
+    locationCache.set(cacheKey, {
+        value,
+        expiresAtMs: Date.now() + GEOCODER_CACHE_TTL_MS,
+    });
+}
+
+async function waitForRateLimitSlot() {
+    const nextTask = requestQueue.then(async () => {
+        const now = Date.now();
+        const waitMs = Math.max(0, nextAllowedRequestAtMs - now);
+        if (waitMs > 0) {
+            await new Promise<void>((resolve) =>
+                setTimeout(() => resolve(), waitMs)
+            );
+        }
+
+        nextAllowedRequestAtMs =
+            Math.max(Date.now(), nextAllowedRequestAtMs) +
+            GEOCODER_MIN_REQUEST_INTERVAL_MS;
+    });
+
+    requestQueue = nextTask.catch(() => undefined);
+    await nextTask;
+}
+
 export async function resolveLocationOrThrow(
     inputText: string
 ): Promise<ResolvedLocation> {
@@ -131,6 +183,11 @@ export async function resolveLocationOrThrow(
             "MISSING_INPUT",
             "Location text is required."
         );
+    }
+
+    const cachedLocation = getCachedLocationOrNull(normalizedInput);
+    if (cachedLocation) {
+        return cachedLocation;
     }
 
     const config = buildGeocoderConfig();
@@ -148,6 +205,8 @@ export async function resolveLocationOrThrow(
     const timeoutId = setTimeout(() => controller.abort(), GEOCODER_TIMEOUT_MS);
 
     try {
+        await waitForRateLimitSlot();
+
         const response = await fetch(searchUrl.toString(), {
             method: "GET",
             headers: {
@@ -155,7 +214,6 @@ export async function resolveLocationOrThrow(
                 "User-Agent": config.userAgent,
             },
             signal: controller.signal,
-            cache: "no-store",
         });
 
         if (!response.ok) {
@@ -183,12 +241,15 @@ export async function resolveLocationOrThrow(
                 ? top.display_name.trim()
                 : normalizedInput;
 
-        return {
+        const resolvedLocation: ResolvedLocation = {
             inputText: normalizedInput,
             resolvedAddress,
             latitude,
             longitude,
         };
+
+        storeCachedLocation(normalizedInput, resolvedLocation);
+        return resolvedLocation;
     } catch (error) {
         if (error instanceof GeocodingError) {
             throw error;

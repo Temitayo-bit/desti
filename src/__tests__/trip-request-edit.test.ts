@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { GeocodingErrorCode } from "@/lib/geocoding";
 
 const {
     mockRequireStetsonAuth,
     mockPrisma,
     mockResolveLocationOrThrow,
     mockAssertDistinctResolvedLocationsOrThrow,
+    MockGeocodingError,
 } = vi.hoisted(() => {
     return {
         mockRequireStetsonAuth: vi.fn(),
@@ -21,6 +23,14 @@ const {
         },
         mockResolveLocationOrThrow: vi.fn(),
         mockAssertDistinctResolvedLocationsOrThrow: vi.fn(),
+        MockGeocodingError: class extends Error {
+            code: GeocodingErrorCode;
+            constructor(code: GeocodingErrorCode, message: string) {
+                super(message);
+                this.name = "GeocodingError";
+                this.code = code;
+            }
+        },
     };
 });
 
@@ -37,14 +47,7 @@ vi.mock("@/lib/geocoding", () => ({
         mockResolveLocationOrThrow(...args),
     assertDistinctResolvedLocationsOrThrow: (...args: unknown[]) =>
         mockAssertDistinctResolvedLocationsOrThrow(...args),
-    GeocodingError: class extends Error {
-        code: string;
-        constructor(code: string, message: string) {
-            super(message);
-            this.name = "GeocodingError";
-            this.code = code;
-        }
-    },
+    GeocodingError: MockGeocodingError,
 }));
 
 vi.mock("@prisma/client", () => ({
@@ -195,6 +198,61 @@ describe("PATCH /api/trip-requests/:tripRequestId", () => {
 
         expect(res.status).toBe(200);
         expect(mockResolveLocationOrThrow).not.toHaveBeenCalled();
+    });
+
+    it("1c) returns error and skips update when geocoding lookup fails", async () => {
+        const currentTripRequest = fakeTripRequest();
+        mockPrisma.tripRequest.findUnique.mockResolvedValue(currentTripRequest);
+        mockResolveLocationOrThrow.mockRejectedValueOnce(
+            new Error("lookup failed")
+        );
+
+        const res = await PATCH(
+            makeRequest({
+                destinationText: "New destination",
+            }) as never,
+            { params: Promise.resolve({ tripRequestId: "trip-123" }) }
+        );
+
+        expect(res.status).toBe(503);
+        expect(mockPrisma.tripRequest.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("1d) returns validation error when origin and destination resolve to same coordinates", async () => {
+        const currentTripRequest = fakeTripRequest();
+        mockPrisma.tripRequest.findUnique.mockResolvedValue(currentTripRequest);
+        mockResolveLocationOrThrow.mockResolvedValueOnce({
+            inputText: "Same as destination",
+            resolvedAddress: "Same as destination (resolved)",
+            latitude: currentTripRequest.destinationLatitude,
+            longitude: currentTripRequest.destinationLongitude,
+        });
+        mockAssertDistinctResolvedLocationsOrThrow.mockImplementationOnce(
+            (
+                origin: { latitude: number; longitude: number },
+                destination: { latitude: number; longitude: number }
+            ) => {
+                if (
+                    origin.latitude === destination.latitude &&
+                    origin.longitude === destination.longitude
+                ) {
+                    throw new MockGeocodingError(
+                        "SAME_COORDINATES",
+                        "Origin and destination must resolve to different coordinates."
+                    );
+                }
+            }
+        );
+
+        const res = await PATCH(
+            makeRequest({
+                originText: "Same as destination",
+            }) as never,
+            { params: Promise.resolve({ tripRequestId: "trip-123" }) }
+        );
+
+        expect(res.status).toBe(400);
+        expect(mockPrisma.tripRequest.updateMany).not.toHaveBeenCalled();
     });
 
     it("2) Owner cannot edit after CONFIRMED booking exists (409)", async () => {

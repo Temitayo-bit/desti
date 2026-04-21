@@ -2072,3 +2072,43 @@ Behavior:
 - Auto-populates patch IDs from successful create responses.
 - Sends idempotency keys for create calls.
 - Designed as a temporary class-demo test harness.
+
+### Follow-up Hardening (Review Fixes)
+
+Applied follow-up changes after PR review comments:
+
+- **Production guard for debug test harness**
+  - `src/app/(protected)/geocode-mvp2-test/page.tsx` is now a server component gate.
+  - In production, the route returns `notFound()` unless `ENABLE_GEO_MVP2_TEST=true`.
+  - Moved client UI logic into `src/app/(protected)/geocode-mvp2-test/GeocodeMvp2TestClient.tsx`.
+
+- **Client date parsing hardening**
+  - `localToIso` now validates empty/invalid values and returns `null`.
+  - Create handlers now short-circuit with local `400`-style response objects when datetime inputs are invalid.
+
+- **Ride PATCH legacy coordinate handling**
+  - `src/app/api/rides/[rideId]/route.ts` now resolves missing legacy origin/destination coordinates before distinctness checks.
+  - If either side has null coords, backend geocodes that side from current text and populates resolved address + lat/lon before calling distinctness guard.
+
+- **Geocoder strict parsing + policy controls** (`src/lib/geocoding.ts`)
+  - Invalid explicit `NOMINATIM_BASE_URL` now fails with clear configuration error (no silent fallback).
+  - Coordinate string parsing now uses strict `Number(trimmed)` (rejects malformed suffixes).
+  - Added in-memory geocode cache (TTL-based) keyed by normalized input.
+  - Added global request gate to enforce max **1 outbound Nominatim request/second**.
+
+- **.env example ordering cleanup**
+  - Reordered demo geocoder keys to satisfy linter preference (`GEOCODER_CONTACT_EMAIL` before `NOMINATIM_BASE_URL`).
+
+- **Test hardening**
+  - Tightened mock geocoding error `code` typing to `GeocodingErrorCode` in:
+    - `src/__tests__/ride-create.test.ts`
+    - `src/__tests__/trip-request-create.test.ts`
+    - `src/__tests__/ride-edit.test.ts`
+    - `src/__tests__/trip-request-edit.test.ts`
+  - Added missing negative-path edit tests for:
+    - geocoding lookup failure
+    - distinctness/duplicate-coordinate failure paths
+
+Verification:
+- `npm run test -- src/__tests__/ride-create.test.ts src/__tests__/trip-request-create.test.ts src/__tests__/ride-edit.test.ts src/__tests__/trip-request-edit.test.ts`
+- `npx tsc --noEmit`

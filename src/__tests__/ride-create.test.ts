@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { GeocodingErrorCode } from "@/lib/geocoding";
 
 // ── Mock setup ───────────────────────────────────────────────────────────────
 // vi.hoisted() ensures these are available when vi.mock factories execute (hoisted)
@@ -27,8 +28,8 @@ const {
         mockPrisma: prismaClient,
         mockResolveLocationOrThrow: vi.fn(),
         MockGeocodingError: class extends Error {
-            code: string;
-            constructor(code: string, message: string) {
+            code: GeocodingErrorCode;
+            constructor(code: GeocodingErrorCode, message: string) {
                 super(message);
                 this.name = "GeocodingError";
                 this.code = code;

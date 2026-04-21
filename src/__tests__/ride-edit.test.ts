@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { GeocodingErrorCode } from "@/lib/geocoding";
 
 // ── Mock setup ───────────────────────────────────────────────────────────────
 const {
@@ -6,6 +7,7 @@ const {
     mockPrisma,
     mockResolveLocationOrThrow,
     mockAssertDistinctResolvedLocationsOrThrow,
+    MockGeocodingError,
 } = vi.hoisted(() => {
     return {
         mockRequireStetsonAuth: vi.fn(),
@@ -19,6 +21,14 @@ const {
         },
         mockResolveLocationOrThrow: vi.fn(),
         mockAssertDistinctResolvedLocationsOrThrow: vi.fn(),
+        MockGeocodingError: class extends Error {
+            code: GeocodingErrorCode;
+            constructor(code: GeocodingErrorCode, message: string) {
+                super(message);
+                this.name = "GeocodingError";
+                this.code = code;
+            }
+        },
     };
 });
 
@@ -35,14 +45,7 @@ vi.mock("@/lib/geocoding", () => ({
         mockResolveLocationOrThrow(...args),
     assertDistinctResolvedLocationsOrThrow: (...args: unknown[]) =>
         mockAssertDistinctResolvedLocationsOrThrow(...args),
-    GeocodingError: class extends Error {
-        code: string;
-        constructor(code: string, message: string) {
-            super(message);
-            this.name = "GeocodingError";
-            this.code = code;
-        }
-    },
+    GeocodingError: MockGeocodingError,
 }));
 
 vi.mock("@prisma/client", () => ({
@@ -290,6 +293,36 @@ describe("PATCH /api/rides/:rideId", () => {
                 data: expect.objectContaining({ seatsTotal: 5, seatsAvailable: 5 })
             })
         );
+    });
+
+    it("7) returns 503 when geocoding lookup throws unexpectedly", async () => {
+        const dbRide = fakeRide();
+        mockPrisma.ride.findUnique.mockResolvedValue(dbRide);
+        mockResolveLocationOrThrow.mockRejectedValueOnce(
+            new Error("network down")
+        );
+
+        const req = makeRequest({ destinationText: "Orlando" });
+        const params = { rideId: "ride-123" };
+        const res = await PATCH(req as never, { params: Promise.resolve(params) });
+
+        expect(res.status).toBe(503);
+        expect(mockPrisma.ride.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("7b) returns 503 when distinctness check throws unexpectedly", async () => {
+        const dbRide = fakeRide();
+        mockPrisma.ride.findUnique.mockResolvedValue(dbRide);
+        mockAssertDistinctResolvedLocationsOrThrow.mockImplementationOnce(() => {
+            throw new Error("assert failed");
+        });
+
+        const req = makeRequest({ destinationText: "Orlando" });
+        const params = { rideId: "ride-123" };
+        const res = await PATCH(req as never, { params: Promise.resolve(params) });
+
+        expect(res.status).toBe(503);
+        expect(mockPrisma.ride.updateMany).not.toHaveBeenCalled();
     });
 
     it("8) Unknown fields are rejected with 400", async () => {

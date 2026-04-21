@@ -366,6 +366,38 @@ export async function PATCH(
             finalDestinationLongitude = destinationLocation.longitude;
         }
 
+        if (finalOriginLatitude === null || finalOriginLongitude === null) {
+            let resolvedOrigin: Awaited<ReturnType<typeof resolveLocationOrThrow>>;
+            try {
+                resolvedOrigin = await resolveLocationOrThrow(finalOriginText);
+            } catch (error) {
+                return geocodingErrorResponse("originText", error);
+            }
+
+            finalOriginText = resolvedOrigin.inputText;
+            finalOriginResolvedAddress = resolvedOrigin.resolvedAddress;
+            finalOriginLatitude = resolvedOrigin.latitude;
+            finalOriginLongitude = resolvedOrigin.longitude;
+        }
+
+        if (finalDestinationLatitude === null || finalDestinationLongitude === null) {
+            let resolvedDestination: Awaited<
+                ReturnType<typeof resolveLocationOrThrow>
+            >;
+            try {
+                resolvedDestination = await resolveLocationOrThrow(
+                    finalDestinationText
+                );
+            } catch (error) {
+                return geocodingErrorResponse("destinationText", error);
+            }
+
+            finalDestinationText = resolvedDestination.inputText;
+            finalDestinationResolvedAddress = resolvedDestination.resolvedAddress;
+            finalDestinationLatitude = resolvedDestination.latitude;
+            finalDestinationLongitude = resolvedDestination.longitude;
+        }
+
         if (
             finalOriginLatitude !== null &&
             finalOriginLongitude !== null &&
