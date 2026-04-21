@@ -1,7 +1,11 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
+    DESTINATION_THRESHOLD_KM,
     findCandidateRidesForTripRequest,
+    haversineDistanceKm,
+    ORIGIN_THRESHOLD_KM,
+    TIME_WINDOW_MINUTES,
     TripRequestRideMatchingError,
 } from "@/services/trip-request-ride-matching-service";
 
@@ -9,6 +13,10 @@ const tripRequestLifecycleSelect = {
     id: true,
     riderUserId: true,
     status: true,
+    originLatitude: true,
+    originLongitude: true,
+    destinationLatitude: true,
+    destinationLongitude: true,
     earliestDesiredAt: true,
     preferredDepartAt: true,
 } satisfies Prisma.TripRequestSelect;
@@ -23,8 +31,14 @@ const suggestedMatchSelect = {
     ride: {
         select: {
             id: true,
+            driverUserId: true,
+            status: true,
             originText: true,
             destinationText: true,
+            originLatitude: true,
+            originLongitude: true,
+            destinationLatitude: true,
+            destinationLongitude: true,
             preferredDepartAt: true,
             earliestDepartAt: true,
             seatsAvailable: true,
@@ -53,8 +67,14 @@ const managedMatchSelect = {
     ride: {
         select: {
             id: true,
+            driverUserId: true,
+            status: true,
             originText: true,
             destinationText: true,
+            originLatitude: true,
+            originLongitude: true,
+            destinationLatitude: true,
+            destinationLongitude: true,
             preferredDepartAt: true,
             earliestDepartAt: true,
             seatsAvailable: true,
@@ -70,6 +90,7 @@ const MATCH_STATE = {
 } as const;
 
 type MatchState = (typeof MATCH_STATE)[keyof typeof MATCH_STATE];
+const MS_PER_MINUTE = 60_000;
 
 type TripRequestForLifecycle = Prisma.TripRequestGetPayload<{
     select: typeof tripRequestLifecycleSelect;
@@ -132,6 +153,84 @@ export class MatchLifecycleError extends Error {
 
 function getTripRequestReferenceTime(tripRequest: TripRequestForLifecycle): Date {
     return tripRequest.preferredDepartAt ?? tripRequest.earliestDesiredAt;
+}
+
+function getRideReferenceTime(ride: SuggestedMatchRecord["ride"]): Date {
+    return ride.preferredDepartAt ?? ride.earliestDepartAt;
+}
+
+function hasTripRequestCoordinates(tripRequest: TripRequestForLifecycle): boolean {
+    return (
+        typeof tripRequest.originLatitude === "number" &&
+        typeof tripRequest.originLongitude === "number" &&
+        typeof tripRequest.destinationLatitude === "number" &&
+        typeof tripRequest.destinationLongitude === "number"
+    );
+}
+
+function hasRideCoordinates(ride: SuggestedMatchRecord["ride"]): boolean {
+    return (
+        typeof ride.originLatitude === "number" &&
+        typeof ride.originLongitude === "number" &&
+        typeof ride.destinationLatitude === "number" &&
+        typeof ride.destinationLongitude === "number"
+    );
+}
+
+function isRideMatchEligible(
+    ride: SuggestedMatchRecord["ride"],
+    tripRequest: TripRequestForLifecycle,
+    now: Date
+): boolean {
+    if (ride.status !== "ACTIVE") {
+        return false;
+    }
+
+    if (ride.seatsAvailable < 1) {
+        return false;
+    }
+
+    if (ride.driverUserId === tripRequest.riderUserId) {
+        return false;
+    }
+
+    if (!hasTripRequestCoordinates(tripRequest) || !hasRideCoordinates(ride)) {
+        return false;
+    }
+
+    const rideTime = getRideReferenceTime(ride);
+    if (rideTime.getTime() <= now.getTime()) {
+        return false;
+    }
+
+    const tripRequestTime = getTripRequestReferenceTime(tripRequest);
+    const originDistance = haversineDistanceKm(
+        tripRequest.originLatitude,
+        tripRequest.originLongitude,
+        ride.originLatitude,
+        ride.originLongitude
+    );
+    if (originDistance > ORIGIN_THRESHOLD_KM) {
+        return false;
+    }
+
+    const destinationDistance = haversineDistanceKm(
+        tripRequest.destinationLatitude,
+        tripRequest.destinationLongitude,
+        ride.destinationLatitude,
+        ride.destinationLongitude
+    );
+    if (destinationDistance > DESTINATION_THRESHOLD_KM) {
+        return false;
+    }
+
+    const timeDifference =
+        Math.abs(rideTime.getTime() - tripRequestTime.getTime()) / MS_PER_MINUTE;
+    if (timeDifference > TIME_WINDOW_MINUTES) {
+        return false;
+    }
+
+    return true;
 }
 
 function toActiveMatch(record: SuggestedMatchRecord): ActiveTripRequestMatch {
@@ -270,22 +369,20 @@ export async function expireInvalidMatchesForTripRequest(
         return;
     }
 
-    let validRideIds: Set<string>;
-    try {
-        const candidates = await findCandidateRidesForTripRequest(tripRequestId);
-        validRideIds = new Set(candidates.map((candidate) => candidate.rideId));
-    } catch (error) {
-        if (
-            error instanceof TripRequestRideMatchingError &&
-            error.code === "TRIP_REQUEST_COORDINATES_REQUIRED"
-        ) {
-            await expireAllNonExpiredMatches(
-                tripRequestId,
-                "TRIP_REQUEST_COORDINATES_REQUIRED",
-                now
-            );
-        }
-        throw error;
+    if (!hasTripRequestCoordinates(tripRequest)) {
+        await expireAllNonExpiredMatches(
+            tripRequestId,
+            "TRIP_REQUEST_COORDINATES_REQUIRED",
+            now
+        );
+        throw new TripRequestRideMatchingError(
+            "Trip request is missing required coordinates.",
+            {
+                statusCode: 400,
+                error: "Bad Request",
+                code: "TRIP_REQUEST_COORDINATES_REQUIRED",
+            }
+        );
     }
 
     const existingNonExpiredMatches = await prisma.match.findMany({
@@ -295,12 +392,27 @@ export async function expireInvalidMatchesForTripRequest(
         },
         select: {
             id: true,
-            rideId: true,
+            ride: {
+                select: {
+                    id: true,
+                    driverUserId: true,
+                    status: true,
+                    originText: true,
+                    destinationText: true,
+                    originLatitude: true,
+                    originLongitude: true,
+                    destinationLatitude: true,
+                    destinationLongitude: true,
+                    preferredDepartAt: true,
+                    earliestDepartAt: true,
+                    seatsAvailable: true,
+                },
+            },
         },
     });
 
     const matchIdsToExpire = existingNonExpiredMatches
-        .filter((match) => !validRideIds.has(match.rideId))
+        .filter((match) => !isRideMatchEligible(match.ride, tripRequest, now))
         .map((match) => match.id);
 
     if (matchIdsToExpire.length === 0) {
@@ -408,22 +520,9 @@ export async function rejectMatch(
     const match = await getAuthorizedManagedMatchOrThrow(matchId, actorUserId);
     await expireInvalidMatchesForTripRequest(match.tripRequestId);
 
-    const refreshed = await getAuthorizedManagedMatchOrThrow(matchId, actorUserId);
-    if (refreshed.state !== MATCH_STATE.SUGGESTED) {
-        throw new MatchLifecycleError(
-            "Only suggested matches can be rejected.",
-            {
-                statusCode: 409,
-                error: "Conflict",
-                code: "MATCH_NOT_SUGGESTED",
-            }
-        );
-    }
-
     const now = new Date();
-    const updated = await prisma.match.update({
-        where: { id: matchId },
-        select: managedMatchSelect,
+    const { count } = await prisma.match.updateMany({
+        where: { id: matchId, state: MATCH_STATE.SUGGESTED },
         data: {
             state: MATCH_STATE.REJECTED,
             acceptedAt: null,
@@ -433,6 +532,29 @@ export async function rejectMatch(
         },
     });
 
+    if (count === 0) {
+        const refreshed = await getAuthorizedManagedMatchOrThrow(
+            matchId,
+            actorUserId
+        );
+        if (refreshed.state !== MATCH_STATE.SUGGESTED) {
+            throw new MatchLifecycleError(
+                "Only suggested matches can be rejected.",
+                {
+                    statusCode: 409,
+                    error: "Conflict",
+                    code: "MATCH_NOT_SUGGESTED",
+                }
+            );
+        }
+        throw new MatchLifecycleError("Only suggested matches can be rejected.", {
+            statusCode: 409,
+            error: "Conflict",
+            code: "MATCH_NOT_SUGGESTED",
+        });
+    }
+
+    const updated = await getAuthorizedManagedMatchOrThrow(matchId, actorUserId);
     return toManagedMatch(updated);
 }
 
@@ -443,22 +565,9 @@ export async function acceptMatch(
     const match = await getAuthorizedManagedMatchOrThrow(matchId, actorUserId);
     await expireInvalidMatchesForTripRequest(match.tripRequestId);
 
-    const refreshed = await getAuthorizedManagedMatchOrThrow(matchId, actorUserId);
-    if (refreshed.state !== MATCH_STATE.SUGGESTED) {
-        throw new MatchLifecycleError(
-            "Only suggested matches can be accepted.",
-            {
-                statusCode: 409,
-                error: "Conflict",
-                code: "MATCH_NOT_SUGGESTED",
-            }
-        );
-    }
-
     const now = new Date();
-    const updated = await prisma.match.update({
-        where: { id: matchId },
-        select: managedMatchSelect,
+    const { count } = await prisma.match.updateMany({
+        where: { id: matchId, state: MATCH_STATE.SUGGESTED },
         data: {
             state: MATCH_STATE.ACCEPTED,
             acceptedAt: now,
@@ -468,5 +577,28 @@ export async function acceptMatch(
         },
     });
 
+    if (count === 0) {
+        const refreshed = await getAuthorizedManagedMatchOrThrow(
+            matchId,
+            actorUserId
+        );
+        if (refreshed.state !== MATCH_STATE.SUGGESTED) {
+            throw new MatchLifecycleError(
+                "Only suggested matches can be accepted.",
+                {
+                    statusCode: 409,
+                    error: "Conflict",
+                    code: "MATCH_NOT_SUGGESTED",
+                }
+            );
+        }
+        throw new MatchLifecycleError("Only suggested matches can be accepted.", {
+            statusCode: 409,
+            error: "Conflict",
+            code: "MATCH_NOT_SUGGESTED",
+        });
+    }
+
+    const updated = await getAuthorizedManagedMatchOrThrow(matchId, actorUserId);
     return toManagedMatch(updated);
 }

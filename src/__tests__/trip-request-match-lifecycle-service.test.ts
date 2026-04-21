@@ -6,14 +6,24 @@ interface TripRequestRecord {
     id: string;
     riderUserId: string;
     status: "ACTIVE" | "CANCELLED" | "CLOSED";
+    originLatitude: number | null;
+    originLongitude: number | null;
+    destinationLatitude: number | null;
+    destinationLongitude: number | null;
     earliestDesiredAt: Date;
     preferredDepartAt: Date | null;
 }
 
 interface RideRecord {
     id: string;
+    driverUserId: string;
+    status: "ACTIVE" | "CANCELLED" | "COMPLETED";
     originText: string;
     destinationText: string;
+    originLatitude: number | null;
+    originLongitude: number | null;
+    destinationLatitude: number | null;
+    destinationLongitude: number | null;
     earliestDepartAt: Date;
     preferredDepartAt: Date | null;
     seatsAvailable: number;
@@ -55,8 +65,14 @@ const { mockPrisma, mockFindCandidateRidesForTripRequest, state } = vi.hoisted(
                 },
                 ride: {
                     id: ride.id,
+                    driverUserId: ride.driverUserId,
+                    status: ride.status,
                     originText: ride.originText,
                     destinationText: ride.destinationText,
+                    originLatitude: ride.originLatitude,
+                    originLongitude: ride.originLongitude,
+                    destinationLatitude: ride.destinationLatitude,
+                    destinationLongitude: ride.destinationLongitude,
                     earliestDepartAt: ride.earliestDepartAt,
                     preferredDepartAt: ride.preferredDepartAt,
                     seatsAvailable: ride.seatsAvailable,
@@ -71,6 +87,10 @@ const { mockPrisma, mockFindCandidateRidesForTripRequest, state } = vi.hoisted(
                 typeof where.tripRequestId === "string" &&
                 match.tripRequestId !== where.tripRequestId
             ) {
+                return false;
+            }
+
+            if (typeof where.id === "string" && match.id !== where.id) {
                 return false;
             }
 
@@ -323,6 +343,19 @@ vi.mock("@/services/trip-request-ride-matching-service", () => {
     }
 
     return {
+        ORIGIN_THRESHOLD_KM: 8,
+        DESTINATION_THRESHOLD_KM: 8,
+        TIME_WINDOW_MINUTES: 45,
+        haversineDistanceKm: (
+            latitudeA: number,
+            longitudeA: number,
+            latitudeB: number,
+            longitudeB: number
+        ) => {
+            const lat = latitudeA - latitudeB;
+            const lng = longitudeA - longitudeB;
+            return Math.sqrt(lat * lat + lng * lng) * 111;
+        },
         findCandidateRidesForTripRequest: (...args: unknown[]) =>
             mockFindCandidateRidesForTripRequest(...args),
         TripRequestRideMatchingError: MockTripRequestRideMatchingError,
@@ -343,6 +376,10 @@ function seedActiveTripRequest(id = "trip-1", riderUserId = "rider-1") {
         id,
         riderUserId,
         status: "ACTIVE",
+        originLatitude: 29.0361,
+        originLongitude: -81.302,
+        destinationLatitude: 29.2108,
+        destinationLongitude: -81.0228,
         earliestDesiredAt: new Date("2030-01-01T10:00:00.000Z"),
         preferredDepartAt: null,
     });
@@ -351,8 +388,14 @@ function seedActiveTripRequest(id = "trip-1", riderUserId = "rider-1") {
 function seedRide(id = "ride-1") {
     state.rides.set(id, {
         id,
+        driverUserId: "driver-1",
+        status: "ACTIVE",
         originText: "Stetson University",
         destinationText: "Daytona Beach",
+        originLatitude: 29.0362,
+        originLongitude: -81.3021,
+        destinationLatitude: 29.2107,
+        destinationLongitude: -81.0227,
         earliestDepartAt: new Date("2030-01-01T10:30:00.000Z"),
         preferredDepartAt: null,
         seatsAvailable: 2,
@@ -532,6 +575,10 @@ describe("trip request match lifecycle service", () => {
             id: "trip-1",
             riderUserId: "rider-1",
             status: "CANCELLED",
+            originLatitude: 29.0361,
+            originLongitude: -81.302,
+            destinationLatitude: 29.2108,
+            destinationLongitude: -81.0228,
             earliestDesiredAt: new Date("2030-01-01T10:00:00.000Z"),
             preferredDepartAt: null,
         });
@@ -549,6 +596,10 @@ describe("trip request match lifecycle service", () => {
             id: "trip-1",
             riderUserId: "rider-1",
             status: "CANCELLED",
+            originLatitude: 29.0361,
+            originLongitude: -81.302,
+            destinationLatitude: 29.2108,
+            destinationLongitude: -81.0228,
             earliestDesiredAt: new Date("2030-01-01T10:00:00.000Z"),
             preferredDepartAt: null,
         });
@@ -565,6 +616,10 @@ describe("trip request match lifecycle service", () => {
             id: "trip-1",
             riderUserId: "rider-1",
             status: "ACTIVE",
+            originLatitude: 29.0361,
+            originLongitude: -81.302,
+            destinationLatitude: 29.2108,
+            destinationLongitude: -81.0228,
             earliestDesiredAt: new Date("2000-01-01T10:00:00.000Z"),
             preferredDepartAt: null,
         });
@@ -576,44 +631,32 @@ describe("trip request match lifecycle service", () => {
         expect(match.expirationReason).toBe("TRIP_REQUEST_DEPARTURE_PASSED");
     });
 
-    it("expires matches when ride is no longer match-eligible", async () => {
+    it.each([
+        {
+            label: "when ride departure has passed",
+            mutateRide: () => ({
+                earliestDepartAt: new Date("2000-01-01T10:00:00.000Z"),
+                preferredDepartAt: null,
+            }),
+        },
+        {
+            label: "when ride is cancelled/completed/not bookable",
+            mutateRide: () => ({
+                status: "CANCELLED" as const,
+            }),
+        },
+        {
+            label: "when ride has no available seats",
+            mutateRide: () => ({
+                seatsAvailable: 0,
+            }),
+        },
+    ])("expires matches $label", async ({ mutateRide }) => {
         seedMatch();
-        mockFindCandidateRidesForTripRequest.mockResolvedValue([]);
-
-        await expireInvalidMatchesForTripRequest("trip-1");
-
-        const match = state.getMatches()[0];
-        expect(match.state).toBe("EXPIRED");
-        expect(match.expirationReason).toBe("RIDE_NO_LONGER_MATCH_ELIGIBLE");
-    });
-
-    it("expires matches when ride departure has passed", async () => {
-        seedMatch();
-        mockFindCandidateRidesForTripRequest.mockResolvedValue([]);
-
-        await expireInvalidMatchesForTripRequest("trip-1");
-
-        expect(state.getMatches()[0].state).toBe("EXPIRED");
-        expect(state.getMatches()[0].expirationReason).toBe(
-            "RIDE_NO_LONGER_MATCH_ELIGIBLE"
-        );
-    });
-
-    it("expires matches when ride is cancelled/completed/not bookable", async () => {
-        seedMatch();
-        mockFindCandidateRidesForTripRequest.mockResolvedValue([]);
-
-        await expireInvalidMatchesForTripRequest("trip-1");
-
-        expect(state.getMatches()[0].state).toBe("EXPIRED");
-        expect(state.getMatches()[0].expirationReason).toBe(
-            "RIDE_NO_LONGER_MATCH_ELIGIBLE"
-        );
-    });
-
-    it("expires matches when ride has no available seats", async () => {
-        seedMatch();
-        mockFindCandidateRidesForTripRequest.mockResolvedValue([]);
+        state.rides.set("ride-1", {
+            ...state.rides.get("ride-1")!,
+            ...mutateRide(),
+        });
 
         await expireInvalidMatchesForTripRequest("trip-1");
 
@@ -621,6 +664,16 @@ describe("trip request match lifecycle service", () => {
         expect(state.getMatches()[0].expirationReason).toBe(
             "RIDE_NO_LONGER_MATCH_ELIGIBLE"
         );
+    });
+
+    it("does not expire an otherwise eligible ride just because ranked candidates are empty", async () => {
+        seedMatch();
+        mockFindCandidateRidesForTripRequest.mockResolvedValue([]);
+
+        await expireInvalidMatchesForTripRequest("trip-1");
+
+        expect(state.getMatches()[0].state).toBe("SUGGESTED");
+        expect(state.getMatches()[0].expirationReason).toBeNull();
     });
 
     it("rejects a suggested match and keeps it suppressed", async () => {

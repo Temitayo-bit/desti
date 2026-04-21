@@ -1,4 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+    MockMatchLifecycleError,
+    MockTripRequestRideMatchingError,
+} from "@/__tests__/helpers/lifecycle-error-mocks";
 
 const { mockRequireStetsonAuth, mockAcceptMatch } = vi.hoisted(() => {
     return {
@@ -12,30 +16,6 @@ vi.mock("@/lib/auth", () => ({
 }));
 
 vi.mock("@/services/trip-request-match-lifecycle-service", () => {
-    class MockMatchLifecycleError extends Error {
-        statusCode: number;
-        error: string;
-        code: string;
-
-        constructor(
-            message: string,
-            {
-                statusCode,
-                error,
-                code,
-            }: {
-                statusCode: number;
-                error: string;
-                code: string;
-            }
-        ) {
-            super(message);
-            this.statusCode = statusCode;
-            this.error = error;
-            this.code = code;
-        }
-    }
-
     return {
         acceptMatch: (...args: unknown[]) => mockAcceptMatch(...args),
         MatchLifecycleError: MockMatchLifecycleError,
@@ -43,30 +23,6 @@ vi.mock("@/services/trip-request-match-lifecycle-service", () => {
 });
 
 vi.mock("@/services/trip-request-ride-matching-service", () => {
-    class MockTripRequestRideMatchingError extends Error {
-        statusCode: number;
-        error: string;
-        code: string;
-
-        constructor(
-            message: string,
-            {
-                statusCode,
-                error,
-                code,
-            }: {
-                statusCode: number;
-                error: string;
-                code: string;
-            }
-        ) {
-            super(message);
-            this.statusCode = statusCode;
-            this.error = error;
-            this.code = code;
-        }
-    }
-
     return { TripRequestRideMatchingError: MockTripRequestRideMatchingError };
 });
 
