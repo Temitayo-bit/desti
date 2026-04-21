@@ -91,6 +91,18 @@ const MATCH_STATE = {
 
 type MatchState = (typeof MATCH_STATE)[keyof typeof MATCH_STATE];
 const MS_PER_MINUTE = 60_000;
+type TripRequestWithCoordinates = TripRequestForLifecycle & {
+    originLatitude: number;
+    originLongitude: number;
+    destinationLatitude: number;
+    destinationLongitude: number;
+};
+type RideWithCoordinates = SuggestedMatchRecord["ride"] & {
+    originLatitude: number;
+    originLongitude: number;
+    destinationLatitude: number;
+    destinationLongitude: number;
+};
 
 type TripRequestForLifecycle = Prisma.TripRequestGetPayload<{
     select: typeof tripRequestLifecycleSelect;
@@ -159,7 +171,9 @@ function getRideReferenceTime(ride: SuggestedMatchRecord["ride"]): Date {
     return ride.preferredDepartAt ?? ride.earliestDepartAt;
 }
 
-function hasTripRequestCoordinates(tripRequest: TripRequestForLifecycle): boolean {
+function hasTripRequestCoordinates(
+    tripRequest: TripRequestForLifecycle
+): tripRequest is TripRequestWithCoordinates {
     return (
         typeof tripRequest.originLatitude === "number" &&
         typeof tripRequest.originLongitude === "number" &&
@@ -168,7 +182,7 @@ function hasTripRequestCoordinates(tripRequest: TripRequestForLifecycle): boolea
     );
 }
 
-function hasRideCoordinates(ride: SuggestedMatchRecord["ride"]): boolean {
+function hasRideCoordinates(ride: SuggestedMatchRecord["ride"]): ride is RideWithCoordinates {
     return (
         typeof ride.originLatitude === "number" &&
         typeof ride.originLongitude === "number" &&
