@@ -1,8 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { GeocodingErrorCode } from "@/lib/geocoding";
 
 // ── Mock setup ───────────────────────────────────────────────────────────────
 // vi.hoisted() ensures these are available when vi.mock factories execute (hoisted)
-const { mockRequireStetsonAuth, mockPrisma } = vi.hoisted(() => {
+const {
+    mockRequireStetsonAuth,
+    mockPrisma,
+    mockResolveLocationOrThrow,
+    MockGeocodingError,
+} = vi.hoisted(() => {
     const prismaClient = {
         user: {
             upsert: vi.fn().mockResolvedValue({}),
@@ -20,6 +26,15 @@ const { mockRequireStetsonAuth, mockPrisma } = vi.hoisted(() => {
     return {
         mockRequireStetsonAuth: vi.fn(),
         mockPrisma: prismaClient,
+        mockResolveLocationOrThrow: vi.fn(),
+        MockGeocodingError: class extends Error {
+            code: GeocodingErrorCode;
+            constructor(code: GeocodingErrorCode, message: string) {
+                super(message);
+                this.name = "GeocodingError";
+                this.code = code;
+            }
+        },
     };
 });
 
@@ -29,6 +44,13 @@ vi.mock("@/lib/auth", () => ({
 
 vi.mock("@/lib/prisma", () => ({
     prisma: mockPrisma,
+}));
+
+vi.mock("@/lib/geocoding", () => ({
+    resolveLocationOrThrow: (...args: unknown[]) =>
+        mockResolveLocationOrThrow(...args),
+    GeocodingError: MockGeocodingError,
+    assertDistinctResolvedLocationsOrThrow: vi.fn(),
 }));
 
 // Mock DistanceCategory enum from generated Prisma client
@@ -98,7 +120,13 @@ function fakeRide(overrides: Record<string, unknown> = {}) {
         id: "ride-uuid-001",
         driverUserId: "user_test123",
         originText: body.originText,
+        originResolvedAddress: "Stetson University, DeLand, Florida, United States",
+        originLatitude: 29.0361,
+        originLongitude: -81.302,
         destinationText: body.destinationText,
+        destinationResolvedAddress: "Daytona Beach, Florida, United States",
+        destinationLatitude: 29.2108,
+        destinationLongitude: -81.0228,
         earliestDepartAt: new Date(body.earliestDepartAt),
         latestDepartAt: new Date(body.latestDepartAt),
         distanceCategory: "MEDIUM",
@@ -119,6 +147,24 @@ describe("POST /api/rides", () => {
         vi.clearAllMocks();
         mockRequireStetsonAuth.mockResolvedValue(successAuth());
         mockPrisma.idempotencyKey.findUnique.mockResolvedValue(null);
+        mockResolveLocationOrThrow.mockImplementation(async (input: string) => {
+            if (input.includes("Stetson")) {
+                return {
+                    inputText: input.trim(),
+                    resolvedAddress:
+                        "Stetson University, DeLand, Florida, United States",
+                    latitude: 29.0361,
+                    longitude: -81.302,
+                };
+            }
+
+            return {
+                inputText: input.trim(),
+                resolvedAddress: "Daytona Beach, Florida, United States",
+                latitude: 29.2108,
+                longitude: -81.0228,
+            };
+        });
     });
 
     // 1) Successful create → 201 (ride + idempotency key created atomically via $transaction)
@@ -136,6 +182,21 @@ describe("POST /api/rides", () => {
         expect(json.driverUserId).toBe("user_test123");
         expect(json.seatsAvailable).toBe(4);
         expect(json.status).toBe("ACTIVE");
+        expect(mockResolveLocationOrThrow).toHaveBeenCalledTimes(2);
+        expect(mockPrisma.ride.create).toHaveBeenCalledWith(
+            expect.objectContaining({
+                data: expect.objectContaining({
+                    originResolvedAddress:
+                        "Stetson University, DeLand, Florida, United States",
+                    originLatitude: 29.0361,
+                    originLongitude: -81.302,
+                    destinationResolvedAddress:
+                        "Daytona Beach, Florida, United States",
+                    destinationLatitude: 29.2108,
+                    destinationLongitude: -81.0228,
+                }),
+            })
+        );
         // Verify $transaction was used for atomicity
         expect(mockPrisma.$transaction).toHaveBeenCalledOnce();
     });
@@ -239,6 +300,7 @@ describe("POST /api/rides", () => {
         expect(json.id).toBe("ride-uuid-001");
         // Ensure no new ride was created
         expect(mockPrisma.ride.create).not.toHaveBeenCalled();
+        expect(mockResolveLocationOrThrow).not.toHaveBeenCalled();
     });
 
     // 8) Successful create with route context and timing fields → 201
@@ -342,5 +404,48 @@ describe("POST /api/rides", () => {
         expect(json.error).toBe("Validation Error");
         const fields = json.details.map((d: { field: string }) => d.field);
         expect(fields).toContain("preferredDepartAt");
+    });
+
+    // 13) Geocoder returns no result → 400
+    it("returns 400 when origin geocoding cannot resolve a location", async () => {
+        mockResolveLocationOrThrow.mockRejectedValueOnce(
+            new MockGeocodingError(
+                "RESOLUTION_FAILED",
+                "Location could not be resolved to valid US coordinates."
+            )
+        );
+
+        const req = makeRequest(validBody());
+        const res = await POST(req as never);
+        const json = await res.json();
+
+        expect(res.status).toBe(400);
+        expect(json.error).toBe("Validation Error");
+        expect(json.details).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    field: "originText",
+                }),
+            ])
+        );
+        expect(mockPrisma.ride.create).not.toHaveBeenCalled();
+    });
+
+    // 14) Geocoder provider failure → 503
+    it("returns 503 when the geocoding provider fails", async () => {
+        mockResolveLocationOrThrow.mockRejectedValueOnce(
+            new MockGeocodingError(
+                "PROVIDER_FAILURE",
+                "Location provider request failed."
+            )
+        );
+
+        const req = makeRequest(validBody());
+        const res = await POST(req as never);
+        const json = await res.json();
+
+        expect(res.status).toBe(503);
+        expect(json.error).toBe("Service Unavailable");
+        expect(mockPrisma.ride.create).not.toHaveBeenCalled();
     });
 });

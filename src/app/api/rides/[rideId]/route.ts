@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireStetsonAuth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { DistanceCategory, BookingStatus, RideStatus } from "@prisma/client";
+import {
+    assertDistinctResolvedLocationsOrThrow,
+    GeocodingError,
+    resolveLocationOrThrow,
+} from "@/lib/geocoding";
 
 const VALID_DISTANCE_CATEGORIES: ReadonlySet<string> = new Set(
     Object.values(DistanceCategory)
@@ -25,6 +30,52 @@ const ALLOWED_UPDATE_FIELDS = new Set([
 interface ValidationError {
     field: string;
     message: string;
+}
+
+function geocodingErrorResponse(
+    field: "originText" | "destinationText",
+    error: unknown
+) {
+    if (error instanceof GeocodingError) {
+        if (
+            error.code === "PROVIDER_FAILURE" ||
+            error.code === "PROVIDER_TIMEOUT"
+        ) {
+            console.error(
+                `[PATCH /api/rides/:rideId] Geocoding provider failure for ${field}:`,
+                error
+            );
+            return NextResponse.json(
+                {
+                    error: "Service Unavailable",
+                    message:
+                        "Location lookup is temporarily unavailable. Please try again.",
+                },
+                { status: 503 }
+            );
+        }
+
+        return NextResponse.json(
+            {
+                error: "Validation Error",
+                message: "One or more fields are invalid.",
+                details: [{ field, message: error.message }],
+            },
+            { status: 400 }
+        );
+    }
+
+    console.error(
+        `[PATCH /api/rides/:rideId] Unexpected geocoding error for ${field}:`,
+        error
+    );
+    return NextResponse.json(
+        {
+            error: "Service Unavailable",
+            message: "Location lookup is temporarily unavailable. Please try again.",
+        },
+        { status: 503 }
+    );
 }
 
 export async function PATCH(
@@ -269,6 +320,106 @@ export async function PATCH(
             );
         }
 
+        const originTextChanged =
+            body.originText !== undefined && finalOriginText !== ride.originText;
+        const destinationTextChanged =
+            body.destinationText !== undefined &&
+            finalDestinationText !== ride.destinationText;
+
+        let finalOriginResolvedAddress = ride.originResolvedAddress ?? null;
+        let finalOriginLatitude = ride.originLatitude ?? null;
+        let finalOriginLongitude = ride.originLongitude ?? null;
+        let finalDestinationResolvedAddress =
+            ride.destinationResolvedAddress ?? null;
+        let finalDestinationLatitude = ride.destinationLatitude ?? null;
+        let finalDestinationLongitude = ride.destinationLongitude ?? null;
+
+        if (originTextChanged) {
+            let originLocation: Awaited<ReturnType<typeof resolveLocationOrThrow>>;
+            try {
+                originLocation = await resolveLocationOrThrow(finalOriginText);
+            } catch (error) {
+                return geocodingErrorResponse("originText", error);
+            }
+
+            finalOriginText = originLocation.inputText;
+            finalOriginResolvedAddress = originLocation.resolvedAddress;
+            finalOriginLatitude = originLocation.latitude;
+            finalOriginLongitude = originLocation.longitude;
+        }
+
+        if (destinationTextChanged) {
+            let destinationLocation: Awaited<
+                ReturnType<typeof resolveLocationOrThrow>
+            >;
+            try {
+                destinationLocation = await resolveLocationOrThrow(
+                    finalDestinationText
+                );
+            } catch (error) {
+                return geocodingErrorResponse("destinationText", error);
+            }
+
+            finalDestinationText = destinationLocation.inputText;
+            finalDestinationResolvedAddress = destinationLocation.resolvedAddress;
+            finalDestinationLatitude = destinationLocation.latitude;
+            finalDestinationLongitude = destinationLocation.longitude;
+        }
+
+        if (finalOriginLatitude === null || finalOriginLongitude === null) {
+            let resolvedOrigin: Awaited<ReturnType<typeof resolveLocationOrThrow>>;
+            try {
+                resolvedOrigin = await resolveLocationOrThrow(finalOriginText);
+            } catch (error) {
+                return geocodingErrorResponse("originText", error);
+            }
+
+            finalOriginText = resolvedOrigin.inputText;
+            finalOriginResolvedAddress = resolvedOrigin.resolvedAddress;
+            finalOriginLatitude = resolvedOrigin.latitude;
+            finalOriginLongitude = resolvedOrigin.longitude;
+        }
+
+        if (finalDestinationLatitude === null || finalDestinationLongitude === null) {
+            let resolvedDestination: Awaited<
+                ReturnType<typeof resolveLocationOrThrow>
+            >;
+            try {
+                resolvedDestination = await resolveLocationOrThrow(
+                    finalDestinationText
+                );
+            } catch (error) {
+                return geocodingErrorResponse("destinationText", error);
+            }
+
+            finalDestinationText = resolvedDestination.inputText;
+            finalDestinationResolvedAddress = resolvedDestination.resolvedAddress;
+            finalDestinationLatitude = resolvedDestination.latitude;
+            finalDestinationLongitude = resolvedDestination.longitude;
+        }
+
+        if (
+            finalOriginLatitude !== null &&
+            finalOriginLongitude !== null &&
+            finalDestinationLatitude !== null &&
+            finalDestinationLongitude !== null
+        ) {
+            try {
+                assertDistinctResolvedLocationsOrThrow(
+                    {
+                        latitude: finalOriginLatitude,
+                        longitude: finalOriginLongitude,
+                    },
+                    {
+                        latitude: finalDestinationLatitude,
+                        longitude: finalDestinationLongitude,
+                    }
+                );
+            } catch (error) {
+                return geocodingErrorResponse("destinationText", error);
+            }
+        }
+
         let finalSeatsAvailable = ride.seatsAvailable;
         if (body.seatsTotal !== undefined && body.seatsTotal !== ride.seatsTotal) {
             finalSeatsAvailable = finalSeatsTotal;
@@ -283,7 +434,14 @@ export async function PATCH(
                     },
                     data: {
                         originText: finalOriginText,
+                        originResolvedAddress: finalOriginResolvedAddress,
+                        originLatitude: finalOriginLatitude,
+                        originLongitude: finalOriginLongitude,
                         destinationText: finalDestinationText,
+                        destinationResolvedAddress:
+                            finalDestinationResolvedAddress,
+                        destinationLatitude: finalDestinationLatitude,
+                        destinationLongitude: finalDestinationLongitude,
                         earliestDepartAt: finalEarliestDepartAt,
                         latestDepartAt: finalLatestDepartAt,
                         preferredDepartAt: finalPreferredDepartAt,

@@ -3,6 +3,11 @@ import { requireStetsonAuth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { DistanceCategory, Prisma } from "@prisma/client";
 import {
+    assertDistinctResolvedLocationsOrThrow,
+    GeocodingError,
+    resolveLocationOrThrow,
+} from "@/lib/geocoding";
+import {
     QueryValidationError,
     decodeCursor,
     encodeCursor,
@@ -158,6 +163,52 @@ export async function GET(request: NextRequest) {
 interface ValidationError {
     field: string;
     message: string;
+}
+
+function geocodingErrorResponse(
+    field: "originText" | "destinationText",
+    error: unknown
+) {
+    if (error instanceof GeocodingError) {
+        if (
+            error.code === "PROVIDER_FAILURE" ||
+            error.code === "PROVIDER_TIMEOUT"
+        ) {
+            console.error(
+                `[POST /api/rides] Geocoding provider failure for ${field}:`,
+                error
+            );
+            return NextResponse.json(
+                {
+                    error: "Service Unavailable",
+                    message:
+                        "Location lookup is temporarily unavailable. Please try again.",
+                },
+                { status: 503 }
+            );
+        }
+
+        return NextResponse.json(
+            {
+                error: "Validation Error",
+                message: "One or more fields are invalid.",
+                details: [{ field, message: error.message }],
+            },
+            { status: 400 }
+        );
+    }
+
+    console.error(
+        `[POST /api/rides] Unexpected geocoding error for ${field}:`,
+        error
+    );
+    return NextResponse.json(
+        {
+            error: "Service Unavailable",
+            message: "Location lookup is temporarily unavailable. Please try again.",
+        },
+        { status: 503 }
+    );
 }
 
 /**
@@ -431,6 +482,39 @@ export async function POST(request: NextRequest) {
             return NextResponse.json(existingMapping.ride, { status: 200 });
         }
 
+        let originLocation: Awaited<ReturnType<typeof resolveLocationOrThrow>>;
+        try {
+            originLocation = await resolveLocationOrThrow(parsed.originText);
+        } catch (error) {
+            return geocodingErrorResponse("originText", error);
+        }
+
+        let destinationLocation: Awaited<
+            ReturnType<typeof resolveLocationOrThrow>
+        >;
+        try {
+            destinationLocation = await resolveLocationOrThrow(
+                parsed.destinationText
+            );
+        } catch (error) {
+            return geocodingErrorResponse("destinationText", error);
+        }
+
+        try {
+            assertDistinctResolvedLocationsOrThrow(
+                {
+                    latitude: originLocation.latitude,
+                    longitude: originLocation.longitude,
+                },
+                {
+                    latitude: destinationLocation.latitude,
+                    longitude: destinationLocation.longitude,
+                }
+            );
+        } catch (error) {
+            return geocodingErrorResponse("destinationText", error);
+        }
+
         // 5. Ensure local User record exists (FK: rides.driver_user_id → users.clerk_user_id)
         await prisma.user.upsert({
             where: { clerkUserId: driverUserId },
@@ -447,8 +531,15 @@ export async function POST(request: NextRequest) {
                 const newRide = await tx.ride.create({
                     data: {
                         driverUserId,
-                        originText: parsed.originText,
-                        destinationText: parsed.destinationText,
+                        originText: originLocation.inputText,
+                        originResolvedAddress: originLocation.resolvedAddress,
+                        originLatitude: originLocation.latitude,
+                        originLongitude: originLocation.longitude,
+                        destinationText: destinationLocation.inputText,
+                        destinationResolvedAddress:
+                            destinationLocation.resolvedAddress,
+                        destinationLatitude: destinationLocation.latitude,
+                        destinationLongitude: destinationLocation.longitude,
                         earliestDepartAt: parsed.earliestDepartAt,
                         latestDepartAt: parsed.latestDepartAt,
                         distanceCategory: parsed.distanceCategory,
