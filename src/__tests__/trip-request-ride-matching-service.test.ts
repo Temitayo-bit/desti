@@ -19,6 +19,7 @@ vi.mock("@/lib/prisma", () => ({
 
 import {
     findCandidateRidesForTripRequest,
+    MAX_MATCH_RESULTS,
     ORIGIN_THRESHOLD_KM,
     TIME_WINDOW_MINUTES,
     TripRequestRideMatchingError,
@@ -90,12 +91,12 @@ describe("trip request ride matching service", () => {
         );
     });
 
-    it("excludes rides outside the distance thresholds", async () => {
+    it("excludes rides that barely miss the tighter distance thresholds", async () => {
         mockPrisma.ride.findMany.mockResolvedValue([
             fakeRide({
                 id: "ride-far",
-                originLatitude: 30.2,
-                originLongitude: -81.3,
+                originLatitude: 29.11,
+                originLongitude: -81.302,
             }),
         ]);
 
@@ -143,6 +144,105 @@ describe("trip request ride matching service", () => {
         expect(result).toEqual([]);
     });
 
+    it("excludes cancelled and completed rides", async () => {
+        mockPrisma.ride.findMany.mockResolvedValue([
+            fakeRide({
+                id: "ride-cancelled",
+                status: "CANCELLED",
+            }),
+            fakeRide({
+                id: "ride-completed",
+                status: "COMPLETED",
+            }),
+        ]);
+
+        const result = await findCandidateRidesForTripRequest("trip-1");
+
+        expect(result).toEqual([]);
+    });
+
+    it("penalizes imbalanced matches so balanced rides rank higher", async () => {
+        mockPrisma.ride.findMany.mockResolvedValue([
+            fakeRide({
+                id: "ride-imbalanced",
+                originLatitude: 29.0371,
+                destinationLatitude: 29.2648,
+                earliestDepartAt: new Date("2030-01-01T10:10:00.000Z"),
+            }),
+            fakeRide({
+                id: "ride-balanced",
+                originLatitude: 29.0631,
+                destinationLatitude: 29.2378,
+                earliestDepartAt: new Date("2030-01-01T10:10:00.000Z"),
+            }),
+        ]);
+
+        const result = await findCandidateRidesForTripRequest("trip-1");
+
+        expect(result.map((item) => item.rideId)).toEqual([
+            "ride-balanced",
+            "ride-imbalanced",
+        ]);
+    });
+
+    it("filters technically valid but poor-score candidates using quality cutoff", async () => {
+        mockPrisma.ride.findMany.mockResolvedValue([
+            fakeRide({
+                id: "ride-weak",
+                originLatitude: 29.1071,
+                destinationLatitude: 29.2798,
+                earliestDepartAt: new Date("2030-01-01T10:44:00.000Z"),
+            }),
+        ]);
+
+        const result = await findCandidateRidesForTripRequest("trip-1");
+
+        expect(result).toEqual([]);
+    });
+
+    it("caps matches to a small top-N set", async () => {
+        const generatedRides = Array.from({ length: MAX_MATCH_RESULTS + 2 }, (_, i) =>
+            fakeRide({
+                id: `ride-${i + 1}`,
+                originLatitude: 29.037 + i * 0.001,
+                destinationLatitude: 29.212 + i * 0.0015,
+                earliestDepartAt: new Date(
+                    `2030-01-01T10:${String(5 + i).padStart(2, "0")}:00.000Z`
+                ),
+            })
+        );
+        mockPrisma.ride.findMany.mockResolvedValue(generatedRides);
+
+        const result = await findCandidateRidesForTripRequest("trip-1");
+        const expectedIds = Array.from(
+            { length: MAX_MATCH_RESULTS },
+            (_, i) => `ride-${i + 1}`
+        );
+
+        expect(result).toHaveLength(MAX_MATCH_RESULTS);
+        expect(result.map((item) => item.rideId)).toEqual(expectedIds);
+    });
+
+    it("excludes rides in the past even when they otherwise match", async () => {
+        const now = Date.now();
+        mockPrisma.tripRequest.findUnique.mockResolvedValue(
+            fakeTripRequest({
+                earliestDesiredAt: new Date(now - 20 * 60_000),
+            })
+        );
+        mockPrisma.ride.findMany.mockResolvedValue([
+            fakeRide({
+                id: "ride-past",
+                earliestDepartAt: new Date(now - 10 * 60_000),
+                latestDepartAt: new Date(now - 5 * 60_000),
+            }),
+        ]);
+
+        const result = await findCandidateRidesForTripRequest("trip-1");
+
+        expect(result).toEqual([]);
+    });
+
     it("sorts candidates by best score first", async () => {
         mockPrisma.ride.findMany.mockResolvedValue([
             fakeRide({
@@ -150,7 +250,7 @@ describe("trip request ride matching service", () => {
                 originLatitude: 29.09,
                 destinationLatitude: 29.26,
                 earliestDepartAt: new Date(
-                    "2030-01-01T11:25:00.000Z"
+                    "2030-01-01T10:35:00.000Z"
                 ),
             }),
             fakeRide({
@@ -169,6 +269,27 @@ describe("trip request ride matching service", () => {
             "ride-best",
             "ride-worse",
         ]);
+    });
+
+    it("returns an empty array when all candidates are weak", async () => {
+        mockPrisma.ride.findMany.mockResolvedValue([
+            fakeRide({
+                id: "ride-weak-1",
+                originLatitude: 29.108,
+                destinationLatitude: 29.278,
+                earliestDepartAt: new Date("2030-01-01T10:43:00.000Z"),
+            }),
+            fakeRide({
+                id: "ride-weak-2",
+                originLatitude: 29.1075,
+                destinationLatitude: 29.279,
+                earliestDepartAt: new Date("2030-01-01T10:44:00.000Z"),
+            }),
+        ]);
+
+        const result = await findCandidateRidesForTripRequest("trip-1");
+
+        expect(result).toEqual([]);
     });
 
     it("returns an empty array when there are no matches", async () => {

@@ -1,13 +1,18 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
-export const ORIGIN_THRESHOLD_KM = 15;
-export const DESTINATION_THRESHOLD_KM = 15;
-export const TIME_WINDOW_MINUTES = 90;
+export const ORIGIN_THRESHOLD_KM = 8;
+export const DESTINATION_THRESHOLD_KM = 8;
+export const TIME_WINDOW_MINUTES = 45;
+export const MAX_MATCH_RESULTS = 5;
 
-const ORIGIN_DISTANCE_WEIGHT = 0.4;
-const DESTINATION_DISTANCE_WEIGHT = 0.4;
+const ORIGIN_DISTANCE_WEIGHT = 0.35;
+const DESTINATION_DISTANCE_WEIGHT = 0.35;
 const TIME_DIFFERENCE_WEIGHT = 0.2;
+const IMBALANCE_PENALTY_WEIGHT = 0.1;
+const IMBALANCE_TOLERANCE = 0.25;
+const MAX_MATCH_SCORE = 0.68;
+const MAX_ALLOWED_IMBALANCE = 0.75;
 const MAX_RIDE_CANDIDATES = 250;
 const KM_EARTH_RADIUS = 6371;
 const MS_PER_MINUTE = 60_000;
@@ -131,27 +136,66 @@ function hasTripRequestCoordinates(tripRequest: TripRequestForMatching): boolean
     );
 }
 
+function normalize(value: number, maxValue: number): number {
+    if (maxValue <= 0) return 0;
+    return Math.min(value / maxValue, 1);
+}
+
+function calculateImbalancePenalty(imbalance: number): number {
+    if (imbalance <= IMBALANCE_TOLERANCE) {
+        return 0;
+    }
+
+    return (imbalance - IMBALANCE_TOLERANCE) / (1 - IMBALANCE_TOLERANCE);
+}
+
 function calculateScore(
     originDistanceKm: number,
     destinationDistanceKm: number,
     timeDifferenceMinutes: number
-): number {
-    return (
-        originDistanceKm * ORIGIN_DISTANCE_WEIGHT +
-        destinationDistanceKm * DESTINATION_DISTANCE_WEIGHT +
-        timeDifferenceMinutes * TIME_DIFFERENCE_WEIGHT
+): { score: number; imbalance: number } {
+    const normalizedOriginDistance = normalize(
+        originDistanceKm,
+        ORIGIN_THRESHOLD_KM
     );
+    const normalizedDestinationDistance = normalize(
+        destinationDistanceKm,
+        DESTINATION_THRESHOLD_KM
+    );
+    const normalizedTimeDifference = normalize(
+        timeDifferenceMinutes,
+        TIME_WINDOW_MINUTES
+    );
+
+    const imbalance = Math.abs(
+        normalizedOriginDistance - normalizedDestinationDistance
+    );
+    const imbalancePenalty = calculateImbalancePenalty(imbalance);
+
+    const score =
+        normalizedOriginDistance * ORIGIN_DISTANCE_WEIGHT +
+        normalizedDestinationDistance * DESTINATION_DISTANCE_WEIGHT +
+        normalizedTimeDifference * TIME_DIFFERENCE_WEIGHT +
+        imbalancePenalty * IMBALANCE_PENALTY_WEIGHT;
+
+    return { score, imbalance };
 }
 
 function toRideMatchCandidate(
     ride: RideForMatching,
-    tripRequest: TripRequestForMatching
+    tripRequest: TripRequestForMatching,
+    now: Date
 ): RideMatchCandidate | null {
     if (
         ride.status !== "ACTIVE" ||
         ride.seatsAvailable < 1 ||
         ride.driverUserId === tripRequest.riderUserId
     ) {
+        return null;
+    }
+
+    const rideTime = getRideReferenceTime(ride);
+    if (rideTime.getTime() < now.getTime()) {
         return null;
     }
 
@@ -190,7 +234,6 @@ function toRideMatchCandidate(
         return null;
     }
 
-    const rideTime = getRideReferenceTime(ride);
     const tripRequestTime = getTripRequestReferenceTime(tripRequest);
     const timeDifference =
         Math.abs(rideTime.getTime() - tripRequestTime.getTime()) / MS_PER_MINUTE;
@@ -199,11 +242,14 @@ function toRideMatchCandidate(
         return null;
     }
 
-    const score = calculateScore(
+    const { score, imbalance } = calculateScore(
         originDistance,
         destinationDistance,
         timeDifference
     );
+    if (score > MAX_MATCH_SCORE || imbalance > MAX_ALLOWED_IMBALANCE) {
+        return null;
+    }
 
     return {
         rideId: ride.id,
@@ -252,6 +298,10 @@ export async function findCandidateRidesForTripRequest(
     const upperBound = new Date(
         tripRequestTime.getTime() + TIME_WINDOW_MINUTES * MS_PER_MINUTE
     );
+    const now = new Date();
+    const effectiveLowerBound = new Date(
+        Math.max(lowerBound.getTime(), now.getTime())
+    );
 
     const rides = await prisma.ride.findMany({
         where: {
@@ -263,7 +313,7 @@ export async function findCandidateRidesForTripRequest(
             destinationLatitude: { not: null },
             destinationLongitude: { not: null },
             earliestDepartAt: { lte: upperBound },
-            latestDepartAt: { gte: lowerBound },
+            latestDepartAt: { gte: effectiveLowerBound },
         },
         orderBy: [{ earliestDepartAt: "asc" }, { id: "asc" }],
         take: MAX_RIDE_CANDIDATES,
@@ -271,7 +321,7 @@ export async function findCandidateRidesForTripRequest(
     });
 
     const matches = rides
-        .map((ride) => toRideMatchCandidate(ride, tripRequest))
+        .map((ride) => toRideMatchCandidate(ride, tripRequest, now))
         .filter((candidate): candidate is RideMatchCandidate => candidate !== null)
         .sort((a, b) => {
             if (a.score !== b.score) return a.score - b.score;
@@ -279,7 +329,8 @@ export async function findCandidateRidesForTripRequest(
                 return a.timeDifference - b.timeDifference;
             }
             return a.rideId.localeCompare(b.rideId);
-        });
+        })
+        .slice(0, MAX_MATCH_RESULTS);
 
     return matches;
 }

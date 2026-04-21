@@ -2276,3 +2276,147 @@ Applied follow-up changes after PR review comments:
 Verification:
 - `npm run test -- src/__tests__/ride-create.test.ts src/__tests__/trip-request-create.test.ts src/__tests__/ride-edit.test.ts src/__tests__/trip-request-edit.test.ts`
 - `npx tsc --noEmit`
+
+---
+
+## Match Core Phase 1.5: Candidate Ride Quality Refinement (2026-04-21)
+
+### Scope Guardrails
+
+This change is **backend-only** and **read-only** for matching:
+- Refined `GET /api/trip-requests/:tripRequestId/matches` candidate quality
+- No frontend work
+- No persistence changes
+- No match lifecycle state/match table additions
+- No DB writes introduced by matching
+
+### Files Changed
+
+- `src/services/trip-request-ride-matching-service.ts`
+- `src/__tests__/trip-request-ride-matching-service.test.ts`
+- `AGENTS.md` (Continuous Learning & Code Review Rules only)
+
+### Threshold Tightening
+
+Updated match thresholds to favor quality over recall (campus/demo-friendly):
+
+- `ORIGIN_THRESHOLD_KM`: **15 -> 8**
+- `DESTINATION_THRESHOLD_KM`: **15 -> 8**
+- `TIME_WINDOW_MINUTES`: **90 -> 45**
+
+Rationale:
+- 15 km/90 min allowed many technically valid but implausible candidates for a campus demo.
+- 8 km and 45 minutes reduce weak edges while still allowing practical nearby matches.
+
+### Scoring Formula Update
+
+The previous score mixed raw kilometers and raw minutes directly. This made unit magnitudes hard to reason about and tune.
+
+Now each metric is normalized against its threshold, then weighted:
+
+- `normalizedOrigin = min(originDistanceKm / ORIGIN_THRESHOLD_KM, 1)`
+- `normalizedDestination = min(destinationDistanceKm / DESTINATION_THRESHOLD_KM, 1)`
+- `normalizedTime = min(timeDifferenceMinutes / TIME_WINDOW_MINUTES, 1)`
+
+Weighted base score:
+
+- `0.35 * normalizedOrigin`
+- `0.35 * normalizedDestination`
+- `0.20 * normalizedTime`
+
+Imbalance penalty (origin vs destination quality mismatch):
+
+- `imbalance = abs(normalizedOrigin - normalizedDestination)`
+- tolerance before penalty: `IMBALANCE_TOLERANCE = 0.25`
+- normalized penalty after tolerance: `(imbalance - tolerance) / (1 - tolerance)`
+- penalty contribution: `0.10 * normalizedImbalancePenalty`
+
+Final score:
+
+`score = weightedBase + imbalancePenaltyContribution`
+
+Lower score remains better.
+
+### Quality Cutoff
+
+Added explicit post-scoring pruning to remove weak candidates that pass basic threshold checks but still score poorly:
+
+- `MAX_MATCH_SCORE = 0.68`
+- `MAX_ALLOWED_IMBALANCE = 0.75`
+
+Candidate is rejected if either condition fails.
+
+Effect:
+- prevents near-threshold, low-quality, noisy candidates from polluting results
+- reinforces "few strong matches" behavior for demo use
+
+### Top-N Result Cap
+
+Added fixed cap:
+
+- `MAX_MATCH_RESULTS = 5`
+
+After scoring and sorting, only top 5 candidates are returned.
+
+Effect:
+- cleaner response set
+- less noisy UX downstream
+- deterministic high-signal shortlist
+
+### Hard Exclusions Preserved/Strengthened
+
+The matcher continues to exclude:
+- cancelled/completed rides (non-`ACTIVE` rides rejected)
+- full rides (`seatsAvailable < 1` rejected)
+- self matches (`driverUserId === riderUserId` rejected)
+- rides in the past (new explicit `ride reference time < now` guard + DB prefilter lower-bound clamped to now)
+
+No booking/seat mutation paths were changed.
+
+### Endpoint Contract Stability
+
+Response shape was kept stable:
+- `rideId`
+- `originText`
+- `destinationText`
+- `departureTime`
+- `availableSeats`
+- `originDistance`
+- `destinationDistance`
+- `timeDifference`
+- `score`
+
+No extra fields were introduced.
+
+### Tests Added/Updated
+
+Updated `src/__tests__/trip-request-ride-matching-service.test.ts` to cover refinement behavior:
+
+- tighter threshold exclusion for near-boundary weak rides
+- balanced candidate outranks imbalanced candidate
+- quality cutoff removes technically-valid weak candidate
+- result count is capped to top N
+- past rides are excluded
+- score ordering remains correct for retained candidates
+- empty array returned when all candidates are weak
+- cancelled/completed exclusion remains enforced
+
+Also made top-N assertion robust by deriving expected IDs from `MAX_MATCH_RESULTS` rather than hardcoding.
+
+### Verification
+
+Executed:
+
+- `npm run test -- src/__tests__/trip-request-ride-matching-service.test.ts src/__tests__/trip-request-matches-route.test.ts`
+
+Result:
+- all targeted tests passed
+
+### AGENTS.md Durable Rule Updates
+
+Updated only the `Continuous Learning & Code Review Rules` section with reusable backend rules:
+
+1. Normalize mixed-unit scoring inputs before weighting.
+2. For capped backend result sets, tests should derive expectations from shared exported limits instead of hardcoded values.
+
+No raw CodeRabbit output was copied into AGENTS.
