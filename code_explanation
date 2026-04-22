@@ -2881,3 +2881,269 @@ Updated only the `Continuous Learning & Code Review Rules` section with reusable
 2. For capped backend result sets, tests should derive expectations from shared exported limits instead of hardcoded values.
 
 No raw CodeRabbit output was copied into AGENTS.
+
+## 2026-04-22 — MVP 2 Stop Request Core (Backend-Only)
+
+### Scope
+
+Implemented a backend-only, REST-only stop-request flow for existing rides, without touching frontend code.
+
+Added a separate StopRequest model and dedicated service/routes so this flow remains clear and isolated from:
+- direct booking
+- rider -> driver ride offers
+- trip-request offers
+
+Implemented lifecycle:
+- rider creates stop request on active/bookable ride
+- driver lists and quotes pending stop request
+- rider accepts quoted request or rejects
+- driver can reject open request
+- acceptance creates booking atomically with fresh seat/ride validity checks
+
+No counteroffers, no map routing, no chat changes, and no background jobs were added.
+
+### Files Changed
+
+- `prisma/schema.prisma` (MODIFIED)
+- `prisma/migrations/20260422123000_add_stop_request_model/migration.sql` (NEW)
+- `src/services/stop-request-service.ts` (NEW)
+- `src/app/api/rides/[rideId]/stop-requests/route.ts` (NEW)
+- `src/app/api/me/stop-requests/outgoing/route.ts` (NEW)
+- `src/app/api/stop-requests/[stopRequestId]/quote/route.ts` (NEW)
+- `src/app/api/stop-requests/[stopRequestId]/accept/route.ts` (NEW)
+- `src/app/api/stop-requests/[stopRequestId]/reject/route.ts` (NEW)
+- `src/__tests__/stop-request-service.test.ts` (NEW)
+- `src/__tests__/stop-request-routes.test.ts` (NEW)
+- `AGENTS.md` (NEW)
+
+### StopRequest Schema
+
+#### Prisma additions
+
+Added enum:
+- `StopRequestState`
+  - `PENDING`
+  - `QUOTED`
+  - `ACCEPTED`
+  - `REJECTED`
+
+Added model:
+- `StopRequest` mapped to `stop_requests`
+- fields:
+  - `id`
+  - `rideId`
+  - `riderUserId`
+  - `driverUserId`
+  - `requestedPickupText`
+  - `requestedPickupLatitude`
+  - `requestedPickupLongitude`
+  - `requestedDropoffText`
+  - `requestedDropoffLatitude`
+  - `requestedDropoffLongitude`
+  - `riderNote` (nullable)
+  - `quotedPriceCents` (nullable until quoted)
+  - `state`
+  - `createdAt`
+  - `updatedAt`
+  - `quotedAt` (nullable)
+  - `acceptedAt` (nullable)
+  - `rejectedAt` (nullable)
+
+Relations:
+- `StopRequest -> Ride`
+- `StopRequest -> User (rider)`
+- `StopRequest -> User (driver)`
+- back-relations added on `Ride` and `User`
+
+Indexes:
+- `(ride_id, state, created_at, id)`
+- `(driver_user_id, created_at, id)`
+- `(rider_user_id, created_at, id)`
+
+#### Migration details
+
+`prisma/migrations/20260422123000_add_stop_request_model/migration.sql`:
+- creates `StopRequestState` enum
+- creates `stop_requests` table
+- creates read/list indexes
+- adds FKs to `rides(id)` and `users(clerk_user_id)`
+
+Schema change is additive and does not alter existing booking, ride-offer, or trip-request-offer tables.
+
+### Service Layer
+
+Added `src/services/stop-request-service.ts` with:
+- `createStopRequest(rideId, riderUserId, payload)`
+- `listStopRequestsForDriver(rideId, driverUserId)`
+- `listStopRequestsForRider(riderUserId)`
+- `quoteStopRequest(stopRequestId, driverUserId, quotedPriceCents)`
+- `acceptStopRequest(stopRequestId, riderUserId)`
+- `rejectStopRequest(stopRequestId, actorUserId)`
+- `StopRequestError` typed error mapping for route handlers
+
+### Validation & Authorization Rules Implemented
+
+Creation:
+- ride must exist
+- ride must be active, future, and currently have seats
+- rider cannot request stop on own ride
+- rider cannot create stop request if already confirmed on that ride
+- pickup/dropoff text must be trimmed non-empty (1..200)
+- coordinates must be finite and within valid latitude/longitude ranges
+- rider note optional, max 500
+
+Visibility:
+- driver incoming list requires ride ownership
+- rider outgoing list is scoped to authenticated rider
+- unrelated users cannot list incoming requests for rides they do not own
+
+Quote:
+- only ride owner/driver can quote
+- only `PENDING` can transition to `QUOTED`
+- quoted price must be positive int32
+
+Accept:
+- only stop-request rider can accept
+- only `QUOTED` can be accepted
+- quoted price must exist
+- acceptance path is fully atomic (details below)
+
+Reject:
+- actor must be either ride owner/driver or requesting rider
+- only `PENDING` or `QUOTED` can transition to `REJECTED`
+- terminal states are not reopened
+
+### State Transitions
+
+Implemented transitions:
+- `PENDING -> QUOTED` (driver quote)
+- `QUOTED -> ACCEPTED` (rider accept)
+- `PENDING -> REJECTED` (driver/rider reject)
+- `QUOTED -> REJECTED` (driver/rider reject)
+
+Not allowed:
+- quote non-pending
+- accept non-quoted
+- reject accepted/rejected
+- any silent reopen from terminal states
+
+### Atomic Acceptance and Booking Integration
+
+`acceptStopRequest` uses one transaction to guarantee correctness:
+
+1. Load stop request + ride context and authorize rider.
+2. Verify stop request is still `QUOTED` and has `quotedPriceCents`.
+3. Conditionally decrement ride seats with strict guard:
+   - same ride + driver
+   - `status = ACTIVE`
+   - `latestDepartAt > now`
+   - `seatsAvailable >= 1`
+4. If decrement fails (`count = 0`), re-read ride and return precise conflict reason (`RIDE_NOT_ACTIVE`, `RIDE_DEPARTED`, `RIDE_NO_SEATS`, etc.).
+5. Create confirmed booking (`seatsBooked = 1`, `priceCents = quotedPriceCents`) in same transaction.
+6. Transition stop request to `ACCEPTED` and set `acceptedAt` in same transaction.
+
+If any step fails, transaction rolls back:
+- no partial booking without state transition
+- no accepted state without booking
+- no seat oversell
+
+### Coexistence with Existing Flows
+
+No existing booking/offer flow was removed or rewritten.
+
+Coexistence behavior maintained:
+- direct booking still decrements `Ride.seatsAvailable`
+- ride-offer acceptance still decrements `Ride.seatsAvailable`
+- stop-request acceptance also decrements `Ride.seatsAvailable`
+- all three compete against the same real seat inventory
+
+Pending/quoted stop requests do not reserve seats.
+Only accepted stop requests consume capacity through booking creation.
+
+### REST Endpoints Added
+
+- `POST /api/rides/:rideId/stop-requests`
+  - create pending stop request
+
+- `GET /api/rides/:rideId/stop-requests`
+  - driver-only incoming stop requests for one ride
+
+- `GET /api/me/stop-requests/outgoing`
+  - rider-only outgoing stop requests
+
+- `POST /api/stop-requests/:stopRequestId/quote`
+  - driver quotes pending request
+
+- `POST /api/stop-requests/:stopRequestId/accept`
+  - rider accepts quoted request atomically with booking create
+
+- `POST /api/stop-requests/:stopRequestId/reject`
+  - driver or rider rejects pending/quoted request
+
+### Tests Added
+
+#### `src/__tests__/stop-request-service.test.ts`
+
+Covers:
+- creation success
+- multiple pending requests allowed on same ride
+- self-stop-request blocked
+- cancelled/full/past ride blocked
+- invalid coordinates/text blocked
+- driver incoming visibility and unauthorized block
+- rider outgoing visibility
+- quote success + quote guards (state, price, auth)
+- accept success with booking creation and seat decrement
+- acceptance fails safely when seat consumed or ride invalidated
+- stop request not marked accepted if booking write fails
+- terminal state acceptance blocked
+- reject by driver/rider in allowed states
+- unauthorized rejection blocked
+- rejected stays closed
+
+#### `src/__tests__/stop-request-routes.test.ts`
+
+Covers route wiring + validation + error mapping for:
+- create
+- create payload validation
+- driver incoming list
+- rider outgoing list
+- quote + quote payload validation
+- accept
+- reject
+- domain error mapping to HTTP response
+
+### Commands Executed
+
+- `npm run test -- src/__tests__/stop-request-service.test.ts src/__tests__/stop-request-routes.test.ts src/__tests__/ride-offer-service.test.ts src/__tests__/ride-offer-routes.test.ts src/__tests__/booking-create.test.ts` (success)
+- `npm run lint -- src/services/stop-request-service.ts src/app/api/rides/[rideId]/stop-requests/route.ts src/app/api/me/stop-requests/outgoing/route.ts src/app/api/stop-requests/[stopRequestId]/quote/route.ts src/app/api/stop-requests/[stopRequestId]/accept/route.ts src/app/api/stop-requests/[stopRequestId]/reject/route.ts src/__tests__/stop-request-service.test.ts src/__tests__/stop-request-routes.test.ts` (success)
+- `npx prisma generate` (success)
+
+### AGENTS.md Update
+
+Added a new `Continuous Learning & Code Review Rules` section with durable backend rules only:
+- transactional seat-consumption ordering
+- guarded state transitions
+- no capacity reservation for pending negotiations
+- explicit conflict diagnosis on conditional write misses
+- deterministic primitive validation
+- ownership checks on both child and parent contexts
+- scoped read/list authorization
+- shared seat-competition primitive across flows
+
+No raw CodeRabbit output was copied.
+
+### Scope / Invariant Confirmation
+
+Confirmed:
+- backend-only changes
+- REST-only changes
+- no frontend edits
+- no counteroffers or multi-round negotiation
+- no routing/map overlap APIs
+- no chat/background job scope creep
+- no overselling seats
+- no self-stop-request
+- acceptance is atomic
+- pending/quoted stop requests do not reserve seats
+- direct booking, ride offers, and trip-request offers remain intact
