@@ -7,6 +7,10 @@ const rideBookabilitySelect = {
     status: true,
     latestDepartAt: true,
     seatsAvailable: true,
+    originLatitude: true,
+    originLongitude: true,
+    destinationLatitude: true,
+    destinationLongitude: true,
 } satisfies Prisma.RideSelect;
 
 const stopRequestBaseSelect = {
@@ -136,6 +140,9 @@ function toConflict(message: string, code: string) {
 }
 
 const MAX_INT_32 = 2_147_483_647;
+const KM_EARTH_RADIUS = 6371;
+const STOP_REQUEST_PICKUP_MAX_DISTANCE_KM = 500;
+const STOP_REQUEST_DROPOFF_MAX_DISTANCE_KM = 500;
 
 function isPrismaUniqueViolation(error: unknown): error is Prisma.PrismaClientKnownRequestError {
     return (
@@ -258,6 +265,31 @@ function assertQuotedPriceOrThrow(quotedPriceCents: number) {
     }
 }
 
+function toRadians(value: number): number {
+    return (value * Math.PI) / 180;
+}
+
+function haversineDistanceKm(
+    latitudeA: number,
+    longitudeA: number,
+    latitudeB: number,
+    longitudeB: number
+): number {
+    const dLat = toRadians(latitudeB - latitudeA);
+    const dLng = toRadians(longitudeB - longitudeA);
+    const latARad = toRadians(latitudeA);
+    const latBRad = toRadians(latitudeB);
+
+    const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(latARad) *
+            Math.cos(latBRad) *
+            Math.sin(dLng / 2) *
+            Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return KM_EARTH_RADIUS * c;
+}
+
 function assertRideBookableOrThrow(
     ride: Prisma.RideGetPayload<{ select: typeof rideBookabilitySelect }>,
     now: Date
@@ -272,6 +304,51 @@ function assertRideBookableOrThrow(
 
     if (ride.seatsAvailable < 1) {
         throw toConflict("Not enough seats available.", "RIDE_NO_SEATS");
+    }
+}
+
+function assertStopRequestWithinRideJurisdictionOrThrow(
+    ride: Prisma.RideGetPayload<{ select: typeof rideBookabilitySelect }>,
+    input: NormalizedCreateStopRequestInput
+) {
+    if (
+        ride.originLatitude === null ||
+        ride.originLongitude === null ||
+        ride.destinationLatitude === null ||
+        ride.destinationLongitude === null
+    ) {
+        throw toConflict(
+            "Ride route coordinates are unavailable for stop requests.",
+            "RIDE_COORDINATES_UNAVAILABLE"
+        );
+    }
+
+    const pickupDistanceKm = haversineDistanceKm(
+        input.requestedPickupLatitude,
+        input.requestedPickupLongitude,
+        ride.originLatitude,
+        ride.originLongitude
+    );
+
+    if (pickupDistanceKm > STOP_REQUEST_PICKUP_MAX_DISTANCE_KM) {
+        throw toConflict(
+            "Requested pickup is too far from the ride origin.",
+            "STOP_REQUEST_PICKUP_OUT_OF_RANGE"
+        );
+    }
+
+    const dropoffDistanceKm = haversineDistanceKm(
+        input.requestedDropoffLatitude,
+        input.requestedDropoffLongitude,
+        ride.destinationLatitude,
+        ride.destinationLongitude
+    );
+
+    if (dropoffDistanceKm > STOP_REQUEST_DROPOFF_MAX_DISTANCE_KM) {
+        throw toConflict(
+            "Requested dropoff is too far from the ride destination.",
+            "STOP_REQUEST_DROPOFF_OUT_OF_RANGE"
+        );
     }
 }
 
@@ -305,6 +382,7 @@ export async function createStopRequest(
         }
 
         assertRideBookableOrThrow(ride, now);
+        assertStopRequestWithinRideJurisdictionOrThrow(ride, input);
 
         const existingConfirmedBooking = await tx.booking.findFirst({
             where: {

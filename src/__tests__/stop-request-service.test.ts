@@ -52,6 +52,10 @@ const ACTIVE_FUTURE_RIDE = {
     status: "ACTIVE",
     latestDepartAt: new Date("2030-01-01T12:00:00.000Z"),
     seatsAvailable: 2,
+    originLatitude: 29.028,
+    originLongitude: -81.303,
+    destinationLatitude: 28.431,
+    destinationLongitude: -81.308,
 };
 
 const PENDING_STOP_REQUEST = {
@@ -63,8 +67,8 @@ const PENDING_STOP_REQUEST = {
     requestedPickupLatitude: 29.028,
     requestedPickupLongitude: -81.303,
     requestedDropoffText: "Airport",
-    requestedDropoffLatitude: 29.179,
-    requestedDropoffLongitude: -81.058,
+    requestedDropoffLatitude: 28.431,
+    requestedDropoffLongitude: -81.308,
     riderNote: "Near south entrance",
     quotedPriceCents: null,
     state: "PENDING",
@@ -102,8 +106,8 @@ describe("stop-request-service", () => {
                 requestedPickupLatitude: 29.028,
                 requestedPickupLongitude: -81.303,
                 requestedDropoffText: " Airport ",
-                requestedDropoffLatitude: 29.179,
-                requestedDropoffLongitude: -81.058,
+                requestedDropoffLatitude: 28.431,
+                requestedDropoffLongitude: -81.308,
                 riderNote: "  near entrance  ",
             });
 
@@ -131,16 +135,16 @@ describe("stop-request-service", () => {
                 requestedPickupLatitude: 29.028,
                 requestedPickupLongitude: -81.303,
                 requestedDropoffText: "Airport",
-                requestedDropoffLatitude: 29.179,
-                requestedDropoffLongitude: -81.058,
+                requestedDropoffLatitude: 28.431,
+                requestedDropoffLongitude: -81.308,
             });
             const two = await createStopRequest("ride-1", "rider-1", {
                 requestedPickupText: "Stadium",
                 requestedPickupLatitude: 29.036,
                 requestedPickupLongitude: -81.304,
                 requestedDropoffText: "Airport",
-                requestedDropoffLatitude: 29.179,
-                requestedDropoffLongitude: -81.058,
+                requestedDropoffLatitude: 28.431,
+                requestedDropoffLongitude: -81.308,
             });
 
             expect(one.id).toBe("stop-1");
@@ -159,8 +163,8 @@ describe("stop-request-service", () => {
                     requestedPickupLatitude: 29.028,
                     requestedPickupLongitude: -81.303,
                     requestedDropoffText: "Airport",
-                    requestedDropoffLatitude: 29.179,
-                    requestedDropoffLongitude: -81.058,
+                    requestedDropoffLatitude: 28.431,
+                    requestedDropoffLongitude: -81.308,
                 })
             ).rejects.toMatchObject<Partial<StopRequestError>>({
                 statusCode: 409,
@@ -180,8 +184,8 @@ describe("stop-request-service", () => {
                     requestedPickupLatitude: 29.028,
                     requestedPickupLongitude: -81.303,
                     requestedDropoffText: "Airport",
-                    requestedDropoffLatitude: 29.179,
-                    requestedDropoffLongitude: -81.058,
+                    requestedDropoffLatitude: 28.431,
+                    requestedDropoffLongitude: -81.308,
                 })
             ).rejects.toMatchObject<Partial<StopRequestError>>({
                 statusCode: 409,
@@ -201,8 +205,8 @@ describe("stop-request-service", () => {
                     requestedPickupLatitude: 29.028,
                     requestedPickupLongitude: -81.303,
                     requestedDropoffText: "Airport",
-                    requestedDropoffLatitude: 29.179,
-                    requestedDropoffLongitude: -81.058,
+                    requestedDropoffLatitude: 28.431,
+                    requestedDropoffLongitude: -81.308,
                 })
             ).rejects.toMatchObject<Partial<StopRequestError>>({
                 statusCode: 409,
@@ -244,6 +248,66 @@ describe("stop-request-service", () => {
             ).rejects.toMatchObject<Partial<StopRequestError>>({
                 statusCode: 400,
                 code: "STOP_REQUEST_INVALID_PAYLOAD",
+            });
+        });
+
+        it("blocks stop requests whose pickup is outside ride jurisdiction", async () => {
+            mockPrisma.ride.findUnique.mockResolvedValue(ACTIVE_FUTURE_RIDE);
+
+            await expect(
+                createStopRequest("ride-1", "rider-1", {
+                    requestedPickupText: "Very Far Pickup",
+                    requestedPickupLatitude: 33.749,
+                    requestedPickupLongitude: -84.388,
+                    requestedDropoffText: "Airport",
+                    requestedDropoffLatitude: 28.431,
+                    requestedDropoffLongitude: -81.308,
+                })
+            ).rejects.toMatchObject<Partial<StopRequestError>>({
+                statusCode: 409,
+                code: "STOP_REQUEST_PICKUP_OUT_OF_RANGE",
+            });
+        });
+
+        it("blocks stop requests whose dropoff is outside ride jurisdiction", async () => {
+            mockPrisma.ride.findUnique.mockResolvedValue(ACTIVE_FUTURE_RIDE);
+
+            await expect(
+                createStopRequest("ride-1", "rider-1", {
+                    requestedPickupText: "Library",
+                    requestedPickupLatitude: 29.028,
+                    requestedPickupLongitude: -81.303,
+                    requestedDropoffText: "Very Far Dropoff",
+                    requestedDropoffLatitude: 33.749,
+                    requestedDropoffLongitude: -84.388,
+                })
+            ).rejects.toMatchObject<Partial<StopRequestError>>({
+                statusCode: 409,
+                code: "STOP_REQUEST_DROPOFF_OUT_OF_RANGE",
+            });
+        });
+
+        it("blocks stop requests when ride coordinates are unavailable", async () => {
+            mockPrisma.ride.findUnique.mockResolvedValue({
+                ...ACTIVE_FUTURE_RIDE,
+                originLatitude: null,
+                originLongitude: null,
+                destinationLatitude: null,
+                destinationLongitude: null,
+            });
+
+            await expect(
+                createStopRequest("ride-1", "rider-1", {
+                    requestedPickupText: "Library",
+                    requestedPickupLatitude: 29.028,
+                    requestedPickupLongitude: -81.303,
+                    requestedDropoffText: "Airport",
+                    requestedDropoffLatitude: 28.431,
+                    requestedDropoffLongitude: -81.308,
+                })
+            ).rejects.toMatchObject<Partial<StopRequestError>>({
+                statusCode: 409,
+                code: "RIDE_COORDINATES_UNAVAILABLE",
             });
         });
     });
