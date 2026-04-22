@@ -139,6 +139,14 @@ function toConflict(message: string, code: string) {
     });
 }
 
+function toForbidden(message: string, code: string) {
+    return new StopRequestError(message, {
+        statusCode: 403,
+        error: "Forbidden",
+        code,
+    });
+}
+
 const MAX_INT_32 = 2_147_483_647;
 const KM_EARTH_RADIUS = 6371;
 const STOP_REQUEST_PICKUP_MAX_DISTANCE_KM = 500;
@@ -300,10 +308,6 @@ function assertRideBookableOrThrow(
 
     if (ride.latestDepartAt <= now) {
         throw toConflict("Ride has departed.", "RIDE_DEPARTED");
-    }
-
-    if (ride.seatsAvailable < 1) {
-        throw toConflict("Not enough seats available.", "RIDE_NO_SEATS");
     }
 }
 
@@ -609,7 +613,16 @@ export async function acceptStopRequest(
                 throw toConflict("Ride is no longer available.", "RIDE_NO_LONGER_AVAILABLE");
             }
 
+            if (latestRide.driverUserId !== stopRequest.driverUserId) {
+                throw toForbidden("Stop request ownership mismatch.", "STOP_REQUEST_FORBIDDEN");
+            }
+
             assertRideBookableOrThrow(latestRide, now);
+
+            if (latestRide.seatsAvailable < 1) {
+                throw toConflict("Ride is full.", "RIDE_FULL");
+            }
+
             throw toConflict("Unable to accept stop request.", "STOP_REQUEST_ACCEPT_FAILED");
         }
 
@@ -680,9 +693,18 @@ export async function rejectStopRequest(
     stopRequestId: string,
     actorUserId: string
 ): Promise<StopRequestRecord> {
+    const normalizedStopRequestId = stopRequestId.trim();
+    if (normalizedStopRequestId.length === 0) {
+        throw new StopRequestError("stopRequestId must be a non-empty string.", {
+            statusCode: 400,
+            error: "Bad Request",
+            code: "STOP_REQUEST_INVALID_ID",
+        });
+    }
+
     return prisma.$transaction(async (tx) => {
         const stopRequest = await tx.stopRequest.findUnique({
-            where: { id: stopRequestId },
+            where: { id: normalizedStopRequestId },
             select: stopRequestWithRideSelect,
         });
 
@@ -695,8 +717,8 @@ export async function rejectStopRequest(
         }
 
         const isDriver =
-            stopRequest.driverUserId === actorUserId ||
-            stopRequest.ride.driverUserId === actorUserId;
+            stopRequest.driverUserId === actorUserId &&
+            stopRequest.ride?.driverUserId === actorUserId;
         const isRider = stopRequest.riderUserId === actorUserId;
 
         if (!isDriver && !isRider) {
@@ -717,7 +739,7 @@ export async function rejectStopRequest(
         const now = new Date();
         const transition = await tx.stopRequest.updateMany({
             where: {
-                id: stopRequestId,
+                id: normalizedStopRequestId,
                 state: { in: ["PENDING", "QUOTED"] },
             },
             data: {
@@ -734,7 +756,7 @@ export async function rejectStopRequest(
         }
 
         const rejectedStopRequest = await tx.stopRequest.findUnique({
-            where: { id: stopRequestId },
+            where: { id: normalizedStopRequestId },
             select: stopRequestBaseSelect,
         });
 

@@ -214,25 +214,27 @@ describe("stop-request-service", () => {
             });
         });
 
-        it("blocks stop requests on full rides", async () => {
+        it("allows pending stop requests on full rides (capacity checked at accept time)", async () => {
             mockPrisma.ride.findUnique.mockResolvedValue({
                 ...ACTIVE_FUTURE_RIDE,
                 seatsAvailable: 0,
             });
-
-            await expect(
-                createStopRequest("ride-1", "rider-1", {
-                    requestedPickupText: "Library",
-                    requestedPickupLatitude: 29.028,
-                    requestedPickupLongitude: -81.303,
-                    requestedDropoffText: "Airport",
-                    requestedDropoffLatitude: 29.179,
-                    requestedDropoffLongitude: -81.058,
-                })
-            ).rejects.toMatchObject<Partial<StopRequestError>>({
-                statusCode: 409,
-                code: "RIDE_NO_SEATS",
+            mockPrisma.booking.findFirst.mockResolvedValue(null);
+            mockPrisma.stopRequest.create.mockResolvedValue({
+                ...PENDING_STOP_REQUEST,
+                ride: undefined,
             });
+
+            const result = await createStopRequest("ride-1", "rider-1", {
+                requestedPickupText: "Library",
+                requestedPickupLatitude: 29.028,
+                requestedPickupLongitude: -81.303,
+                requestedDropoffText: "Airport",
+                requestedDropoffLatitude: 29.179,
+                requestedDropoffLongitude: -81.058,
+            });
+
+            expect(result.state).toBe("PENDING");
         });
 
         it("blocks invalid coordinates/text", async () => {
@@ -463,7 +465,25 @@ describe("stop-request-service", () => {
                 Partial<StopRequestError>
             >({
                 statusCode: 409,
-                code: "RIDE_NO_SEATS",
+                code: "RIDE_FULL",
+            });
+
+            expect(mockPrisma.booking.create).not.toHaveBeenCalled();
+        });
+
+        it("fails with forbidden when stop request ownership mismatches ride ownership", async () => {
+            mockPrisma.stopRequest.findUnique.mockResolvedValue(QUOTED_STOP_REQUEST);
+            mockPrisma.ride.updateMany.mockResolvedValue({ count: 0 });
+            mockPrisma.ride.findUnique.mockResolvedValue({
+                ...ACTIVE_FUTURE_RIDE,
+                driverUserId: "driver-other",
+            });
+
+            await expect(acceptStopRequest("stop-1", "rider-1")).rejects.toMatchObject<
+                Partial<StopRequestError>
+            >({
+                statusCode: 403,
+                code: "STOP_REQUEST_FORBIDDEN",
             });
 
             expect(mockPrisma.booking.create).not.toHaveBeenCalled();
@@ -577,6 +597,15 @@ describe("stop-request-service", () => {
             >({
                 statusCode: 403,
                 code: "STOP_REQUEST_FORBIDDEN",
+            });
+        });
+
+        it("requires non-empty stopRequestId in rejectStopRequest", async () => {
+            await expect(rejectStopRequest("   ", "driver-1")).rejects.toMatchObject<
+                Partial<StopRequestError>
+            >({
+                statusCode: 400,
+                code: "STOP_REQUEST_INVALID_ID",
             });
         });
 

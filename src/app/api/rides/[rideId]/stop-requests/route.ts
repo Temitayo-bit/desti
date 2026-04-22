@@ -11,6 +11,8 @@ interface ValidationError {
     message: string;
 }
 
+const PATH_ID_REGEX = /^[A-Za-z0-9_-]{1,128}$/;
+
 interface CreateStopRequestBody {
     requestedPickupText: string;
     requestedPickupLatitude: number;
@@ -122,6 +124,35 @@ function parseCreateBody(
     };
 }
 
+function parsePathId(
+    value: unknown,
+    field: "rideId"
+): { parsed: string; errors: [] } | { parsed: null; errors: ValidationError[] } {
+    if (typeof value !== "string") {
+        return {
+            parsed: null,
+            errors: [{ field, message: `${field} is required and must be a string.` }],
+        };
+    }
+
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+        return {
+            parsed: null,
+            errors: [{ field, message: `${field} must not be empty.` }],
+        };
+    }
+
+    if (!PATH_ID_REGEX.test(trimmed)) {
+        return {
+            parsed: null,
+            errors: [{ field, message: `${field} contains invalid characters.` }],
+        };
+    }
+
+    return { parsed: trimmed, errors: [] };
+}
+
 /**
  * POST /api/rides/:rideId/stop-requests
  *
@@ -135,7 +166,19 @@ export async function POST(
         const auth = await requireStetsonAuth(request);
         if (auth.error) return auth.error;
 
-        const { rideId } = await params;
+        const { rideId: rawRideId } = await params;
+        const rideIdValidation = parsePathId(rawRideId, "rideId");
+        if (rideIdValidation.parsed === null) {
+            return NextResponse.json(
+                {
+                    error: "Validation Error",
+                    message: "One or more fields are invalid.",
+                    details: rideIdValidation.errors,
+                },
+                { status: 400 }
+            );
+        }
+        const rideId = rideIdValidation.parsed;
 
         let rawBody: unknown;
         try {
@@ -205,7 +248,19 @@ export async function GET(
         const auth = await requireStetsonAuth(request);
         if (auth.error) return auth.error;
 
-        const { rideId } = await params;
+        const { rideId: rawRideId } = await params;
+        const rideIdValidation = parsePathId(rawRideId, "rideId");
+        if (rideIdValidation.parsed === null) {
+            return NextResponse.json(
+                {
+                    error: "Validation Error",
+                    message: "One or more fields are invalid.",
+                    details: rideIdValidation.errors,
+                },
+                { status: 400 }
+            );
+        }
+        const rideId = rideIdValidation.parsed;
         const items = await listStopRequestsForDriver(rideId, auth.user.clerkUserId);
 
         return NextResponse.json({ items }, { status: 200 });

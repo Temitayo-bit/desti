@@ -111,6 +111,64 @@ describe("stop request routes", () => {
         );
     });
 
+    it("POST /api/rides/:rideId/stop-requests trims rideId before service call", async () => {
+        service.createStopRequest.mockResolvedValue({ id: "stop-1", state: "PENDING" });
+
+        const req = new Request("http://localhost/api/rides/ride-1/stop-requests", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                requestedPickupText: "Library",
+                requestedPickupLatitude: 29.028,
+                requestedPickupLongitude: -81.303,
+                requestedDropoffText: "Airport",
+                requestedDropoffLatitude: 29.179,
+                requestedDropoffLongitude: -81.058,
+            }),
+        });
+
+        const res = await createStopRequestRoute(req as never, {
+            params: Promise.resolve({ rideId: "  ride-1  " }),
+        });
+
+        expect(res.status).toBe(201);
+        expect(service.createStopRequest).toHaveBeenCalledWith(
+            "ride-1",
+            "rider-1",
+            expect.any(Object)
+        );
+    });
+
+    it("POST /api/rides/:rideId/stop-requests rejects blank rideId", async () => {
+        const req = new Request("http://localhost/api/rides/ride-1/stop-requests", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                requestedPickupText: "Library",
+                requestedPickupLatitude: 29.028,
+                requestedPickupLongitude: -81.303,
+                requestedDropoffText: "Airport",
+                requestedDropoffLatitude: 29.179,
+                requestedDropoffLongitude: -81.058,
+            }),
+        });
+
+        const res = await createStopRequestRoute(req as never, {
+            params: Promise.resolve({ rideId: "   " }),
+        });
+        const json = await res.json();
+
+        expect(res.status).toBe(400);
+        expect(json.error).toBe("Validation Error");
+        expect(json.details).toEqual([
+            {
+                field: "rideId",
+                message: "rideId must not be empty.",
+            },
+        ]);
+        expect(service.createStopRequest).not.toHaveBeenCalled();
+    });
+
     it("POST /api/rides/:rideId/stop-requests rejects invalid coordinates", async () => {
         const req = new Request("http://localhost/api/rides/ride-1/stop-requests", {
             method: "POST",
@@ -155,6 +213,25 @@ describe("stop request routes", () => {
         expect(service.listStopRequestsForDriver).toHaveBeenCalledWith("ride-1", "driver-1");
     });
 
+    it("GET /api/rides/:rideId/stop-requests rejects invalid rideId characters", async () => {
+        mockRequireStetsonAuth.mockResolvedValue(successAuth("driver-1"));
+
+        const req = new Request("http://localhost/api/rides/ride-1/stop-requests", { method: "GET" });
+        const res = await listIncomingStopRequestsRoute(req as never, {
+            params: Promise.resolve({ rideId: "ride 1" }),
+        });
+        const json = await res.json();
+
+        expect(res.status).toBe(400);
+        expect(json.details).toEqual([
+            {
+                field: "rideId",
+                message: "rideId contains invalid characters.",
+            },
+        ]);
+        expect(service.listStopRequestsForDriver).not.toHaveBeenCalled();
+    });
+
     it("GET /api/me/stop-requests/outgoing lists outgoing for rider", async () => {
         service.listStopRequestsForRider.mockResolvedValue([{ id: "stop-1" }]);
 
@@ -184,6 +261,44 @@ describe("stop request routes", () => {
         expect(res.status).toBe(200);
         expect(json.item.state).toBe("QUOTED");
         expect(service.quoteStopRequest).toHaveBeenCalledWith("stop-1", "driver-1", 1800);
+    });
+
+    it("POST /api/stop-requests/:id/quote trims stopRequestId before service call", async () => {
+        mockRequireStetsonAuth.mockResolvedValue(successAuth("driver-1"));
+        service.quoteStopRequest.mockResolvedValue({ id: "stop-1", state: "QUOTED" });
+
+        const req = new Request("http://localhost/api/stop-requests/stop-1/quote", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ quotedPriceCents: 1800 }),
+        });
+        const res = await quoteStopRequestRoute(req as never, {
+            params: Promise.resolve({ stopRequestId: "  stop-1  " }),
+        });
+
+        expect(res.status).toBe(200);
+        expect(service.quoteStopRequest).toHaveBeenCalledWith("stop-1", "driver-1", 1800);
+    });
+
+    it("POST /api/stop-requests/:id/quote rejects blank stopRequestId", async () => {
+        const req = new Request("http://localhost/api/stop-requests/stop-1/quote", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ quotedPriceCents: 1800 }),
+        });
+        const res = await quoteStopRequestRoute(req as never, {
+            params: Promise.resolve({ stopRequestId: "   " }),
+        });
+        const json = await res.json();
+
+        expect(res.status).toBe(400);
+        expect(json.details).toEqual([
+            {
+                field: "stopRequestId",
+                message: "stopRequestId must not be empty.",
+            },
+        ]);
+        expect(service.quoteStopRequest).not.toHaveBeenCalled();
     });
 
     it("POST /api/stop-requests/:id/quote rejects invalid quoted price", async () => {
@@ -226,6 +341,25 @@ describe("stop request routes", () => {
         expect(service.acceptStopRequest).toHaveBeenCalledWith("stop-1", "rider-1");
     });
 
+    it("POST /api/stop-requests/:id/accept rejects invalid stopRequestId", async () => {
+        const req = new Request("http://localhost/api/stop-requests/stop-1/accept", {
+            method: "POST",
+        });
+        const res = await acceptStopRequestRoute(req as never, {
+            params: Promise.resolve({ stopRequestId: "stop request" }),
+        });
+        const json = await res.json();
+
+        expect(res.status).toBe(400);
+        expect(json.details).toEqual([
+            {
+                field: "stopRequestId",
+                message: "stopRequestId contains invalid characters.",
+            },
+        ]);
+        expect(service.acceptStopRequest).not.toHaveBeenCalled();
+    });
+
     it("POST /api/stop-requests/:id/reject rejects stop request", async () => {
         service.rejectStopRequest.mockResolvedValue({ id: "stop-1", state: "REJECTED" });
 
@@ -240,6 +374,25 @@ describe("stop request routes", () => {
         expect(res.status).toBe(200);
         expect(json.item.state).toBe("REJECTED");
         expect(service.rejectStopRequest).toHaveBeenCalledWith("stop-1", "rider-1");
+    });
+
+    it("POST /api/stop-requests/:id/reject rejects blank stopRequestId", async () => {
+        const req = new Request("http://localhost/api/stop-requests/stop-1/reject", {
+            method: "POST",
+        });
+        const res = await rejectStopRequestRoute(req as never, {
+            params: Promise.resolve({ stopRequestId: "   " }),
+        });
+        const json = await res.json();
+
+        expect(res.status).toBe(400);
+        expect(json.details).toEqual([
+            {
+                field: "stopRequestId",
+                message: "stopRequestId must not be empty.",
+            },
+        ]);
+        expect(service.rejectStopRequest).not.toHaveBeenCalled();
     });
 
     it("maps stop-request domain errors to HTTP responses", async () => {
