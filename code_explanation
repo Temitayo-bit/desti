@@ -1,5 +1,227 @@
 # Code Explanation
 
+## 2026-04-21 — MVP 2 Match Core Phase 2 (Persisted Match Lifecycle + Suppression + Lazy Expiration)
+
+### Scope
+
+Backend-only implementation of persisted TripRequest->Ride match lifecycle state for MVP 2:
+- Added match persistence
+- Added lifecycle transitions (`SUGGESTED`, `ACCEPTED`, `REJECTED`, `EXPIRED`)
+- Added suppression rules to prevent repeated re-suggestions
+- Added lazy expiration in read/write flows (no background jobs)
+- Added REST endpoints for accept/reject transitions
+- Added tests for persistence, suppression, expiration, transitions, and auth boundaries
+
+No frontend files were modified for this slice.
+
+### Files Changed
+
+- `prisma/schema.prisma` (MODIFIED)
+- `prisma/migrations/20260421190000_add_match_lifecycle/migration.sql` (NEW)
+- `src/services/trip-request-match-lifecycle-service.ts` (NEW)
+- `src/app/api/trip-requests/[tripRequestId]/matches/route.ts` (MODIFIED)
+- `src/app/api/matches/[matchId]/accept/route.ts` (NEW)
+- `src/app/api/matches/[matchId]/reject/route.ts` (NEW)
+- `src/__tests__/trip-request-match-lifecycle-service.test.ts` (NEW)
+- `src/__tests__/trip-request-matches-route.test.ts` (MODIFIED)
+- `src/__tests__/match-accept-route.test.ts` (NEW)
+- `src/__tests__/match-reject-route.test.ts` (NEW)
+- `AGENTS.md` (MODIFIED; Continuous Learning rules only)
+
+### Prisma Schema and Migration
+
+#### `prisma/schema.prisma`
+
+Added enum:
+- `MatchState`
+  - `SUGGESTED`
+  - `ACCEPTED`
+  - `REJECTED`
+  - `EXPIRED`
+
+Added model:
+- `Match` with:
+  - identity + relationships:
+    - `id`
+    - `tripRequestId` -> `TripRequest`
+    - `rideId` -> `Ride`
+  - lifecycle:
+    - `state`
+    - `acceptedAt`
+    - `rejectedAt`
+    - `expiredAt`
+    - optional `expirationReason`
+  - snapshots:
+    - `scoreSnapshot`
+    - `originDistanceSnapshot`
+    - `destinationDistanceSnapshot`
+    - `timeDifferenceSnapshot`
+  - timestamps:
+    - `createdAt`
+    - `updatedAt`
+
+Added constraints/indexes:
+- `@@unique([tripRequestId, rideId])` (no duplicate match pair records)
+- `@@index([tripRequestId, state, createdAt, id])`
+- `@@index([rideId])`
+
+Added relations:
+- `TripRequest.matches`
+- `Ride.matches`
+
+#### `prisma/migrations/20260421190000_add_match_lifecycle/migration.sql`
+
+Safe additive migration:
+- Creates `MatchState` enum type
+- Creates `matches` table
+- Adds unique and supporting indexes
+- Adds foreign keys to `trip_requests` and `rides`
+
+No destructive change or backfill.
+
+### New Lifecycle Service
+
+#### `src/services/trip-request-match-lifecycle-service.ts`
+
+Added shared backend service with:
+- `persistMatchesForTripRequest(tripRequestId)`
+- `getActiveMatchesForTripRequest(tripRequestId, actorUserId)`
+- `expireInvalidMatchesForTripRequest(tripRequestId)`
+- `rejectMatch(matchId, actorUserId)`
+- `acceptMatch(matchId, actorUserId)`
+- `MatchLifecycleError` for structured HTTP mapping
+
+Key behavior:
+
+1. **Persistence**
+- Uses existing refined matcher (`findCandidateRidesForTripRequest`) to compute high-quality candidates.
+- Persists candidate snapshots into `Match` in `SUGGESTED`.
+- Prevents duplicates with composite uniqueness and `createMany(..., skipDuplicates: true)`.
+
+2. **Suppression**
+- Existing pair records are never recreated as `SUGGESTED`.
+- This suppresses:
+  - `REJECTED` pairs
+  - `ACCEPTED` pairs
+  - `EXPIRED` pairs
+- `EXPIRED` revival is intentionally **disabled** for demo simplicity.
+
+3. **Lazy expiration**
+- Runs during:
+  - suggestion reads
+  - suggestion persistence
+  - accept transition
+  - reject transition
+- Expiration checks:
+  - trip request no longer active -> expire all non-expired
+  - trip request reference departure time passed -> expire all non-expired
+  - ride no longer candidate-valid under existing matching/business constraints -> expire affected pairs
+- Expired matches are written with `state = EXPIRED`, `expiredAt`, and `expirationReason`.
+
+4. **Authorization**
+- Trip request owner gate enforced in read flow.
+- Match management (`accept`/`reject`) requires owning rider of parent trip request.
+
+5. **Transition guards**
+- Only `SUGGESTED` can transition to:
+  - `REJECTED` (`POST /reject`)
+  - `ACCEPTED` (`POST /accept`)
+- Non-`SUGGESTED` transition attempts return `409 MATCH_NOT_SUGGESTED`.
+
+6. **No scope creep**
+- `ACCEPTED` is lifecycle state only in this phase.
+- No booking/offer/negotiation side effects were added.
+
+### Endpoint Changes
+
+#### `src/app/api/trip-requests/[tripRequestId]/matches/route.ts` (MODIFIED)
+
+Now lifecycle-aware:
+- Auth + onboarding via existing guard
+- Delegates to `getActiveMatchesForTripRequest(tripRequestId, actorUserId)`
+- Returns only active `SUGGESTED` items
+- Maps both lifecycle errors and matcher errors to clean API responses
+
+Returned item shape now includes:
+- `matchId`
+- `rideId`
+- `state`
+- `scoreSnapshot`
+- `originDistanceSnapshot`
+- `destinationDistanceSnapshot`
+- `timeDifferenceSnapshot`
+- ride summary fields (`originText`, `destinationText`, `departureTime`, `availableSeats`)
+
+#### `src/app/api/matches/[matchId]/reject/route.ts` (NEW)
+
+- `POST /api/matches/:matchId/reject`
+- Auth + onboarding guard
+- Calls `rejectMatch(matchId, actorUserId)`
+- Transitions only `SUGGESTED -> REJECTED`
+
+#### `src/app/api/matches/[matchId]/accept/route.ts` (NEW)
+
+- `POST /api/matches/:matchId/accept`
+- Auth + onboarding guard
+- Calls `acceptMatch(matchId, actorUserId)`
+- Transitions only `SUGGESTED -> ACCEPTED`
+- No negotiation/booking/stop side effects added
+
+### Tests Added/Updated
+
+#### `src/__tests__/trip-request-match-lifecycle-service.test.ts` (NEW)
+
+Covers:
+- persistence of generated `SUGGESTED` matches
+- duplicate suppression
+- suppression of `REJECTED`/`ACCEPTED`/`EXPIRED` pairs
+- read returns only active `SUGGESTED`
+- invalid parent expiration behavior
+- expiration when ride is no longer eligible
+- reject/accept transition success + invalid-state conflicts
+- unauthorized access guard
+
+#### `src/__tests__/trip-request-matches-route.test.ts` (MODIFIED)
+
+Updated for lifecycle service flow:
+- auth pass-through
+- owner/visibility failure mapping
+- not found mapping
+- coordinate error pass-through
+- success payload with lifecycle/snapshot fields
+
+#### `src/__tests__/match-reject-route.test.ts` (NEW)
+
+Covers:
+- auth pass-through
+- successful reject
+- `MATCH_NOT_SUGGESTED` conflict
+- forbidden actor handling
+
+#### `src/__tests__/match-accept-route.test.ts` (NEW)
+
+Covers:
+- auth pass-through
+- successful accept
+- `MATCH_NOT_SUGGESTED` conflict
+- forbidden actor handling
+
+### Validation / Commands Executed
+
+- `npx prisma generate` (success)
+- `npm run test -- src/__tests__/trip-request-match-lifecycle-service.test.ts src/__tests__/trip-request-matches-route.test.ts src/__tests__/match-reject-route.test.ts src/__tests__/match-accept-route.test.ts` (success)
+- `npx eslint ...` on changed backend files/tests (no new errors in changed files)
+- `coderabbit --plain` attempted but failed due missing authentication in environment
+
+### Behavior Summary
+
+- Strong candidates are now persisted as `SUGGESTED`.
+- Repeated reads do not recreate duplicate pairs.
+- `REJECTED`, `ACCEPTED`, and `EXPIRED` pairs remain suppressed from normal suggestions.
+- Invalid/stale matches are lazily expired and not returned as active suggestions.
+- `GET /api/trip-requests/:id/matches` now returns only active lifecycle-aware suggestions.
+- `POST /api/matches/:id/reject` and `POST /api/matches/:id/accept` are implemented with owner-only authorization and strict state guards.
+
 ## 2026-04-21 — Matches Test UI Network Error Handling Hardening
 
 ### Overview

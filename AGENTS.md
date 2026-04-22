@@ -113,6 +113,14 @@ DO NOT blindly copy CodeRabbit output.
   Context: Hardcoded expected IDs/counts become brittle when backend caps are tuned for quality or demo behavior.
   Enforcement: Build expected result lists programmatically from exported constants (for example, `MAX_MATCH_RESULTS`) rather than hardcoded lengths or identifiers.
 
+- Rule: For persisted suggestion lifecycles, enforce one record per entity pair and suppress recreation for non-active states
+  Context: Recomputing suggestions on each read can recreate rejected/accepted/stale pairs unless uniqueness and suppression are explicit.
+  Enforcement: Add a composite unique constraint for the pair key and only create new suggestions when no prior record exists; keep `REJECTED`, `ACCEPTED`, and `EXPIRED` pairs suppressed unless explicit revival rules are introduced.
+
+- Rule: Run lazy expiration before every suggestion read and lifecycle transition when background jobs are absent
+  Context: Without schedulers, stale suggestions can be accepted/rejected or shown after parent validity changes.
+  Enforcement: Execute expiration checks first in read flows and transition endpoints, then perform persistence/transition logic against refreshed state.
+
 ## Backend Architecture Rules (MVP 2)
 
 ### 1) Location Core (CRITICAL)
