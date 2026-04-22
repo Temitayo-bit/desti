@@ -1,5 +1,215 @@
 # Code Explanation
 
+## 2026-04-22 — MVP 2 Ride Negotiation Core (Rider -> Driver Ride Offers)
+
+### Scope
+
+Backend-only, REST-only implementation of ride negotiation offers on existing `Ride` records.
+
+Added a mirrored offer flow for rides while preserving existing direct booking and trip-request offer flows:
+- rider sends offer on a ride
+- driver lists incoming offers
+- rider lists outgoing offers
+- driver accepts/rejects pending offer
+- acceptance creates booking atomically with fresh ride validity and seat checks
+
+No frontend files were changed for this slice.
+
+### Files Changed
+
+- `prisma/schema.prisma` (MODIFIED)
+- `prisma/migrations/20260422001000_add_ride_offer_model/migration.sql` (NEW)
+- `src/services/ride-offer-service.ts` (NEW)
+- `src/app/api/rides/[rideId]/offers/route.ts` (NEW)
+- `src/app/api/me/ride-offers/outgoing/route.ts` (NEW)
+- `src/app/api/ride-offers/[offerId]/accept/route.ts` (NEW)
+- `src/app/api/ride-offers/[offerId]/reject/route.ts` (NEW)
+- `src/__tests__/ride-offer-service.test.ts` (NEW)
+- `src/__tests__/ride-offer-routes.test.ts` (NEW)
+- `.gitignore` (MODIFIED; agent guidance files ignored)
+- `AGENTS.md` (UNTRACKED from Git to honor ignore policy)
+
+### RideOffer Schema
+
+#### Prisma Additions
+
+Added enum:
+- `RideOfferState`
+  - `PENDING`
+  - `ACCEPTED`
+  - `REJECTED`
+
+Added model:
+- `RideOffer` mapped to `ride_offers`, fields:
+  - `id`
+  - `rideId`
+  - `riderUserId`
+  - `driverUserId`
+  - `offeredPriceCents`
+  - `state`
+  - `createdAt`
+  - `updatedAt`
+  - `acceptedAt`
+  - `rejectedAt`
+
+Relations:
+- `RideOffer -> Ride`
+- `RideOffer -> User (rider)`
+- `RideOffer -> User (driver)`
+- Back-relations added on `Ride` and `User`.
+
+#### Migration Details
+
+`prisma/migrations/20260422001000_add_ride_offer_model/migration.sql`:
+- creates `RideOfferState` enum
+- creates `ride_offers` table
+- adds read/query support indexes
+- adds partial unique index:
+  - `ride_offer_active_per_rider_ride`
+  - unique on (`ride_id`, `rider_user_id`) where `state = 'PENDING'`
+- adds FKs to `rides(id)` and `users(clerk_user_id)`
+
+Schema changes are additive and do not modify existing TripRequest offers or direct booking tables.
+
+### One-Active-Offer Enforcement
+
+Enforced in two layers:
+
+1) Service-level guard in `createRideOffer`:
+- checks for existing `PENDING` offer for same `(rideId, riderUserId)`
+- returns `409 Conflict` before attempting create
+
+2) DB-level race safety:
+- partial unique index `ride_offer_active_per_rider_ride`
+- concurrent duplicate create attempts are blocked at DB level
+- service maps known conflicts into stable API errors
+
+### Service Layer (New)
+
+`src/services/ride-offer-service.ts` provides:
+- `createRideOffer(rideId, riderUserId, offeredPriceCents)`
+- `listRideOffersForDriver(rideId, driverUserId)`
+- `listRideOffersForRider(riderUserId)`
+- `acceptRideOffer(offerId, driverUserId)`
+- `rejectRideOffer(offerId, driverUserId)`
+- `RideOfferError` for structured route error mapping
+
+Key guards:
+- valid positive offer price
+- no self-offer
+- ride exists
+- ride is active
+- ride departure window not passed
+- ride has seat availability
+- driver-only visibility and driver-only accept/reject authorization
+- only `PENDING` offers may transition
+
+### REST Endpoints (New)
+
+- `POST /api/rides/:rideId/offers`
+  - rider creates one pending offer
+  - validates body and business rules
+
+- `GET /api/rides/:rideId/offers`
+  - driver-only incoming offers for owned ride
+
+- `GET /api/me/ride-offers/outgoing`
+  - rider-only outgoing offers
+
+- `POST /api/ride-offers/:offerId/accept`
+  - driver accepts pending offer
+  - returns `{ offer, booking }`
+
+- `POST /api/ride-offers/:offerId/reject`
+  - driver rejects pending offer
+  - returns `{ item }`
+
+### Accept / Reject Lifecycle
+
+Accepted:
+- requires `PENDING`
+- in one DB transaction:
+  - re-checks ride validity and inventory with conditional seat decrement
+  - creates confirmed booking (`seatsBooked = 1`, `priceCents = offeredPriceCents`)
+  - transitions offer `PENDING -> ACCEPTED` and sets `acceptedAt`
+- if any step fails, transaction aborts with no partial persisted outcome
+
+Rejected:
+- requires `PENDING`
+- transitions `PENDING -> REJECTED` and sets `rejectedAt`
+- already rejected/accepted offers return conflict and do not reopen
+
+### Atomic Acceptance and Booking Integration
+
+Atomic acceptance uses the same seat-competition approach as direct booking:
+- conditional seat decrement via `ride.updateMany(... seatsAvailable >= 1 ...)`
+- hard conflict when row update count is `0`
+- booking create occurs in the same transaction
+- offer state transition occurs in the same transaction
+
+This keeps ride-offer acceptance and direct booking competing against the same seat inventory with no oversell.
+
+### Coexistence with Direct Booking
+
+Direct booking path (`POST /api/bookings`) was not removed or rewritten.
+
+Coexistence behavior:
+- riders can still book directly
+- riders can also submit ride offers
+- both flows compete for the same `Ride.seatsAvailable`
+- if seats are consumed before acceptance (for example by direct booking), accepting the offer fails safely with conflict
+
+### Tests Added
+
+#### `src/__tests__/ride-offer-service.test.ts`
+
+Covers:
+- creation success
+- self-offer blocked
+- duplicate active offer blocked
+- cancelled/full/past ride blocked
+- invalid price blocked
+- driver incoming visibility
+- rider outgoing visibility
+- unauthorized incoming visibility blocked
+- accept success with booking creation
+- accept fails when seat unavailable
+- offer not transitioned to accepted when booking create fails
+- accept blocked for non-pending or non-driver
+- reject success
+- reject blocked for non-pending or non-driver
+
+#### `src/__tests__/ride-offer-routes.test.ts`
+
+Covers route wiring + response mapping for:
+- create
+- incoming list
+- outgoing list
+- accept
+- reject
+- domain error to HTTP mapping
+
+### Validation / Commands Executed
+
+- `npx prisma generate` (success)
+- `npm run test -- src/__tests__/ride-offer-service.test.ts src/__tests__/ride-offer-routes.test.ts` (success)
+- `npm run test -- src/__tests__/booking-create.test.ts` (success; direct booking still passing)
+- `npm run lint -- <changed ride-offer files>` (success)
+
+### Scope / Invariant Confirmation
+
+Confirmed for this slice:
+- backend only
+- REST only
+- no frontend changes
+- no counteroffers/chat/multi-round negotiation
+- no TripRequest offer refactor
+- no direct booking removal
+- no oversell logic regression (atomic seat guarding retained)
+- no self-offer
+- one active ride offer per rider per ride
+- accept/reject lifecycle constrained to pending offers
+
 ## 2026-04-21 — MVP 2 Match Core Phase 2 (Persisted Match Lifecycle + Suppression + Lazy Expiration)
 
 ### Scope
