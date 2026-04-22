@@ -107,6 +107,8 @@ function toConflict(message: string, code: string) {
     });
 }
 
+const MAX_INT_32 = 2_147_483_647;
+
 function isPrismaUniqueViolation(error: unknown): error is Prisma.PrismaClientKnownRequestError {
     return (
         error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -115,13 +117,28 @@ function isPrismaUniqueViolation(error: unknown): error is Prisma.PrismaClientKn
 }
 
 function uniqueTargetIncludes(error: Prisma.PrismaClientKnownRequestError, targetName: string): boolean {
+    const constraint = error.meta?.constraint;
+    if (typeof constraint === "string" && constraint.includes(targetName)) {
+        return true;
+    }
+
     const target = error.meta?.target;
     if (typeof target === "string") {
         return target.includes(targetName);
     }
 
     if (Array.isArray(target)) {
-        return target.some((item) => typeof item === "string" && item.includes(targetName));
+        const parts = target.filter((item): item is string => typeof item === "string");
+        if (parts.some((item) => item.includes(targetName))) {
+            return true;
+        }
+
+        const joined = parts.join(",");
+        return (
+            joined.includes(targetName) ||
+            (parts.includes("ride_id") && parts.includes("rider_user_id")) ||
+            (parts.includes("rideId") && parts.includes("riderUserId"))
+        );
     }
 
     return false;
@@ -131,9 +148,10 @@ function assertOfferedPriceOrThrow(offeredPriceCents: number) {
     if (
         typeof offeredPriceCents !== "number" ||
         !Number.isInteger(offeredPriceCents) ||
-        offeredPriceCents <= 0
+        offeredPriceCents <= 0 ||
+        offeredPriceCents > MAX_INT_32
     ) {
-        throw new RideOfferError("offeredPriceCents must be a positive integer.", {
+        throw new RideOfferError("offeredPriceCents must be an integer between 1 and 2147483647.", {
             statusCode: 400,
             error: "Bad Request",
             code: "RIDE_OFFER_INVALID_PRICE",
@@ -202,6 +220,22 @@ export async function createRideOffer(
             throw toConflict(
                 "You already have an active offer for this ride.",
                 "RIDE_OFFER_ALREADY_ACTIVE"
+            );
+        }
+
+        const existingConfirmedBooking = await tx.booking.findFirst({
+            where: {
+                rideId,
+                riderUserId,
+                status: "CONFIRMED",
+            },
+            select: { id: true },
+        });
+
+        if (existingConfirmedBooking) {
+            throw toConflict(
+                "You already have a confirmed booking for this ride.",
+                "RIDE_ALREADY_BOOKED"
             );
         }
 

@@ -11,6 +11,8 @@ interface ValidationError {
     message: string;
 }
 
+const MAX_INT_32 = 2_147_483_647;
+
 function parseCreateBody(body: unknown): { offeredPriceCents: number } | { errors: ValidationError[] } {
     if (typeof body !== "object" || body === null || Array.isArray(body)) {
         return {
@@ -27,13 +29,14 @@ function parseCreateBody(body: unknown): { offeredPriceCents: number } | { error
     if (
         typeof offeredPriceCents !== "number" ||
         !Number.isInteger(offeredPriceCents) ||
-        offeredPriceCents <= 0
+        offeredPriceCents < 1 ||
+        offeredPriceCents > MAX_INT_32
     ) {
         return {
             errors: [
                 {
                     field: "offeredPriceCents",
-                    message: "offeredPriceCents must be a positive integer.",
+                    message: "offeredPriceCents must be an integer between 1 and 2147483647.",
                 },
             ],
         };

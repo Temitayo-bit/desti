@@ -1,5 +1,34 @@
 # Code Explanation
 
+## 2026-04-22 — Dummy Frontend Harness for Ride Offer Testing
+
+### Scope
+
+Added a protected dummy frontend page to manually exercise the new ride-offer negotiation endpoints end-to-end.
+
+This is a test harness only; it does not change production booking/offer backend behavior.
+
+### Files Changed
+
+- `src/app/(protected)/ride-offers-mvp2-test/page.tsx` (NEW)
+- `src/app/(protected)/ride-offers-mvp2-test/RideOffersMvp2TestClient.tsx` (NEW)
+
+### What the Test Page Supports
+
+The page provides manual controls for:
+- creating a seed ride (`POST /api/rides`)
+- creating a ride offer (`POST /api/rides/:rideId/offers`)
+- listing incoming offers for a ride (`GET /api/rides/:rideId/offers`)
+- listing outgoing offers for current rider (`GET /api/me/ride-offers/outgoing`)
+- accepting an offer (`POST /api/ride-offers/:offerId/accept`)
+- rejecting an offer (`POST /api/ride-offers/:offerId/reject`)
+
+### Route and Access
+
+- Route path: `/ride-offers-mvp2-test` (inside protected app segment)
+- Requires normal auth/onboarding because it uses protected layout
+- Hidden in production unless `ENABLE_RIDE_OFFERS_MVP2_TEST=true`
+
 ## 2026-04-22 — MVP 2 Ride Negotiation Core (Rider -> Driver Ride Offers)
 
 ### Scope

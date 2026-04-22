@@ -90,6 +90,28 @@ describe("ride offer routes", () => {
         expect(service.createRideOffer).toHaveBeenCalledWith("ride-1", "rider-1", 1500);
     });
 
+    it("POST /api/rides/:rideId/offers rejects offeredPriceCents above int32 max", async () => {
+        const req = new Request("http://localhost/api/rides/ride-1/offers", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ offeredPriceCents: 2_147_483_648 }),
+        });
+
+        const res = await createRideOfferRoute(req as never, {
+            params: Promise.resolve({ rideId: "ride-1" }),
+        });
+        const json = await res.json();
+
+        expect(res.status).toBe(400);
+        expect(json.details).toEqual([
+            {
+                field: "offeredPriceCents",
+                message: "offeredPriceCents must be an integer between 1 and 2147483647.",
+            },
+        ]);
+        expect(service.createRideOffer).not.toHaveBeenCalled();
+    });
+
     it("GET /api/rides/:rideId/offers lists driver incoming offers", async () => {
         mockRequireStetsonAuth.mockResolvedValue(successAuth("driver-1"));
         service.listRideOffersForDriver.mockResolvedValue([{ id: "offer-1" }]);

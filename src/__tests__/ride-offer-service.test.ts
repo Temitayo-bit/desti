@@ -15,6 +15,7 @@ const { mockPrisma } = vi.hoisted(() => {
     };
 
     const booking = {
+        findFirst: vi.fn(),
         create: vi.fn(),
     };
 
@@ -76,6 +77,7 @@ describe("ride-offer-service", () => {
         it("creates one valid pending offer", async () => {
             mockPrisma.ride.findUnique.mockResolvedValue(ACTIVE_FUTURE_RIDE);
             mockPrisma.rideOffer.findFirst.mockResolvedValue(null);
+            mockPrisma.booking.findFirst.mockResolvedValue(null);
             mockPrisma.rideOffer.create.mockResolvedValue({
                 ...PENDING_OFFER,
                 ride: undefined,
@@ -108,6 +110,17 @@ describe("ride-offer-service", () => {
             await expect(createRideOffer("ride-1", "rider-1", 1500)).rejects.toMatchObject<Partial<RideOfferError>>({
                 statusCode: 409,
                 code: "RIDE_OFFER_ALREADY_ACTIVE",
+            });
+        });
+
+        it("blocks offers when rider already has a confirmed booking on the ride", async () => {
+            mockPrisma.ride.findUnique.mockResolvedValue(ACTIVE_FUTURE_RIDE);
+            mockPrisma.rideOffer.findFirst.mockResolvedValue(null);
+            mockPrisma.booking.findFirst.mockResolvedValue({ id: "booking-existing" });
+
+            await expect(createRideOffer("ride-1", "rider-1", 1500)).rejects.toMatchObject<Partial<RideOfferError>>({
+                statusCode: 409,
+                code: "RIDE_ALREADY_BOOKED",
             });
         });
 
@@ -149,6 +162,13 @@ describe("ride-offer-service", () => {
 
         it("blocks invalid offered prices", async () => {
             await expect(createRideOffer("ride-1", "rider-1", 0)).rejects.toMatchObject<Partial<RideOfferError>>({
+                statusCode: 400,
+                code: "RIDE_OFFER_INVALID_PRICE",
+            });
+        });
+
+        it("blocks offered prices above int32 max", async () => {
+            await expect(createRideOffer("ride-1", "rider-1", 2_147_483_648)).rejects.toMatchObject<Partial<RideOfferError>>({
                 statusCode: 400,
                 code: "RIDE_OFFER_INVALID_PRICE",
             });
@@ -237,6 +257,7 @@ describe("ride-offer-service", () => {
                     where: expect.objectContaining({
                         id: "ride-1",
                         status: "ACTIVE",
+                        latestDepartAt: { gt: expect.any(Date) },
                         seatsAvailable: { gte: 1 },
                     }),
                     data: { seatsAvailable: { decrement: 1 } },
