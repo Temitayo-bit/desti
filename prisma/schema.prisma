@@ -41,6 +41,8 @@ model User {
   riderRideOffers  RideOffer[] @relation("RideOfferRider")
   driverStopRequests StopRequest[] @relation("StopRequestDriver")
   riderStopRequests  StopRequest[] @relation("StopRequestRider")
+  ratingsGiven    Rating[]      @relation("RatingRater")
+  ratingsReceived Rating[]      @relation("RatingRatee")
 
   @@map("users")
 }
@@ -92,6 +94,7 @@ enum MatchState {
 /// Current status of a booking.
 enum BookingStatus {
   CONFIRMED
+  COMPLETED
   CANCELLED
 }
 
@@ -231,6 +234,7 @@ model Booking {
   seatsBooked   Int           @map("seats_booked")
   priceCents    Int?          @map("price_cents")
   status        BookingStatus @default(CONFIRMED)
+  completedAt   DateTime?     @map("completed_at")
   createdAt     DateTime      @default(now()) @map("created_at")
   updatedAt     DateTime      @updatedAt @map("updated_at")
 
@@ -239,6 +243,7 @@ model Booking {
   rider           User             @relation(fields: [riderUserId], references: [clerkUserId])
   idempotencyKeys IdempotencyKey[]
   conversation    Conversation?
+  rating          Rating?
 
   // Partial unique index `UNIQUE(rideId, riderUserId) WHERE status = 'CONFIRMED'` 
   // will be added via migration SQL.
@@ -246,6 +251,25 @@ model Booking {
   @@index([rideId, status, createdAt, id])
   @@index([tripRequestId, status, createdAt, id])
   @@map("bookings")
+}
+
+/// Immutable rider -> driver score for one completed booking.
+model Rating {
+  id          String   @id @default(uuid())
+  bookingId   String   @unique @map("booking_id")
+  raterUserId String   @map("rater_user_id")
+  rateeUserId String   @map("ratee_user_id")
+  score       Int
+  comment     String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  rater   User    @relation("RatingRater", fields: [raterUserId], references: [clerkUserId])
+  ratee   User    @relation("RatingRatee", fields: [rateeUserId], references: [clerkUserId])
+
+  @@index([rateeUserId, createdAt, id])
+  @@index([raterUserId, createdAt, id])
+  @@map("ratings")
 }
 
 /// Offer status.

@@ -24,6 +24,7 @@ vi.mock("@/lib/prisma", () => ({
 vi.mock("@prisma/client", () => ({
     BookingStatus: {
         CONFIRMED: "CONFIRMED",
+        COMPLETED: "COMPLETED",
         CANCELLED: "CANCELLED",
     },
 }));
@@ -105,6 +106,19 @@ describe("GET /api/bookings/mine", () => {
             expect.arrayContaining([
                 { riderUserId: "rider_test_1" },
                 { status: "CANCELLED" },
+            ])
+        );
+    });
+
+    it("supports status=COMPLETED", async () => {
+        await GET(makeRequest("?status=COMPLETED") as never);
+
+        const findManyArg = mockPrisma.booking.findMany.mock.calls[0][0];
+        const andClauses = getAndClauses(findManyArg);
+        expect(andClauses).toEqual(
+            expect.arrayContaining([
+                { riderUserId: "rider_test_1" },
+                { status: "COMPLETED" },
             ])
         );
     });
