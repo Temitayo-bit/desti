@@ -252,15 +252,15 @@ export async function completeBookingManually(
             );
         }
 
-        if (booking.ride && booking.ride.status !== "ACTIVE") {
-            throw toConflict("Ride is no longer active.", "RIDE_NOT_ACTIVE");
-        }
-
         const completedAt = new Date();
         const updateResult = await tx.booking.updateMany({
             where: {
                 id: trimmedBookingId,
                 status: "CONFIRMED",
+                OR: [
+                    { rideId: null },
+                    { ride: { status: "ACTIVE" } },
+                ],
             },
             data: {
                 status: "COMPLETED",
@@ -271,7 +271,15 @@ export async function completeBookingManually(
         if (updateResult.count === 0) {
             const latest = await tx.booking.findUnique({
                 where: { id: trimmedBookingId },
-                select: { status: true },
+                select: {
+                    status: true,
+                    rideId: true,
+                    ride: {
+                        select: {
+                            status: true,
+                        },
+                    },
+                },
             });
 
             if (latest?.status === "COMPLETED") {
@@ -280,6 +288,10 @@ export async function completeBookingManually(
 
             if (latest?.status === "CANCELLED") {
                 throw toConflict("Cancelled bookings cannot be completed.", "BOOKING_CANCELLED");
+            }
+
+            if (latest?.rideId !== null && latest?.ride?.status !== "ACTIVE") {
+                throw toConflict("Ride is no longer active.", "RIDE_NOT_ACTIVE");
             }
 
             throw toConflict(
@@ -364,7 +376,8 @@ export async function createBookingRating(
             if (
                 isPrismaUniqueViolation(error) &&
                 (uniqueTargetIncludes(error, "ratings_booking_id_key") ||
-                    uniqueTargetIncludes(error, "booking_id"))
+                    uniqueTargetIncludes(error, "booking_id") ||
+                    uniqueTargetIncludes(error, "bookingId"))
             ) {
                 throw toConflict(
                     "A rating already exists for this booking.",

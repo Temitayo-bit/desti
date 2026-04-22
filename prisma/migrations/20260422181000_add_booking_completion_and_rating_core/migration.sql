@@ -41,3 +41,7 @@ CHECK ("score" BETWEEN 1 AND 5);
 ALTER TABLE "ratings"
 ADD CONSTRAINT "ratings_distinct_users_chk"
 CHECK ("rater_user_id" <> "ratee_user_id");
+
+ALTER TABLE "ratings"
+ADD CONSTRAINT "ratings_comment_length_chk"
+CHECK (char_length("comment") <= 500);

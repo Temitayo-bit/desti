@@ -131,4 +131,36 @@ describe("active trip visibility (ride-based)", () => {
 
         expect(allowed).toBe(false);
     });
+
+    it("denies ride access for unrelated users", async () => {
+        mockPrisma.ride.findUnique.mockResolvedValue({
+            id: "ride-1",
+            driverUserId: "driver-1",
+            status: "ACTIVE",
+            bookings: [{ riderUserId: "rider-1" }],
+        });
+
+        const allowed = await canUserAccessActiveTripDataByRide(
+            "unrelated-user",
+            "ride-1"
+        );
+
+        expect(allowed).toBe(false);
+    });
+
+    it("denies driver and rider when ride is not active", async () => {
+        mockPrisma.ride.findUnique.mockResolvedValue({
+            id: "ride-1",
+            driverUserId: "driver-1",
+            status: "COMPLETED",
+            bookings: [{ riderUserId: "rider-1" }],
+        });
+
+        await expect(
+            canUserAccessActiveTripDataByRide("driver-1", "ride-1")
+        ).resolves.toBe(false);
+        await expect(
+            canUserAccessActiveTripDataByRide("rider-1", "ride-1")
+        ).resolves.toBe(false);
+    });
 });

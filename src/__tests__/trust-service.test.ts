@@ -77,7 +77,11 @@ describe("trust-service completion", () => {
         expect(result.completedAt).toBeInstanceOf(Date);
         expect(mockPrisma.booking.updateMany).toHaveBeenCalledWith(
             expect.objectContaining({
-                where: { id: "booking-1", status: "CONFIRMED" },
+                where: expect.objectContaining({
+                    id: "booking-1",
+                    status: "CONFIRMED",
+                    OR: [{ rideId: null }, { ride: { status: "ACTIVE" } }],
+                }),
                 data: expect.objectContaining({
                     status: "COMPLETED",
                 }),
@@ -114,6 +118,22 @@ describe("trust-service completion", () => {
         await expect(completeBookingManually("booking-1", "intruder-1")).rejects.toMatchObject({
             statusCode: 403,
             code: "BOOKING_COMPLETE_FORBIDDEN",
+        });
+    });
+
+    it("returns RIDE_NOT_ACTIVE when ride becomes inactive before completion update", async () => {
+        mockPrisma.booking.findUnique
+            .mockResolvedValueOnce(fakeBooking())
+            .mockResolvedValueOnce({
+                status: "CONFIRMED",
+                rideId: "ride-1",
+                ride: { status: "CANCELLED" },
+            });
+        mockPrisma.booking.updateMany.mockResolvedValue({ count: 0 });
+
+        await expect(completeBookingManually("booking-1", "driver-1")).rejects.toMatchObject({
+            statusCode: 409,
+            code: "RIDE_NOT_ACTIVE",
         });
     });
 });
@@ -180,7 +200,7 @@ describe("trust-service rating", () => {
 
         const duplicateError = Object.assign(new Error("Unique constraint failed"), {
             code: "P2002",
-            meta: { target: ["booking_id"] },
+            meta: { target: ["bookingId"] },
         });
         mockPrisma.rating.create.mockRejectedValue(duplicateError);
 

@@ -25,6 +25,7 @@ export async function POST(
             return NextResponse.json(
                 {
                     error: "Bad Request",
+                    code: "INVALID_JSON",
                     message: "Request body must be valid JSON.",
                 },
                 { status: 400 }

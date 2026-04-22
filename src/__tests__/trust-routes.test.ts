@@ -144,6 +144,58 @@ describe("trust route handlers", () => {
         );
     });
 
+    it("POST /api/bookings/:bookingId/rating maps trust errors cleanly", async () => {
+        mockCreateBookingRating.mockRejectedValue(
+            new MockTrustServiceError("Only completed bookings can be rated.", {
+                statusCode: 409,
+                error: "Conflict",
+                code: "BOOKING_NOT_COMPLETED",
+            })
+        );
+
+        mockRequireStetsonAuth.mockResolvedValue(successAuth("rider-1"));
+
+        const request = new Request("http://localhost:3000/api/bookings/booking-1/rating", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ score: 4, comment: "ok" }),
+        });
+
+        const response = await createRatingPOST(request as never, {
+            params: Promise.resolve({ bookingId: "booking-1" }),
+        });
+        const body = await response.json();
+
+        expect(response.status).toBe(409);
+        expect(body).toEqual({
+            error: "Conflict",
+            code: "BOOKING_NOT_COMPLETED",
+            message: "Only completed bookings can be rated.",
+        });
+    });
+
+    it("POST /api/bookings/:bookingId/rating returns stable code for invalid JSON", async () => {
+        mockRequireStetsonAuth.mockResolvedValue(successAuth("rider-1"));
+
+        const request = new Request("http://localhost:3000/api/bookings/booking-1/rating", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: "{ bad json",
+        });
+
+        const response = await createRatingPOST(request as never, {
+            params: Promise.resolve({ bookingId: "booking-1" }),
+        });
+        const body = await response.json();
+
+        expect(response.status).toBe(400);
+        expect(body).toEqual({
+            error: "Bad Request",
+            code: "INVALID_JSON",
+            message: "Request body must be valid JSON.",
+        });
+    });
+
     it("GET /api/users/:userId/rating-summary returns average and count", async () => {
         mockGetDriverRatingSummary.mockResolvedValue({
             userId: "driver-1",
@@ -165,6 +217,32 @@ describe("trust route handlers", () => {
             userId: "driver-1",
             averageRating: 4.5,
             ratingCount: 2,
+        });
+    });
+
+    it("GET /api/users/:userId/rating-summary maps trust errors cleanly", async () => {
+        mockGetDriverRatingSummary.mockRejectedValue(
+            new MockTrustServiceError("User not found.", {
+                statusCode: 404,
+                error: "Not Found",
+                code: "USER_NOT_FOUND",
+            })
+        );
+
+        const request = new Request("http://localhost:3000/api/users/driver-1/rating-summary", {
+            method: "GET",
+        });
+
+        const response = await ratingSummaryGET(request as never, {
+            params: Promise.resolve({ userId: "driver-1" }),
+        });
+        const body = await response.json();
+
+        expect(response.status).toBe(404);
+        expect(body).toEqual({
+            error: "Not Found",
+            code: "USER_NOT_FOUND",
+            message: "User not found.",
         });
     });
 });
