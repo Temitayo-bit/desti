@@ -37,6 +37,8 @@ model User {
 
   driverOffers Offer[] @relation("DriverOffers")
   riderOffers  Offer[] @relation("RiderOffers")
+  driverRideOffers RideOffer[] @relation("RideOfferDriver")
+  riderRideOffers  RideOffer[] @relation("RideOfferRider")
 
   @@map("users")
 }
@@ -184,6 +186,7 @@ model Ride {
   bookings        Booking[]
   idempotencyKeys IdempotencyKey[]
   matches         Match[]
+  rideOffers      RideOffer[]
 
   @@index([earliestDepartAt, id])
   @@map("rides")
@@ -249,6 +252,13 @@ enum OfferStatus {
   CANCELLED
 }
 
+/// Ride offer negotiation state.
+enum RideOfferState {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
 /// A driver's offer on a trip request.
 model Offer {
   id            String      @id @default(uuid())
@@ -272,6 +282,29 @@ model Offer {
   @@index([driverUserId, createdAt, id])
   @@index([tripRequestId, status])
   @@map("offers")
+}
+
+/// A rider's offer on a posted ride.
+model RideOffer {
+  id               String         @id @default(uuid())
+  rideId           String         @map("ride_id")
+  riderUserId      String         @map("rider_user_id")
+  driverUserId     String         @map("driver_user_id")
+  offeredPriceCents Int           @map("offered_price_cents")
+  state            RideOfferState @default(PENDING)
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
+  acceptedAt       DateTime?      @map("accepted_at")
+  rejectedAt       DateTime?      @map("rejected_at")
+
+  ride   Ride @relation(fields: [rideId], references: [id])
+  rider  User @relation("RideOfferRider", fields: [riderUserId], references: [clerkUserId])
+  driver User @relation("RideOfferDriver", fields: [driverUserId], references: [clerkUserId])
+
+  @@index([rideId, state, createdAt, id])
+  @@index([driverUserId, createdAt, id])
+  @@index([riderUserId, createdAt, id])
+  @@map("ride_offers")
 }
 
 /// Conversation type discriminator.
