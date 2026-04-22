@@ -42,13 +42,17 @@ export function parseBookingStatus(
 ): BookingStatus {
     if (value === null) return "CONFIRMED";
 
-    if (value === "CONFIRMED" || value === "CANCELLED") {
+    if (
+        value === "CONFIRMED" ||
+        value === "COMPLETED" ||
+        value === "CANCELLED"
+    ) {
         return value;
     }
 
     throw new BookingQueryValidationError(
         "status",
-        "status must be either CONFIRMED or CANCELLED."
+        "status must be one of CONFIRMED, COMPLETED, or CANCELLED."
     );
 }
 

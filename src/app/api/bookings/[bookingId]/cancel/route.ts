@@ -48,19 +48,38 @@ export async function POST(
                 throw new Error("Unauthorized access to booking."); // Map to 403 outside
             }
 
-            // C. Atomic Status Update (Idempotency Guard)
-            // Use updateMany to conditionally update only if not already CANCELLED.
-            // This prevents race conditions where parallel requests could double-count seat restoration.
+            if (booking.status === "CANCELLED") {
+                return { status: 200, message: "Booking already cancelled." };
+            }
+
+            if (booking.status === "COMPLETED") {
+                throw new Error("Completed booking cannot be cancelled.");
+            }
+
+            // C. Atomic Status Update (Race Guard)
             const updateResult = await tx.booking.updateMany({
                 where: {
                     id: bookingId,
-                    status: { not: "CANCELLED" },
+                    status: "CONFIRMED",
                 },
                 data: { status: "CANCELLED" },
             });
 
             if (updateResult.count === 0) {
-                return { status: 200, message: "Booking already cancelled." };
+                const latest = await tx.booking.findUnique({
+                    where: { id: bookingId },
+                    select: { status: true },
+                });
+
+                if (latest?.status === "CANCELLED") {
+                    return { status: 200, message: "Booking already cancelled." };
+                }
+
+                if (latest?.status === "COMPLETED") {
+                    throw new Error("Completed booking cannot be cancelled.");
+                }
+
+                throw new Error("Booking can no longer be cancelled.");
             }
 
             // D. Restore Seats (only if status update succeeded)
@@ -83,14 +102,31 @@ export async function POST(
         });
 
         return NextResponse.json({ message: result.message }, { status: 200 });
-    } catch (error: any) {
-        if (error.message === "Booking not found.") {
+    } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : "";
+
+        if (errorMessage === "Booking not found.") {
             return NextResponse.json({ error: "Not Found", message: "Booking not found." }, { status: 404 });
         }
-        if (error.message === "Unauthorized access to booking.") {
+        if (errorMessage === "Unauthorized access to booking.") {
             return NextResponse.json(
                 { error: "Forbidden", message: "You are not authorized to cancel this booking." },
                 { status: 403 }
+            );
+        }
+        if (errorMessage === "Completed booking cannot be cancelled.") {
+            return NextResponse.json(
+                { error: "Conflict", message: "Completed bookings cannot be cancelled." },
+                { status: 409 }
+            );
+        }
+        if (errorMessage === "Booking can no longer be cancelled.") {
+            return NextResponse.json(
+                {
+                    error: "Conflict",
+                    message: "Booking could not be cancelled because its state changed.",
+                },
+                { status: 409 }
             );
         }
 

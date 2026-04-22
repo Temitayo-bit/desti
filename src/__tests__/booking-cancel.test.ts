@@ -77,7 +77,7 @@ describe("POST /api/bookings/:bookingId/cancel", () => {
         expect(mockPrisma.booking.updateMany).toHaveBeenCalledWith({
             where: {
                 id: "booking-1",
-                status: { not: "CANCELLED" },
+                status: "CONFIRMED",
             },
             data: { status: "CANCELLED" },
         });
@@ -120,9 +120,6 @@ describe("POST /api/bookings/:bookingId/cancel", () => {
             riderUserId: "rider_test1",
             status: "CANCELLED",
         });
-        // Mock updateMany failing to update any rows (status check failed)
-        // Note: findUnique returns CANCELLED, so updateMany where status != CANCELLED finds 0.
-        mockPrisma.booking.updateMany.mockResolvedValue({ count: 0 });
 
         const req = makeRequest("booking-1");
         const res = await POST(req as never, { params: Promise.resolve({ bookingId: "booking-1" }) });
@@ -132,7 +129,23 @@ describe("POST /api/bookings/:bookingId/cancel", () => {
 
         // Ride seats should NOT be updated
         expect(mockPrisma.ride.update).not.toHaveBeenCalled();
-        // Booking IS checked via updateMany
-        expect(mockPrisma.booking.updateMany).toHaveBeenCalled();
+        // Booking is short-circuited before mutation.
+        expect(mockPrisma.booking.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("returns 409 when booking is already completed", async () => {
+        mockPrisma.booking.findUnique.mockResolvedValue({
+            id: "booking-1",
+            riderUserId: "rider_test1",
+            status: "COMPLETED",
+        });
+
+        const req = makeRequest("booking-1");
+        const res = await POST(req as never, { params: Promise.resolve({ bookingId: "booking-1" }) });
+        const json = await res.json();
+
+        expect(res.status).toBe(409);
+        expect(json.message).toBe("Completed bookings cannot be cancelled.");
+        expect(mockPrisma.booking.updateMany).not.toHaveBeenCalled();
     });
 });

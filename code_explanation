@@ -3147,3 +3147,249 @@ Confirmed:
 - acceptance is atomic
 - pending/quoted stop requests do not reserve seats
 - direct booking, ride offers, and trip-request offers remain intact
+
+## 2026-04-22 — MVP 2 Trust / Completion Core (Backend-Only)
+
+### Scope
+
+Implemented the backend trust/completion foundation for MVP 2 with strict scope control:
+- manual booking completion
+- immutable rider -> driver ratings for completed bookings
+- aggregate driver rating summary
+- shared active-trip participant visibility helper for future live location/trip position work
+
+No frontend files were added or modified for this slice.
+No live location, polling, trip position, map, or background jobs were introduced.
+
+### Files Changed
+
+- `prisma/schema.prisma` (MODIFIED)
+- `prisma/migrations/20260422181000_add_booking_completion_and_rating_core/migration.sql` (NEW)
+- `src/services/trust-service.ts` (NEW)
+- `src/services/active-trip-visibility-service.ts` (NEW)
+- `src/app/api/bookings/[bookingId]/complete/route.ts` (NEW)
+- `src/app/api/bookings/[bookingId]/rating/route.ts` (NEW)
+- `src/app/api/users/[userId]/rating-summary/route.ts` (NEW)
+- `src/app/api/bookings/[bookingId]/cancel/route.ts` (MODIFIED)
+- `src/lib/booking-query.ts` (MODIFIED)
+- `src/__tests__/trust-service.test.ts` (NEW)
+- `src/__tests__/active-trip-visibility-service.test.ts` (NEW)
+- `src/__tests__/trust-routes.test.ts` (NEW)
+- `src/__tests__/booking-cancel.test.ts` (MODIFIED)
+- `src/__tests__/bookings-mine.test.ts` (MODIFIED)
+
+### Booking Completion Changes
+
+#### Data model
+
+`BookingStatus` now includes `COMPLETED`, and `Booking` now includes nullable `completedAt`:
+- status lifecycle now supports `CONFIRMED -> COMPLETED` manually
+- completion timestamp stored in `bookings.completed_at`
+
+#### Manual completion endpoint
+
+Added:
+- `POST /api/bookings/:bookingId/complete`
+
+Behavior:
+- requires authenticated + onboarded user (`requireStetsonAuth`)
+- validates booking existence
+- resolves driver participant from either:
+  - `booking.driverUserId` (trip-request-based bookings)
+  - or `booking.ride.driverUserId` (ride-based bookings)
+- authorization is explicit and simple for this phase: **driver-only completion**
+- valid transition only from `CONFIRMED`
+- rejects cleanly when:
+  - already completed (`BOOKING_ALREADY_COMPLETED`, 409)
+  - cancelled (`BOOKING_CANCELLED`, 409)
+  - actor is not driver (`BOOKING_COMPLETE_FORBIDDEN`, 403)
+  - ride is no longer active (`RIDE_NOT_ACTIVE`, 409)
+- performs race-safe transition via conditional `updateMany(where: { id, status: CONFIRMED })`
+- sets `status=COMPLETED` and `completedAt=now`
+
+#### Cancellation guard updated to preserve lifecycle invariants
+
+`POST /api/bookings/:bookingId/cancel` was tightened so completion cannot be undone through cancel flow:
+- now only transitions `CONFIRMED -> CANCELLED`
+- `COMPLETED` bookings return `409 Conflict`
+- `CANCELLED` remains idempotent (`200 Booking already cancelled.`)
+
+This prevents completed bookings from being treated as active/cancellable.
+
+### Rating Schema
+
+Added new `Rating` model mapped to `ratings`:
+- `id`
+- `bookingId`
+- `raterUserId`
+- `rateeUserId`
+- `score`
+- `comment` (nullable)
+- `createdAt`
+
+Relations:
+- `Rating -> Booking` (1:1 via unique `booking_id`)
+- `Rating -> User` as `rater`
+- `Rating -> User` as `ratee`
+- Back-relations on `User`:
+  - `ratingsGiven`
+  - `ratingsReceived`
+- Back-relation on `Booking`:
+  - `rating`
+
+DB-level constraints added:
+- unique rating per booking (`ratings_booking_id_key`)
+- score range check (`score BETWEEN 1 AND 5`)
+- anti-self-rating check (`rater_user_id <> ratee_user_id`)
+
+Indexes:
+- `(ratee_user_id, created_at, id)`
+- `(rater_user_id, created_at, id)`
+
+### One-Rating-Per-Booking Enforcement
+
+Enforced in two layers:
+
+1) Application rules in `createBookingRating`:
+- booking must exist
+- booking must be `COMPLETED`
+- actor must be the booking rider
+- ratee is derived as booking driver
+
+2) DB uniqueness safety:
+- `ratings.booking_id` is unique
+- concurrent duplicate submissions are blocked at DB level
+- Prisma unique conflict maps to stable `409 BOOKING_ALREADY_RATED`
+
+No edit/update rating route was added, so ratings are immutable after creation.
+
+### Rating Creation Endpoint
+
+Added:
+- `POST /api/bookings/:bookingId/rating`
+
+Behavior:
+- requires authenticated + onboarded user
+- validates JSON body and score/comment constraints
+- `score` must be integer `1..5`
+- `comment` optional, trimmed, max length 500
+- enforces rider-only authoring
+- enforces completed-booking prerequisite
+- creates immutable rating record
+- returns created rating payload with:
+  - `id`
+  - `bookingId`
+  - `raterUserId`
+  - `rateeUserId`
+  - `score`
+  - `comment`
+  - `createdAt`
+
+### Driver Rating Summary Logic
+
+Added reusable summary service + endpoint:
+- Service: `getDriverRatingSummary(userId)`
+- Endpoint: `GET /api/users/:userId/rating-summary`
+
+Summary behavior:
+- validates target user exists
+- aggregates `Rating` rows where `rateeUserId = :userId`
+- returns:
+  - `averageRating` (rounded to 2 decimals, nullable when no ratings)
+  - `ratingCount`
+
+Response shape:
+- `{ userId, averageRating, ratingCount }`
+
+### Active-Trip Visibility Helper
+
+Added shared helper service:
+- `canUserAccessActiveTripDataByBooking(userId, bookingId)`
+- `canUserAccessActiveTripDataByRide(userId, rideId)`
+
+Policy implemented:
+- allow only real participants:
+  - ride driver
+  - confirmed rider participant(s)
+- require active lifecycle window:
+  - booking-based access requires `booking.status === CONFIRMED`
+  - if booking is ride-backed, ride must be `ACTIVE`
+- deny unrelated users
+- deny completed/cancelled/inactive contexts
+- ride-based helper also requires at least one confirmed booking participant
+
+This helper is intentionally foundation-only and not yet wired into live-location endpoints.
+
+### Booking Query Support Update
+
+`parseBookingStatus` now supports:
+- `CONFIRMED` (default)
+- `COMPLETED`
+- `CANCELLED`
+
+This keeps API filtering aligned with the new completion lifecycle.
+
+### Tests Added/Updated
+
+#### New: `src/__tests__/trust-service.test.ts`
+
+Covers:
+- completion success for authorized driver
+- completion fail for already completed
+- completion fail for cancelled
+- completion fail for unauthorized actor
+- rider can rate completed booking
+- incomplete booking cannot be rated
+- duplicate rating blocked (immutability/one-per-booking)
+- non-participant cannot rate
+- invalid score rejected
+- rating summary average + count computation
+
+#### New: `src/__tests__/active-trip-visibility-service.test.ts`
+
+Covers:
+- driver allowed on active booking
+- confirmed rider allowed on active booking
+- unrelated user denied
+- completed booking denied
+- cancelled/inactive trip denied
+- ride-based helper participant checks and no-participant denial
+
+#### New: `src/__tests__/trust-routes.test.ts`
+
+Covers:
+- completion route wiring + conflict mapping
+- rating route wiring
+- rating summary route response contract
+
+#### Updated existing tests
+
+- `src/__tests__/booking-cancel.test.ts`
+  - now expects cancel transition guard to target `status: CONFIRMED`
+  - added completed-booking conflict case
+- `src/__tests__/bookings-mine.test.ts`
+  - includes `status=COMPLETED` filter support
+
+### Commands Run
+
+- `npm run postinstall` (runs `prisma generate`) — success
+- `npm test -- src/__tests__/trust-service.test.ts src/__tests__/active-trip-visibility-service.test.ts src/__tests__/trust-routes.test.ts src/__tests__/booking-cancel.test.ts src/__tests__/bookings-mine.test.ts` — success
+- `npm run lint -- src/services/trust-service.ts src/services/active-trip-visibility-service.ts src/app/api/bookings/[bookingId]/complete/route.ts src/app/api/bookings/[bookingId]/rating/route.ts src/app/api/users/[userId]/rating-summary/route.ts src/app/api/bookings/[bookingId]/cancel/route.ts src/lib/booking-query.ts src/__tests__/trust-service.test.ts src/__tests__/active-trip-visibility-service.test.ts src/__tests__/trust-routes.test.ts src/__tests__/booking-cancel.test.ts src/__tests__/bookings-mine.test.ts` — success
+
+### Invariant / Scope Confirmation
+
+Confirmed for this slice:
+- backend-only changes
+- REST-only additions
+- no frontend modifications
+- no live location endpoints
+- no polling/heartbeat endpoints
+- no current trip position endpoint
+- no map scope
+- no driver->rider ratings
+- no dual-confirmation completion flow
+- no automatic completion or background jobs
+- one immutable rider->driver rating per completed booking
+- ratings only for completed bookings
+- unauthorized users cannot complete or rate others’ bookings
+- cancellation and lifecycle transitions remain explicitly guarded
