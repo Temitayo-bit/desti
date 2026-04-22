@@ -1,34 +1,52 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockPrisma } = vi.hoisted(() => {
-    const ride = {
+const { mockPrisma, mockTx } = vi.hoisted(() => {
+    const topLevelRide = {
         findUnique: vi.fn(),
         updateMany: vi.fn(),
     };
 
-    const stopRequest = {
+    const topLevelStopRequest = {
         create: vi.fn(),
         findMany: vi.fn(),
         findUnique: vi.fn(),
         updateMany: vi.fn(),
     };
 
-    const booking = {
+    const topLevelBooking = {
         findFirst: vi.fn(),
         create: vi.fn(),
     };
 
-    const txClient = { ride, stopRequest, booking };
+    const txRide = {
+        findUnique: vi.fn(),
+        updateMany: vi.fn(),
+    };
+
+    const txStopRequest = {
+        create: vi.fn(),
+        findMany: vi.fn(),
+        findUnique: vi.fn(),
+        updateMany: vi.fn(),
+    };
+
+    const txBooking = {
+        findFirst: vi.fn(),
+        create: vi.fn(),
+    };
+
+    const txClient = { ride: txRide, stopRequest: txStopRequest, booking: txBooking };
 
     const prismaClient = {
-        ride,
-        stopRequest,
-        booking,
+        ride: topLevelRide,
+        stopRequest: topLevelStopRequest,
+        booking: topLevelBooking,
         $transaction: vi.fn(async (cb: (tx: typeof txClient) => Promise<unknown>) => cb(txClient)),
     };
 
     return {
         mockPrisma: prismaClient,
+        mockTx: txClient,
     };
 });
 
@@ -94,9 +112,9 @@ describe("stop-request-service", () => {
 
     describe("createStopRequest", () => {
         it("creates a valid pending stop request", async () => {
-            mockPrisma.ride.findUnique.mockResolvedValue(ACTIVE_FUTURE_RIDE);
-            mockPrisma.booking.findFirst.mockResolvedValue(null);
-            mockPrisma.stopRequest.create.mockResolvedValue({
+            mockTx.ride.findUnique.mockResolvedValue(ACTIVE_FUTURE_RIDE);
+            mockTx.booking.findFirst.mockResolvedValue(null);
+            mockTx.stopRequest.create.mockResolvedValue({
                 ...PENDING_STOP_REQUEST,
                 ride: undefined,
             });
@@ -113,7 +131,7 @@ describe("stop-request-service", () => {
 
             expect(result.state).toBe("PENDING");
             expect(result.riderUserId).toBe("rider-1");
-            expect(mockPrisma.stopRequest.create).toHaveBeenCalledWith(
+            expect(mockTx.stopRequest.create).toHaveBeenCalledWith(
                 expect.objectContaining({
                     data: expect.objectContaining({
                         requestedPickupText: "Library",
@@ -121,12 +139,15 @@ describe("stop-request-service", () => {
                     }),
                 })
             );
+            expect(mockPrisma.stopRequest.create).not.toHaveBeenCalled();
+            expect(mockPrisma.ride.findUnique).not.toHaveBeenCalled();
+            expect(mockPrisma.booking.findFirst).not.toHaveBeenCalled();
         });
 
         it("allows multiple pending stop requests on the same ride", async () => {
-            mockPrisma.ride.findUnique.mockResolvedValue(ACTIVE_FUTURE_RIDE);
-            mockPrisma.booking.findFirst.mockResolvedValue(null);
-            mockPrisma.stopRequest.create
+            mockTx.ride.findUnique.mockResolvedValue(ACTIVE_FUTURE_RIDE);
+            mockTx.booking.findFirst.mockResolvedValue(null);
+            mockTx.stopRequest.create
                 .mockResolvedValueOnce({ ...PENDING_STOP_REQUEST, id: "stop-1", ride: undefined })
                 .mockResolvedValueOnce({ ...PENDING_STOP_REQUEST, id: "stop-2", ride: undefined });
 
@@ -152,7 +173,7 @@ describe("stop-request-service", () => {
         });
 
         it("blocks self-stop-request", async () => {
-            mockPrisma.ride.findUnique.mockResolvedValue({
+            mockTx.ride.findUnique.mockResolvedValue({
                 ...ACTIVE_FUTURE_RIDE,
                 driverUserId: "rider-1",
             });
@@ -173,7 +194,7 @@ describe("stop-request-service", () => {
         });
 
         it("blocks stop requests on cancelled rides", async () => {
-            mockPrisma.ride.findUnique.mockResolvedValue({
+            mockTx.ride.findUnique.mockResolvedValue({
                 ...ACTIVE_FUTURE_RIDE,
                 status: "CANCELLED",
             });
@@ -194,7 +215,7 @@ describe("stop-request-service", () => {
         });
 
         it("blocks stop requests on departed rides", async () => {
-            mockPrisma.ride.findUnique.mockResolvedValue({
+            mockTx.ride.findUnique.mockResolvedValue({
                 ...ACTIVE_FUTURE_RIDE,
                 latestDepartAt: new Date("2000-01-01T00:00:00.000Z"),
             });
@@ -215,12 +236,12 @@ describe("stop-request-service", () => {
         });
 
         it("allows pending stop requests on full rides (capacity checked at accept time)", async () => {
-            mockPrisma.ride.findUnique.mockResolvedValue({
+            mockTx.ride.findUnique.mockResolvedValue({
                 ...ACTIVE_FUTURE_RIDE,
                 seatsAvailable: 0,
             });
-            mockPrisma.booking.findFirst.mockResolvedValue(null);
-            mockPrisma.stopRequest.create.mockResolvedValue({
+            mockTx.booking.findFirst.mockResolvedValue(null);
+            mockTx.stopRequest.create.mockResolvedValue({
                 ...PENDING_STOP_REQUEST,
                 ride: undefined,
             });
@@ -254,7 +275,7 @@ describe("stop-request-service", () => {
         });
 
         it("blocks stop requests whose pickup is outside ride jurisdiction", async () => {
-            mockPrisma.ride.findUnique.mockResolvedValue(ACTIVE_FUTURE_RIDE);
+            mockTx.ride.findUnique.mockResolvedValue(ACTIVE_FUTURE_RIDE);
 
             await expect(
                 createStopRequest("ride-1", "rider-1", {
@@ -272,7 +293,7 @@ describe("stop-request-service", () => {
         });
 
         it("blocks stop requests whose dropoff is outside ride jurisdiction", async () => {
-            mockPrisma.ride.findUnique.mockResolvedValue(ACTIVE_FUTURE_RIDE);
+            mockTx.ride.findUnique.mockResolvedValue(ACTIVE_FUTURE_RIDE);
 
             await expect(
                 createStopRequest("ride-1", "rider-1", {
@@ -290,7 +311,7 @@ describe("stop-request-service", () => {
         });
 
         it("blocks stop requests when ride coordinates are unavailable", async () => {
-            mockPrisma.ride.findUnique.mockResolvedValue({
+            mockTx.ride.findUnique.mockResolvedValue({
                 ...ACTIVE_FUTURE_RIDE,
                 originLatitude: null,
                 originLongitude: null,
@@ -333,6 +354,7 @@ describe("stop-request-service", () => {
                     }),
                 })
             );
+            expect(mockTx.stopRequest.findMany).not.toHaveBeenCalled();
         });
 
         it("blocks unrelated users from viewing incoming stop requests", async () => {
@@ -360,18 +382,19 @@ describe("stop-request-service", () => {
                     where: { riderUserId: "rider-1" },
                 })
             );
+            expect(mockTx.stopRequest.findMany).not.toHaveBeenCalled();
         });
     });
 
     describe("quoteStopRequest", () => {
         it("allows driver to quote pending stop request", async () => {
-            mockPrisma.stopRequest.findUnique
+            mockTx.stopRequest.findUnique
                 .mockResolvedValueOnce(PENDING_STOP_REQUEST)
                 .mockResolvedValueOnce({
                     ...QUOTED_STOP_REQUEST,
                     ride: undefined,
                 });
-            mockPrisma.stopRequest.updateMany.mockResolvedValue({ count: 1 });
+            mockTx.stopRequest.updateMany.mockResolvedValue({ count: 1 });
 
             const result = await quoteStopRequest("stop-1", "driver-1", 1800);
 
@@ -380,7 +403,7 @@ describe("stop-request-service", () => {
         });
 
         it("fails when quoting a non-pending stop request", async () => {
-            mockPrisma.stopRequest.findUnique.mockResolvedValue(QUOTED_STOP_REQUEST);
+            mockTx.stopRequest.findUnique.mockResolvedValue(QUOTED_STOP_REQUEST);
 
             await expect(quoteStopRequest("stop-1", "driver-1", 1800)).rejects.toMatchObject<
                 Partial<StopRequestError>
@@ -400,7 +423,7 @@ describe("stop-request-service", () => {
         });
 
         it("blocks non-driver quoting", async () => {
-            mockPrisma.stopRequest.findUnique.mockResolvedValue(PENDING_STOP_REQUEST);
+            mockTx.stopRequest.findUnique.mockResolvedValue(PENDING_STOP_REQUEST);
 
             await expect(quoteStopRequest("stop-1", "driver-2", 1800)).rejects.toMatchObject<
                 Partial<StopRequestError>
@@ -413,7 +436,7 @@ describe("stop-request-service", () => {
 
     describe("acceptStopRequest", () => {
         it("allows rider to accept quoted request and create booking atomically", async () => {
-            mockPrisma.stopRequest.findUnique
+            mockTx.stopRequest.findUnique
                 .mockResolvedValueOnce(QUOTED_STOP_REQUEST)
                 .mockResolvedValueOnce({
                     ...QUOTED_STOP_REQUEST,
@@ -421,8 +444,8 @@ describe("stop-request-service", () => {
                     acceptedAt: new Date("2030-01-01T08:20:00.000Z"),
                     ride: undefined,
                 });
-            mockPrisma.ride.updateMany.mockResolvedValue({ count: 1 });
-            mockPrisma.booking.create.mockResolvedValue({
+            mockTx.ride.updateMany.mockResolvedValue({ count: 1 });
+            mockTx.booking.create.mockResolvedValue({
                 id: "booking-1",
                 rideId: "ride-1",
                 tripRequestId: null,
@@ -434,13 +457,13 @@ describe("stop-request-service", () => {
                 createdAt: new Date("2030-01-01T08:21:00.000Z"),
                 updatedAt: new Date("2030-01-01T08:21:00.000Z"),
             });
-            mockPrisma.stopRequest.updateMany.mockResolvedValue({ count: 1 });
+            mockTx.stopRequest.updateMany.mockResolvedValue({ count: 1 });
 
             const result = await acceptStopRequest("stop-1", "rider-1");
 
             expect(result.stopRequest.state).toBe("ACCEPTED");
             expect(result.booking.status).toBe("CONFIRMED");
-            expect(mockPrisma.ride.updateMany).toHaveBeenCalledWith(
+            expect(mockTx.ride.updateMany).toHaveBeenCalledWith(
                 expect.objectContaining({
                     where: expect.objectContaining({
                         id: "ride-1",
@@ -451,12 +474,17 @@ describe("stop-request-service", () => {
                     data: { seatsAvailable: { decrement: 1 } },
                 })
             );
+            expect(mockTx.booking.create).toHaveBeenCalled();
+            expect(mockTx.stopRequest.updateMany).toHaveBeenCalled();
+            expect(mockPrisma.ride.updateMany).not.toHaveBeenCalled();
+            expect(mockPrisma.booking.create).not.toHaveBeenCalled();
+            expect(mockPrisma.stopRequest.updateMany).not.toHaveBeenCalled();
         });
 
         it("fails safely if seat is consumed before acceptance", async () => {
-            mockPrisma.stopRequest.findUnique.mockResolvedValue(QUOTED_STOP_REQUEST);
-            mockPrisma.ride.updateMany.mockResolvedValue({ count: 0 });
-            mockPrisma.ride.findUnique.mockResolvedValue({
+            mockTx.stopRequest.findUnique.mockResolvedValue(QUOTED_STOP_REQUEST);
+            mockTx.ride.updateMany.mockResolvedValue({ count: 0 });
+            mockTx.ride.findUnique.mockResolvedValue({
                 ...ACTIVE_FUTURE_RIDE,
                 seatsAvailable: 0,
             });
@@ -468,13 +496,13 @@ describe("stop-request-service", () => {
                 code: "RIDE_FULL",
             });
 
-            expect(mockPrisma.booking.create).not.toHaveBeenCalled();
+            expect(mockTx.booking.create).not.toHaveBeenCalled();
         });
 
         it("fails with forbidden when stop request ownership mismatches ride ownership", async () => {
-            mockPrisma.stopRequest.findUnique.mockResolvedValue(QUOTED_STOP_REQUEST);
-            mockPrisma.ride.updateMany.mockResolvedValue({ count: 0 });
-            mockPrisma.ride.findUnique.mockResolvedValue({
+            mockTx.stopRequest.findUnique.mockResolvedValue(QUOTED_STOP_REQUEST);
+            mockTx.ride.updateMany.mockResolvedValue({ count: 0 });
+            mockTx.ride.findUnique.mockResolvedValue({
                 ...ACTIVE_FUTURE_RIDE,
                 driverUserId: "driver-other",
             });
@@ -486,13 +514,13 @@ describe("stop-request-service", () => {
                 code: "STOP_REQUEST_FORBIDDEN",
             });
 
-            expect(mockPrisma.booking.create).not.toHaveBeenCalled();
+            expect(mockTx.booking.create).not.toHaveBeenCalled();
         });
 
         it("fails safely if ride becomes cancelled before acceptance", async () => {
-            mockPrisma.stopRequest.findUnique.mockResolvedValue(QUOTED_STOP_REQUEST);
-            mockPrisma.ride.updateMany.mockResolvedValue({ count: 0 });
-            mockPrisma.ride.findUnique.mockResolvedValue({
+            mockTx.stopRequest.findUnique.mockResolvedValue(QUOTED_STOP_REQUEST);
+            mockTx.ride.updateMany.mockResolvedValue({ count: 0 });
+            mockTx.ride.findUnique.mockResolvedValue({
                 ...ACTIVE_FUTURE_RIDE,
                 status: "CANCELLED",
             });
@@ -504,20 +532,20 @@ describe("stop-request-service", () => {
                 code: "RIDE_NOT_ACTIVE",
             });
 
-            expect(mockPrisma.booking.create).not.toHaveBeenCalled();
+            expect(mockTx.booking.create).not.toHaveBeenCalled();
         });
 
         it("does not mark accepted when booking creation fails", async () => {
-            mockPrisma.stopRequest.findUnique.mockResolvedValue(QUOTED_STOP_REQUEST);
-            mockPrisma.ride.updateMany.mockResolvedValue({ count: 1 });
-            mockPrisma.booking.create.mockRejectedValue(new Error("booking write failed"));
+            mockTx.stopRequest.findUnique.mockResolvedValue(QUOTED_STOP_REQUEST);
+            mockTx.ride.updateMany.mockResolvedValue({ count: 1 });
+            mockTx.booking.create.mockRejectedValue(new Error("booking write failed"));
 
             await expect(acceptStopRequest("stop-1", "rider-1")).rejects.toThrow("booking write failed");
-            expect(mockPrisma.stopRequest.updateMany).not.toHaveBeenCalled();
+            expect(mockTx.stopRequest.updateMany).not.toHaveBeenCalled();
         });
 
         it("cannot accept an already accepted stop request", async () => {
-            mockPrisma.stopRequest.findUnique.mockResolvedValue({
+            mockTx.stopRequest.findUnique.mockResolvedValue({
                 ...QUOTED_STOP_REQUEST,
                 state: "ACCEPTED",
             });
@@ -531,7 +559,7 @@ describe("stop-request-service", () => {
         });
 
         it("cannot accept a rejected stop request", async () => {
-            mockPrisma.stopRequest.findUnique.mockResolvedValue({
+            mockTx.stopRequest.findUnique.mockResolvedValue({
                 ...QUOTED_STOP_REQUEST,
                 state: "REJECTED",
             });
@@ -545,7 +573,7 @@ describe("stop-request-service", () => {
         });
 
         it("blocks non-rider acceptance", async () => {
-            mockPrisma.stopRequest.findUnique.mockResolvedValue(QUOTED_STOP_REQUEST);
+            mockTx.stopRequest.findUnique.mockResolvedValue(QUOTED_STOP_REQUEST);
 
             await expect(acceptStopRequest("stop-1", "rider-2")).rejects.toMatchObject<
                 Partial<StopRequestError>
@@ -558,7 +586,7 @@ describe("stop-request-service", () => {
 
     describe("rejectStopRequest", () => {
         it("allows driver to reject pending stop request", async () => {
-            mockPrisma.stopRequest.findUnique
+            mockTx.stopRequest.findUnique
                 .mockResolvedValueOnce(PENDING_STOP_REQUEST)
                 .mockResolvedValueOnce({
                     ...PENDING_STOP_REQUEST,
@@ -566,7 +594,7 @@ describe("stop-request-service", () => {
                     rejectedAt: new Date("2030-01-01T08:40:00.000Z"),
                     ride: undefined,
                 });
-            mockPrisma.stopRequest.updateMany.mockResolvedValue({ count: 1 });
+            mockTx.stopRequest.updateMany.mockResolvedValue({ count: 1 });
 
             const result = await rejectStopRequest("stop-1", "driver-1");
 
@@ -574,7 +602,7 @@ describe("stop-request-service", () => {
         });
 
         it("allows rider to reject quoted stop request", async () => {
-            mockPrisma.stopRequest.findUnique
+            mockTx.stopRequest.findUnique
                 .mockResolvedValueOnce(QUOTED_STOP_REQUEST)
                 .mockResolvedValueOnce({
                     ...QUOTED_STOP_REQUEST,
@@ -582,7 +610,7 @@ describe("stop-request-service", () => {
                     rejectedAt: new Date("2030-01-01T08:41:00.000Z"),
                     ride: undefined,
                 });
-            mockPrisma.stopRequest.updateMany.mockResolvedValue({ count: 1 });
+            mockTx.stopRequest.updateMany.mockResolvedValue({ count: 1 });
 
             const result = await rejectStopRequest("stop-1", "rider-1");
 
@@ -590,7 +618,7 @@ describe("stop-request-service", () => {
         });
 
         it("blocks unauthorized rejection", async () => {
-            mockPrisma.stopRequest.findUnique.mockResolvedValue(QUOTED_STOP_REQUEST);
+            mockTx.stopRequest.findUnique.mockResolvedValue(QUOTED_STOP_REQUEST);
 
             await expect(rejectStopRequest("stop-1", "intruder-1")).rejects.toMatchObject<
                 Partial<StopRequestError>
@@ -610,7 +638,7 @@ describe("stop-request-service", () => {
         });
 
         it("keeps rejected stop requests closed", async () => {
-            mockPrisma.stopRequest.findUnique.mockResolvedValue({
+            mockTx.stopRequest.findUnique.mockResolvedValue({
                 ...QUOTED_STOP_REQUEST,
                 state: "REJECTED",
             });
