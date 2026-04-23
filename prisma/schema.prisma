@@ -70,6 +70,22 @@ enum DistanceCategory {
   LONG
 }
 
+/// In-ride music preference.
+enum MusicPreference {
+  MUSIC_ALLOWED
+  NO_MUSIC
+}
+
+/// Vehicle type for a posted ride.
+enum VehicleType {
+  SEDAN
+  SUV
+  TRUCK
+  VAN
+  COUPE
+  OTHER
+}
+
 /// Current status of a ride.
 enum RideStatus {
   ACTIVE
@@ -180,6 +196,10 @@ model Ride {
   priceCents          Int              @map("price_cents")
   seatsTotal          Int              @map("seats_total")
   seatsAvailable      Int              @map("seats_available")
+  musicPreference     MusicPreference? @map("music_preference")
+  hasAc               Boolean?         @map("has_ac")
+  hasTrunkSpace       Boolean?         @map("has_trunk_space")
+  vehicleType         VehicleType?     @map("vehicle_type")
   pickupInstructions  String?          @map("pickup_instructions")
   dropoffInstructions String?          @map("dropoff_instructions")
   preferredDepartAt   DateTime?        @map("preferred_depart_at")

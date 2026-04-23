@@ -27,6 +27,18 @@ vi.mock("@prisma/client", () => ({
         MEDIUM: "MEDIUM",
         LONG: "LONG",
     },
+    MusicPreference: {
+        MUSIC_ALLOWED: "MUSIC_ALLOWED",
+        NO_MUSIC: "NO_MUSIC",
+    },
+    VehicleType: {
+        SEDAN: "SEDAN",
+        SUV: "SUV",
+        TRUCK: "TRUCK",
+        VAN: "VAN",
+        COUPE: "COUPE",
+        OTHER: "OTHER",
+    },
 }));
 
 import { GET } from "@/app/api/rides/route";
@@ -58,6 +70,10 @@ function fakeRide(overrides: Record<string, unknown> = {}) {
         priceCents: 500,
         seatsTotal: 4,
         seatsAvailable: 2,
+        musicPreference: null,
+        hasAc: null,
+        hasTrunkSpace: null,
+        vehicleType: null,
         pickupInstructions: null,
         dropoffInstructions: null,
         preferredDepartAt: null,
@@ -143,6 +159,67 @@ describe("GET /api/rides", () => {
         );
     });
 
+    it("filters strictly by hasAc=true (only explicit true matches)", async () => {
+        await GET(makeRequest("?hasAc=true") as never);
+        const findManyArg = mockPrisma.ride.findMany.mock.calls[0][0];
+        const andClauses = getAndClauses(findManyArg);
+        expect(andClauses).toEqual(expect.arrayContaining([{ hasAc: true }]));
+        expect(
+            andClauses.some(
+                (clause) =>
+                    "hasAc" in clause &&
+                    typeof clause.hasAc === "object" &&
+                    clause.hasAc !== null
+            )
+        ).toBe(false);
+    });
+
+    it("filters strictly by hasTrunkSpace=true (only explicit true matches)", async () => {
+        await GET(makeRequest("?hasTrunkSpace=true") as never);
+        const findManyArg = mockPrisma.ride.findMany.mock.calls[0][0];
+        const andClauses = getAndClauses(findManyArg);
+        expect(andClauses).toEqual(
+            expect.arrayContaining([{ hasTrunkSpace: true }])
+        );
+    });
+
+    it("filters by musicPreference with exact enum match only", async () => {
+        await GET(makeRequest("?musicPreference=NO_MUSIC") as never);
+        const findManyArg = mockPrisma.ride.findMany.mock.calls[0][0];
+        const andClauses = getAndClauses(findManyArg);
+        expect(andClauses).toEqual(
+            expect.arrayContaining([{ musicPreference: "NO_MUSIC" }])
+        );
+    });
+
+    it("filters by vehicleType with exact enum match only", async () => {
+        await GET(makeRequest("?vehicleType=SUV") as never);
+        const findManyArg = mockPrisma.ride.findMany.mock.calls[0][0];
+        const andClauses = getAndClauses(findManyArg);
+        expect(andClauses).toEqual(
+            expect.arrayContaining([{ vehicleType: "SUV" }])
+        );
+    });
+
+    it("does not treat null/unspecified values as matches for strict filters", async () => {
+        await GET(makeRequest("?hasAc=true&hasTrunkSpace=true") as never);
+        const findManyArg = mockPrisma.ride.findMany.mock.calls[0][0];
+        const andClauses = getAndClauses(findManyArg);
+        expect(andClauses).toEqual(
+            expect.arrayContaining([{ hasAc: true }, { hasTrunkSpace: true }])
+        );
+        expect(
+            andClauses.some(
+                (clause) =>
+                    "OR" in clause ||
+                    "NOT" in clause ||
+                    ("hasAc" in clause &&
+                        typeof clause.hasAc === "object" &&
+                        clause.hasAc !== null)
+            )
+        ).toBe(false);
+    });
+
     it("returns 400 on invalid cursor", async () => {
         const res = await GET(makeRequest("?cursor=not-valid-base64") as never);
         expect(res.status).toBe(400);
@@ -158,6 +235,14 @@ describe("GET /api/rides", () => {
 
         const badDate = await GET(makeRequest("?earliestAfter=notadate") as never);
         expect(badDate.status).toBe(400);
+
+        const badMusic = await GET(
+            makeRequest("?musicPreference=LOUD_ONLY") as never
+        );
+        expect(badMusic.status).toBe(400);
+
+        const badVehicle = await GET(makeRequest("?vehicleType=PLANE") as never);
+        expect(badVehicle.status).toBe(400);
     });
 
     it("paginates deterministically without duplicates", async () => {

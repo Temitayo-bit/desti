@@ -1,5 +1,222 @@
 # Code Explanation
 
+## 2026-04-23 — Ride-Level Optional Attributes + Strict Browse Filtering
+
+### Scope
+
+Implemented a backend-first enhancement for **optional ride-level attributes** on `Ride` and strict browse filtering for those attributes.
+
+Added support for:
+- `musicPreference`
+- `hasAc`
+- `hasTrunkSpace`
+- `vehicleType`
+
+These attributes were intentionally implemented on the **Ride** entity (create/edit/browse) and **not** onboarding/profile.
+
+### Files Changed
+
+- `prisma/schema.prisma` (MODIFIED)
+- `prisma/migrations/20260423100000_add_ride_optional_attributes/migration.sql` (NEW)
+- `src/app/api/rides/route.ts` (MODIFIED)
+- `src/app/api/rides/[rideId]/route.ts` (MODIFIED)
+- `src/app/api/rides/mine/route.ts` (MODIFIED)
+- `src/lib/post-ride-form.ts` (MODIFIED)
+- `src/app/(protected)/post-ride/page.tsx` (MODIFIED)
+- `src/app/(protected)/browse/page.tsx` (MODIFIED)
+- `src/app/(protected)/my-rides/MyRidesView.tsx` (MODIFIED)
+- `src/types/ride.ts` (MODIFIED)
+- `src/__tests__/ride-create.test.ts` (MODIFIED)
+- `src/__tests__/ride-edit.test.ts` (MODIFIED)
+- `src/__tests__/rides-browse.test.ts` (MODIFIED)
+- `src/__tests__/rides-mine.test.ts` (MODIFIED)
+- `src/__tests__/post-ride-form.test.ts` (MODIFIED)
+
+### Ride Schema Changes
+
+In `prisma/schema.prisma`, `Ride` now includes nullable ride-level fields:
+- `musicPreference MusicPreference? @map("music_preference")`
+- `hasAc Boolean? @map("has_ac")`
+- `hasTrunkSpace Boolean? @map("has_trunk_space")`
+- `vehicleType VehicleType? @map("vehicle_type")`
+
+New enums:
+- `MusicPreference`:
+  - `MUSIC_ALLOWED`
+  - `NO_MUSIC`
+- `VehicleType`:
+  - `SEDAN`
+  - `SUV`
+  - `TRUCK`
+  - `VAN`
+  - `COUPE`
+  - `OTHER`
+
+Migration (`20260423100000_add_ride_optional_attributes`) is additive/backward-compatible:
+- creates enum types
+- adds nullable columns to `rides`
+- does not rewrite existing rows
+
+### Enum Choices
+
+Enum values were intentionally kept small and practical:
+- Music: `MUSIC_ALLOWED`, `NO_MUSIC`
+- Vehicle type: `SEDAN`, `SUV`, `TRUCK`, `VAN`, `COUPE`, `OTHER`
+
+No extra enum complexity was introduced.
+
+### Null / Unspecified Semantics
+
+Semantics preserved end-to-end:
+- `null` = unspecified by driver
+- `true` = explicitly available/yes
+- `false` = explicitly unavailable/no
+
+Implementation details:
+- Create flow: omitted fields remain `null`.
+- Update flow: fields accept `true`/`false` or `null` to clear.
+- UI includes explicit `Unspecified` options.
+- Form payload generation does not coerce `Unspecified` to `false`.
+
+### Create / Update API Changes
+
+#### POST `/api/rides` (`src/app/api/rides/route.ts`)
+
+- Request validation now accepts optional:
+  - `musicPreference` (enum or null/omitted)
+  - `hasAc` (boolean or null/omitted)
+  - `hasTrunkSpace` (boolean or null/omitted)
+  - `vehicleType` (enum or null/omitted)
+- Invalid enum values/types are rejected with field-level validation errors.
+- Ride creation still succeeds when none of these are provided.
+- Existing booking/seat/idempotency invariants remain unchanged.
+
+#### PATCH `/api/rides/:rideId` (`src/app/api/rides/[rideId]/route.ts`)
+
+- Added the new fields to `ALLOWED_UPDATE_FIELDS`.
+- Validation supports setting enum values/booleans and clearing to null.
+- Kept existing edit-lock rules intact:
+  - ownership required
+  - blocked when confirmed bookings exist
+  - no expansion of editability constraints beyond current behavior
+
+### Browse / Filtering Changes (Strict)
+
+#### Backend filtering (`src/app/api/rides/route.ts`)
+
+GET `/api/rides` now accepts optional query params:
+- `musicPreference`
+- `hasAc`
+- `hasTrunkSpace`
+- `vehicleType`
+
+Strict filtering behavior:
+- `hasAc=true` => only `hasAc = true`
+- `hasTrunkSpace=true` => only `hasTrunkSpace = true`
+- enum filters => exact enum matches only
+- `null`/unspecified does **not** match filtered values
+
+Invalid query values return `400` via strict query validation.
+
+### Response / Serialization Changes
+
+Ride list/select payloads now expose these fields where ride summaries are returned:
+- `GET /api/rides`
+- `GET /api/rides/mine`
+- `POST /api/rides` and `PATCH /api/rides/:rideId` naturally return updated ride objects including new fields
+
+### Frontend Ride Form Changes
+
+#### Post Ride form (`src/lib/post-ride-form.ts`, `src/app/(protected)/post-ride/page.tsx`)
+
+Added optional inputs:
+- music preference
+- AC availability
+- trunk space availability
+- vehicle type
+
+Behavior:
+- all optional
+- explicit `Unspecified` choice remains available
+- payload builder includes these only when selected
+- unspecified values are not converted to `false`
+
+### Browse UI Filter Changes
+
+`src/app/(protected)/browse/page.tsx` advanced filters now include:
+- music preference
+- AC availability
+- trunk space availability
+- vehicle type
+
+These are sent as API query params and enforced server-side with strict matching.
+
+Also added ride-attribute display in ride details modals and made these attributes editable in existing ride edit modals on:
+- browse rides view (`src/app/(protected)/browse/page.tsx`)
+- my rides view (`src/app/(protected)/my-rides/MyRidesView.tsx`)
+
+No edit-lock rule changes were made.
+
+### Tests Added / Updated
+
+#### `src/__tests__/ride-create.test.ts`
+- create with no optional attributes (ensures nullable defaults)
+- create with all optional attributes set
+- invalid enum validation for `musicPreference` and `vehicleType`
+
+#### `src/__tests__/rides-browse.test.ts`
+- strict filter for `hasAc=true`
+- strict filter for `hasTrunkSpace=true`
+- exact-match filter for `musicPreference`
+- exact-match filter for `vehicleType`
+- assertion that strict filters do not include null/unspecified logic branches
+- invalid filter enum values return `400`
+
+#### `src/__tests__/post-ride-form.test.ts`
+- payload omits new optionals when unspecified
+- payload includes converted booleans/enums when selected
+
+#### Compatibility updates
+- `src/__tests__/ride-edit.test.ts`
+- `src/__tests__/rides-mine.test.ts`
+
+Updated mocks/fixtures to include new ride fields.
+
+### Validation / Safety Notes
+
+- Invalid enum values are rejected on create/update/filter query paths.
+- Nullable booleans remain nullable; they are not collapsed into false.
+- Filtering logic stays strict and null-safe.
+- Existing ride creation remains backward-compatible when new fields are omitted.
+- Migration is additive and preserves existing rides.
+
+### Test Execution
+
+Executed focused test suite successfully with bundled Node runtime:
+
+- `src/__tests__/ride-create.test.ts`
+- `src/__tests__/ride-edit.test.ts`
+- `src/__tests__/rides-browse.test.ts`
+- `src/__tests__/rides-mine.test.ts`
+- `src/__tests__/post-ride-form.test.ts`
+
+Result: all passing.
+
+Executed ESLint on all touched files: clean.
+
+### Explicit Scope Confirmation
+
+Confirmed intentionally **not** implemented in this change:
+- onboarding/profile schema changes for these fields
+- gender filtering or gender schema changes
+- rider preference profiles
+- vehicle profile tables / multi-vehicle management
+- matching algorithm rewrite
+- pricing logic, notifications, tracking/map redesign
+- broad search redesign
+
+This implementation is strictly ride-level create/storage/exposure/filtering for the four requested attributes.
+
 ## 2026-04-22 — Live Map + Trip Pins Visualization (Frontend Enhancement)
 
 ### Scope

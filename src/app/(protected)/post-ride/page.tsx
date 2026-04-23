@@ -32,6 +32,10 @@ const initialFormValues: PostRideFormValues = {
   seatsTotal: "1",
   priceDollars: "",
   distanceCategory: "",
+  musicPreference: "",
+  hasAc: "",
+  hasTrunkSpace: "",
+  vehicleType: "",
   pickupInstructions: "",
   dropoffInstructions: "",
 };
@@ -45,6 +49,10 @@ const fieldNameMap: Record<string, keyof PostRideFieldErrors> = {
   seatsTotal: "seatsTotal",
   priceCents: "priceDollars",
   distanceCategory: "distanceCategory",
+  musicPreference: "musicPreference",
+  hasAc: "hasAc",
+  hasTrunkSpace: "hasTrunkSpace",
+  vehicleType: "vehicleType",
   pickupInstructions: "pickupInstructions",
   dropoffInstructions: "dropoffInstructions",
 };
@@ -427,6 +435,108 @@ export default function PostRidePage() {
                 {fieldErrors.distanceCategory && (
                   <p className="mt-1 text-sm text-red-600">{fieldErrors.distanceCategory}</p>
                 )}
+              </div>
+            </div>
+
+            <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-5 md:p-6">
+              <h3 className="text-base font-bold text-emerald-800 mb-4">Ride Attributes (Optional)</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="musicPreference" className="block text-sm font-medium text-zinc-600 mb-1">
+                    Music Preference
+                  </label>
+                  <select
+                    id="musicPreference"
+                    value={formValues.musicPreference}
+                    onChange={(e) =>
+                      updateField(
+                        "musicPreference",
+                        e.target.value as PostRideFormValues["musicPreference"],
+                      )
+                    }
+                    className="w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-3 text-zinc-900 transition-all outline-none"
+                  >
+                    <option value="">Unspecified</option>
+                    <option value="MUSIC_ALLOWED">Music allowed</option>
+                    <option value="NO_MUSIC">No music</option>
+                  </select>
+                  {fieldErrors.musicPreference && (
+                    <p className="mt-1 text-sm text-red-600">{fieldErrors.musicPreference}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label htmlFor="vehicleType" className="block text-sm font-medium text-zinc-600 mb-1">
+                    Vehicle Type
+                  </label>
+                  <select
+                    id="vehicleType"
+                    value={formValues.vehicleType}
+                    onChange={(e) =>
+                      updateField(
+                        "vehicleType",
+                        e.target.value as PostRideFormValues["vehicleType"],
+                      )
+                    }
+                    className="w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-3 text-zinc-900 transition-all outline-none"
+                  >
+                    <option value="">Unspecified</option>
+                    <option value="SEDAN">Sedan</option>
+                    <option value="SUV">SUV</option>
+                    <option value="TRUCK">Truck</option>
+                    <option value="VAN">Van</option>
+                    <option value="COUPE">Coupe</option>
+                    <option value="OTHER">Other</option>
+                  </select>
+                  {fieldErrors.vehicleType && (
+                    <p className="mt-1 text-sm text-red-600">{fieldErrors.vehicleType}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label htmlFor="hasAc" className="block text-sm font-medium text-zinc-600 mb-1">
+                    AC Availability
+                  </label>
+                  <select
+                    id="hasAc"
+                    value={formValues.hasAc}
+                    onChange={(e) =>
+                      updateField("hasAc", e.target.value as PostRideFormValues["hasAc"])
+                    }
+                    className="w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-3 text-zinc-900 transition-all outline-none"
+                  >
+                    <option value="">Unspecified</option>
+                    <option value="true">Yes</option>
+                    <option value="false">No</option>
+                  </select>
+                  {fieldErrors.hasAc && (
+                    <p className="mt-1 text-sm text-red-600">{fieldErrors.hasAc}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label htmlFor="hasTrunkSpace" className="block text-sm font-medium text-zinc-600 mb-1">
+                    Trunk Space Availability
+                  </label>
+                  <select
+                    id="hasTrunkSpace"
+                    value={formValues.hasTrunkSpace}
+                    onChange={(e) =>
+                      updateField(
+                        "hasTrunkSpace",
+                        e.target.value as PostRideFormValues["hasTrunkSpace"],
+                      )
+                    }
+                    className="w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-3 text-zinc-900 transition-all outline-none"
+                  >
+                    <option value="">Unspecified</option>
+                    <option value="true">Yes</option>
+                    <option value="false">No</option>
+                  </select>
+                  {fieldErrors.hasTrunkSpace && (
+                    <p className="mt-1 text-sm text-red-600">{fieldErrors.hasTrunkSpace}</p>
+                  )}
+                </div>
               </div>
             </div>
 

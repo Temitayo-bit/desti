@@ -54,6 +54,18 @@ vi.mock("@prisma/client", () => ({
         MEDIUM: "MEDIUM",
         LONG: "LONG",
     },
+    MusicPreference: {
+        MUSIC_ALLOWED: "MUSIC_ALLOWED",
+        NO_MUSIC: "NO_MUSIC",
+    },
+    VehicleType: {
+        SEDAN: "SEDAN",
+        SUV: "SUV",
+        TRUCK: "TRUCK",
+        VAN: "VAN",
+        COUPE: "COUPE",
+        OTHER: "OTHER",
+    },
     BookingStatus: {
         CONFIRMED: "CONFIRMED",
         CANCELLED: "CANCELLED",
@@ -115,6 +127,10 @@ function fakeRide(overrides: Record<string, unknown> = {}, booked = false) {
         priceCents: 500,
         seatsTotal: 4,
         seatsAvailable: 4,
+        musicPreference: null,
+        hasAc: null,
+        hasTrunkSpace: null,
+        vehicleType: null,
         status: "ACTIVE",
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -255,7 +271,9 @@ describe("PATCH /api/rides/:rideId", () => {
         const json = await res.json();
 
         expect(res.status).toBe(400);
-        expect(json.details.map((d: any) => d.field)).toContain("latestDepartAt");
+        expect(
+            json.details.map((d: { field: string }) => d.field)
+        ).toContain("latestDepartAt");
     });
 
     it("5) Window > 48h rejected (400)", async () => {
@@ -272,7 +290,11 @@ describe("PATCH /api/rides/:rideId", () => {
         const json = await res.json();
 
         expect(res.status).toBe(400);
-        expect(json.details.map((d: any) => d.message).some((m: string) => m.includes("48 hours"))).toBe(true);
+        expect(
+            json.details
+                .map((d: { message: string }) => d.message)
+                .some((m: string) => m.includes("48 hours"))
+        ).toBe(true);
     });
 
     it("6) seatsTotal update resets seatsAvailable when no bookings", async () => {

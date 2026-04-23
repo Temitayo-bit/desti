@@ -4,7 +4,11 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { format } from "date-fns";
-import type { DistanceCategory } from "@prisma/client";
+import type {
+  DistanceCategory,
+  MusicPreference,
+  VehicleType,
+} from "@prisma/client";
 import { X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ProtectedShell } from "../_components/ProtectedShell";
@@ -25,6 +29,10 @@ interface AdvancedFilters {
   latestBefore: string;
   priceMin: string;
   priceMax: string;
+  musicPreference: string;
+  hasAc: string;
+  hasTrunkSpace: string;
+  vehicleType: string;
 }
 
 const EMPTY_ADVANCED_FILTERS: AdvancedFilters = {
@@ -34,6 +42,10 @@ const EMPTY_ADVANCED_FILTERS: AdvancedFilters = {
   latestBefore: "",
   priceMin: "",
   priceMax: "",
+  musicPreference: "",
+  hasAc: "",
+  hasTrunkSpace: "",
+  vehicleType: "",
 };
 
 function isAdvancedFiltersActive(filters: AdvancedFilters): boolean {
@@ -50,6 +62,10 @@ function buildApiQueryString(filters: AdvancedFilters): string {
   if (filters.seatsMin) params.set("seatsMin", filters.seatsMin);
   if (filters.earliestAfter) params.set("earliestAfter", new Date(filters.earliestAfter).toISOString());
   if (filters.latestBefore) params.set("latestBefore", new Date(filters.latestBefore).toISOString());
+  if (filters.musicPreference) params.set("musicPreference", filters.musicPreference);
+  if (filters.hasAc) params.set("hasAc", filters.hasAc);
+  if (filters.hasTrunkSpace) params.set("hasTrunkSpace", filters.hasTrunkSpace);
+  if (filters.vehicleType) params.set("vehicleType", filters.vehicleType);
   const qs = params.toString();
   return qs ? `?${qs}` : "";
 }
@@ -67,6 +83,10 @@ interface RideSummary {
   priceCents: number;
   seatsTotal: number;
   seatsAvailable: number;
+  musicPreference: MusicPreference | null;
+  hasAc: boolean | null;
+  hasTrunkSpace: boolean | null;
+  vehicleType: VehicleType | null;
   pickupInstructions: string | null;
   dropoffInstructions: string | null;
   preferredDepartAt: string | null;
@@ -86,6 +106,10 @@ interface EditRideFormData {
   latestDepartAt?: string;
   seatsTotal?: number;
   priceDollars?: string;
+  musicPreference?: "" | MusicPreference;
+  hasAc?: "" | "true" | "false";
+  hasTrunkSpace?: "" | "true" | "false";
+  vehicleType?: "" | VehicleType;
 }
 
 interface ConfirmedBookingSummary {
@@ -302,6 +326,29 @@ export default function BrowseRidesPage() {
     return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
   };
 
+  const toNullableBooleanSelectValue = (value: boolean | null): "" | "true" | "false" => {
+    if (value === true) return "true";
+    if (value === false) return "false";
+    return "";
+  };
+
+  const formatOptionalFeature = (value: boolean | null) => {
+    if (value === true) return "Yes";
+    if (value === false) return "No";
+    return "Unspecified";
+  };
+
+  const formatMusicPreference = (value: MusicPreference | null) => {
+    if (value === "MUSIC_ALLOWED") return "Music allowed";
+    if (value === "NO_MUSIC") return "No music";
+    return "Unspecified";
+  };
+
+  const formatVehicleType = (value: VehicleType | null) => {
+    if (!value) return "Unspecified";
+    return toTitleCase(value);
+  };
+
   const closeRideModal = () => {
     setSelectedRide(null);
     setSuccessState(null);
@@ -450,6 +497,10 @@ export default function BrowseRidesPage() {
       latestDepartAt: format(new Date(selectedRide.latestDepartAt), "yyyy-MM-dd'T'HH:mm"),
       seatsTotal: selectedRide.seatsTotal,
       priceDollars: (selectedRide.priceCents / 100).toFixed(2),
+      musicPreference: selectedRide.musicPreference ?? "",
+      hasAc: toNullableBooleanSelectValue(selectedRide.hasAc),
+      hasTrunkSpace: toNullableBooleanSelectValue(selectedRide.hasTrunkSpace),
+      vehicleType: selectedRide.vehicleType ?? "",
     });
     setIsEditing(true);
   };
@@ -482,6 +533,20 @@ export default function BrowseRidesPage() {
           latestDepartAt: editFormData.latestDepartAt ? new Date(editFormData.latestDepartAt).toISOString() : undefined,
           seatsTotal: editFormData.seatsTotal,
           priceCents: parsedPriceCents,
+          musicPreference: editFormData.musicPreference || null,
+          hasAc:
+            editFormData.hasAc === "true"
+              ? true
+              : editFormData.hasAc === "false"
+                ? false
+                : null,
+          hasTrunkSpace:
+            editFormData.hasTrunkSpace === "true"
+              ? true
+              : editFormData.hasTrunkSpace === "false"
+                ? false
+                : null,
+          vehicleType: editFormData.vehicleType || null,
         })
       });
 
@@ -851,6 +916,93 @@ export default function BrowseRidesPage() {
                           />
                         </div>
                       </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label htmlFor="editMusicPreference" className="block text-sm font-semibold text-emerald-800 mb-2">
+                            Music Preference
+                          </label>
+                          <select
+                            id="editMusicPreference"
+                            value={editFormData.musicPreference || ""}
+                            onChange={(e) =>
+                              setEditFormData({
+                                ...editFormData,
+                                musicPreference: e.target.value as EditRideFormData["musicPreference"],
+                              })
+                            }
+                            className="w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-3 text-zinc-900 outline-none"
+                          >
+                            <option value="">Unspecified</option>
+                            <option value="MUSIC_ALLOWED">Music allowed</option>
+                            <option value="NO_MUSIC">No music</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label htmlFor="editVehicleType" className="block text-sm font-semibold text-emerald-800 mb-2">
+                            Vehicle Type
+                          </label>
+                          <select
+                            id="editVehicleType"
+                            value={editFormData.vehicleType || ""}
+                            onChange={(e) =>
+                              setEditFormData({
+                                ...editFormData,
+                                vehicleType: e.target.value as EditRideFormData["vehicleType"],
+                              })
+                            }
+                            className="w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-3 text-zinc-900 outline-none"
+                          >
+                            <option value="">Unspecified</option>
+                            <option value="SEDAN">Sedan</option>
+                            <option value="SUV">SUV</option>
+                            <option value="TRUCK">Truck</option>
+                            <option value="VAN">Van</option>
+                            <option value="COUPE">Coupe</option>
+                            <option value="OTHER">Other</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label htmlFor="editHasAc" className="block text-sm font-semibold text-emerald-800 mb-2">
+                            AC Availability
+                          </label>
+                          <select
+                            id="editHasAc"
+                            value={editFormData.hasAc || ""}
+                            onChange={(e) =>
+                              setEditFormData({
+                                ...editFormData,
+                                hasAc: e.target.value as EditRideFormData["hasAc"],
+                              })
+                            }
+                            className="w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-3 text-zinc-900 outline-none"
+                          >
+                            <option value="">Unspecified</option>
+                            <option value="true">Yes</option>
+                            <option value="false">No</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label htmlFor="editHasTrunkSpace" className="block text-sm font-semibold text-emerald-800 mb-2">
+                            Trunk Space Availability
+                          </label>
+                          <select
+                            id="editHasTrunkSpace"
+                            value={editFormData.hasTrunkSpace || ""}
+                            onChange={(e) =>
+                              setEditFormData({
+                                ...editFormData,
+                                hasTrunkSpace: e.target.value as EditRideFormData["hasTrunkSpace"],
+                              })
+                            }
+                            className="w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-3 text-zinc-900 outline-none"
+                          >
+                            <option value="">Unspecified</option>
+                            <option value="true">Yes</option>
+                            <option value="false">No</option>
+                          </select>
+                        </div>
+                      </div>
                     </div>
 
                     <div className="mt-8 pt-6 border-t border-zinc-100 flex gap-3 justify-end items-center">
@@ -941,6 +1093,28 @@ export default function BrowseRidesPage() {
                           </div>
                           <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-4 text-zinc-800 font-medium text-lg">
                             ${(selectedRide.priceCents / 100).toFixed(2)}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-5 md:p-6">
+                        <h4 className="font-semibold text-zinc-900 mb-4">Ride attributes</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                          <div className="bg-white border border-zinc-200 rounded-xl p-3">
+                            <p className="text-zinc-500">Music</p>
+                            <p className="font-medium text-zinc-800">{formatMusicPreference(selectedRide.musicPreference)}</p>
+                          </div>
+                          <div className="bg-white border border-zinc-200 rounded-xl p-3">
+                            <p className="text-zinc-500">Vehicle type</p>
+                            <p className="font-medium text-zinc-800">{formatVehicleType(selectedRide.vehicleType)}</p>
+                          </div>
+                          <div className="bg-white border border-zinc-200 rounded-xl p-3">
+                            <p className="text-zinc-500">AC available</p>
+                            <p className="font-medium text-zinc-800">{formatOptionalFeature(selectedRide.hasAc)}</p>
+                          </div>
+                          <div className="bg-white border border-zinc-200 rounded-xl p-3">
+                            <p className="text-zinc-500">Trunk space</p>
+                            <p className="font-medium text-zinc-800">{formatOptionalFeature(selectedRide.hasTrunkSpace)}</p>
                           </div>
                         </div>
                       </div>
@@ -1205,6 +1379,93 @@ export default function BrowseRidesPage() {
                     <option value="4">4+</option>
                     <option value="5">5+</option>
                   </select>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="af-music" className="block text-sm font-semibold text-emerald-800 mb-2">
+                      Music Preference
+                    </label>
+                    <select
+                      id="af-music"
+                      value={pendingAdvancedFilters.musicPreference}
+                      onChange={(e) =>
+                        setPendingAdvancedFilters({
+                          ...pendingAdvancedFilters,
+                          musicPreference: e.target.value,
+                        })
+                      }
+                      className="w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-3 text-zinc-900 shadow-sm outline-none"
+                    >
+                      <option value="">Any</option>
+                      <option value="MUSIC_ALLOWED">Music allowed</option>
+                      <option value="NO_MUSIC">No music</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="af-vehicle-type" className="block text-sm font-semibold text-emerald-800 mb-2">
+                      Vehicle Type
+                    </label>
+                    <select
+                      id="af-vehicle-type"
+                      value={pendingAdvancedFilters.vehicleType}
+                      onChange={(e) =>
+                        setPendingAdvancedFilters({
+                          ...pendingAdvancedFilters,
+                          vehicleType: e.target.value,
+                        })
+                      }
+                      className="w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-3 text-zinc-900 shadow-sm outline-none"
+                    >
+                      <option value="">Any</option>
+                      <option value="SEDAN">Sedan</option>
+                      <option value="SUV">SUV</option>
+                      <option value="TRUCK">Truck</option>
+                      <option value="VAN">Van</option>
+                      <option value="COUPE">Coupe</option>
+                      <option value="OTHER">Other</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="af-has-ac" className="block text-sm font-semibold text-emerald-800 mb-2">
+                      AC Availability
+                    </label>
+                    <select
+                      id="af-has-ac"
+                      value={pendingAdvancedFilters.hasAc}
+                      onChange={(e) =>
+                        setPendingAdvancedFilters({
+                          ...pendingAdvancedFilters,
+                          hasAc: e.target.value,
+                        })
+                      }
+                      className="w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-3 text-zinc-900 shadow-sm outline-none"
+                    >
+                      <option value="">Any</option>
+                      <option value="true">Yes</option>
+                      <option value="false">No</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="af-has-trunk-space" className="block text-sm font-semibold text-emerald-800 mb-2">
+                      Trunk Space Availability
+                    </label>
+                    <select
+                      id="af-has-trunk-space"
+                      value={pendingAdvancedFilters.hasTrunkSpace}
+                      onChange={(e) =>
+                        setPendingAdvancedFilters({
+                          ...pendingAdvancedFilters,
+                          hasTrunkSpace: e.target.value,
+                        })
+                      }
+                      className="w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-3 text-zinc-900 shadow-sm outline-none"
+                    >
+                      <option value="">Any</option>
+                      <option value="true">Yes</option>
+                      <option value="false">No</option>
+                    </select>
+                  </div>
                 </div>
               </div>
 
