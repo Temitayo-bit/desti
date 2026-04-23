@@ -112,6 +112,40 @@ describe("useBookingLocationTracking", () => {
         expect(fetchMock.mock.calls.length).toBeGreaterThan(callsAfterMount);
     });
 
+    it("stops rider polling when booking is no longer active", async () => {
+        const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+            jsonResponse(
+                {
+                    code: "BOOKING_NOT_ACTIVE",
+                    message: "Trip is no longer active.",
+                },
+                409
+            )
+        );
+
+        const { result } = renderHook(() =>
+            useBookingLocationTracking({
+                bookingId: "booking-1",
+                enabled: true,
+                isDriver: false,
+                pollIntervalMs: 1000,
+            })
+        );
+
+        await flushMicrotasks();
+
+        const callsAfterInitialLoad = fetchMock.mock.calls.length;
+        expect(result.current.isTripActive).toBe(false);
+        expect(result.current.error).toBe("Trip is no longer active.");
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(5000);
+        });
+        await flushMicrotasks();
+
+        expect(fetchMock.mock.calls.length).toBe(callsAfterInitialLoad);
+    });
+
     it("ignores stale rider responses when switching active bookings", async () => {
         let resolveBookingOne:
             | ((value: Response | PromiseLike<Response>) => void)

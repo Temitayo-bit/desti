@@ -1,5 +1,161 @@
 # Code Explanation
 
+## 2026-04-22 — Live Map + Trip Pins Visualization (Frontend Enhancement)
+
+### Scope
+
+Implemented a frontend-only trip visualization layer for confirmed/active booking details using Mapbox rendering:
+- static origin pin
+- static destination pin
+- dynamic live driver pin (when live location exists)
+
+The feature is integrated into the existing trip details modal in:
+- `src/app/(protected)/bookings/page.tsx`
+
+No tracking architecture rewrite, no new tracking storage, and no route/ETA/path generation logic were added.
+
+### Files Changed
+
+- `src/app/(protected)/bookings/page.tsx` (MODIFIED)
+- `src/components/TripVisualizationMap.tsx` (NEW)
+- `src/lib/trip-map.ts` (NEW)
+- `src/lib/use-booking-location-tracking.ts` (MODIFIED)
+- `src/lib/dashboard.ts` (MODIFIED)
+- `src/app/api/dashboard/bookings/route.ts` (MODIFIED)
+- `src/__tests__/trip-map.test.ts` (NEW)
+- `src/__tests__/trip-visualization-map.test.tsx` (NEW)
+- `src/__tests__/use-booking-location-tracking.test.ts` (MODIFIED)
+- `src/__tests__/dashboard-bookings.test.ts` (MODIFIED)
+
+### Where the Map UI Was Added
+
+The map is rendered inside the existing **Trip Location Sharing** card in the booking details modal on:
+- `src/app/(protected)/bookings/page.tsx`
+
+This is the existing confirmed booking surface where live tracking was already shown as latitude/longitude polling data, so no new product flow was created.
+
+### How Origin/Destination Pins Are Derived
+
+1. Booking payload now includes stored coordinate fields for both ride-based and trip-request-based bookings via existing endpoint:
+   - `GET /api/dashboard/bookings`
+   - implemented by expanding Prisma selects in `src/app/api/dashboard/bookings/route.ts`
+
+2. Dashboard booking normalization now carries coordinates into `NormalizedDashboardBooking`:
+   - `src/lib/dashboard.ts`
+
+3. Marker derivation and coordinate validation are centralized in:
+   - `src/lib/trip-map.ts`
+   - `deriveStaticTripMapMarkers(...)` validates ranges and returns safe marker objects or `null`
+
+### How the Live Driver Marker Updates
+
+- `useBookingLocationTracking` remains the source of live location polling.
+- `bookings/page.tsx` converts live `location.latitude`/`location.longitude` into a driver marker with:
+  - `deriveDriverTripMapMarker(...)`
+- `TripVisualizationMap` updates only the driver marker position on polling updates without recreating the map instance.
+
+### Polling Lifecycle Management
+
+Polling lifecycle behavior is handled in `src/lib/use-booking-location-tracking.ts`:
+
+- Polling still starts only when the bookings detail view is active (`bookingId` selected + enabled).
+- Polling still cleans up intervals on unmount/booking change.
+- Added `isTripActive` state:
+  - when backend returns `BOOKING_NOT_ACTIVE`, hook marks trip inactive
+  - subsequent rider/driver polling effects stop automatically
+- Existing stale-response protections remain in place for read requests.
+
+This ensures polling does not continue indefinitely after inactive/completed/cancelled conditions are reported.
+
+### Map States and UX Handling
+
+`src/components/TripVisualizationMap.tsx` handles:
+
+1. Map loading overlay (`Loading map...`)
+2. Map load failure overlay (`Failed to load...`)
+3. Valid static coordinates (renders map container + static pins)
+4. Missing coordinates fallback (clear message instead of blank box)
+5. Driver live marker when live coordinate available
+6. Live location unavailable fallback while static pins still render
+7. Inactive-trip live status (polling stopped message)
+
+Additional UX:
+- simple marker legend for Origin / Destination / Driver
+- initial viewport fit includes origin + destination and driver (if present)
+- avoids aggressive recentering on every poll by fitting once on initial load
+
+### Validation and Safety
+
+- Marker rendering uses strict coordinate range validation.
+- Null/invalid coordinates never attempt marker creation.
+- Driver marker is only shown when valid live coordinates are present.
+- Polling intervals are cleaned up on unmount and inactive state.
+- Pin rendering uses explicit custom HTML dot markers (instead of relying on Mapbox default marker visuals), which makes origin/destination/driver pins visible even when default marker CSS behavior is inconsistent.
+
+### Follow-up Fix (Pin Visibility)
+
+After manual UI verification, the map loaded but pins could appear invisible on some runs.
+
+Applied a frontend-only visibility hardening in:
+- `src/components/TripVisualizationMap.tsx`
+
+Changes:
+- `ensureMapboxScript()` now always ensures the Mapbox stylesheet is present, even when `window.mapboxgl` is already loaded.
+- Markers now use custom styled HTML elements (`createDotMarkerElement`) with explicit size, border, and shadow.
+- Marker colors are still role-based:
+  - origin: green
+  - destination: blue
+  - driver: red
+
+Result:
+- Pins are consistently visible on top of the map across reloads and load ordering differences.
+
+### Test Coverage Added/Updated
+
+Added focused tests:
+
+- `src/__tests__/trip-map.test.ts`
+  - static marker derivation from valid coordinates
+  - invalid/null coordinate safety
+  - driver marker derivation safety
+
+- `src/__tests__/dashboard-bookings.test.ts`
+  - verifies dashboard bookings query selects coordinate fields required for map pins
+
+- `src/__tests__/use-booking-location-tracking.test.ts`
+  - verifies rider polling stops after `BOOKING_NOT_ACTIVE`
+
+- `src/__tests__/trip-visualization-map.test.tsx`
+  - verifies map container renders when valid static coordinates exist
+  - verifies missing-coordinate fallback state
+
+### Test Execution Notes / Boundaries
+
+Executed successfully:
+- `npm run lint -- <changed files>`
+- `npm run test -- src/__tests__/trip-map.test.ts src/__tests__/dashboard-bookings.test.ts`
+
+Environment limitation encountered for jsdom-heavy tests in this workspace:
+- `use-booking-location-tracking.test.ts`
+- `trip-visualization-map.test.tsx`
+
+Vitest worker startup timed out in this environment (pool worker boot issue), so those tests were updated but could not be executed end-to-end here.
+
+### Explicit Scope Confirmation
+
+Confirmed not implemented:
+- backend tracking rewrite
+- websocket transport
+- directions/route generation
+- ETA calculations
+- path snapping
+- trip playback/history
+- location history persistence changes
+- new tables
+- matching/booking lifecycle rewrites
+
+This delivery is strictly the requested map visualization layer on top of existing trip and polling architecture.
+
 ## 2026-04-22 — Dummy Frontend Harness for Ride Offer Testing
 
 ### Scope
