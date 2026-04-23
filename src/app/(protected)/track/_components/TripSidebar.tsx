@@ -7,7 +7,7 @@ import { type MockTripData } from "../mockData";
 
 export function TripSidebar({ trip }: { trip: MockTripData }) {
     return (
-        <aside className="flex h-full w-full flex-col bg-[#F9F7F4] p-6 md:w-[400px] lg:w-[440px] md:overflow-y-auto hide-scrollbar">
+        <aside className="flex h-full w-full flex-col bg-[#F9F7F4] p-6 md:w-[400px] lg:w-[440px] md:overflow-y-auto">
             {/* Status Pill */}
             <motion.div 
                 initial={{ opacity: 0, y: -10 }}
