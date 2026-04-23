@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   CarFront,
   LayoutDashboard,
+  MapPinned,
   Menu,
   MessagesSquare,
   Route,
@@ -18,6 +19,7 @@ type ProtectedNavKey =
   | "browse"
   | "browseTripRequests"
   | "messages"
+  | "track"
   | "profile";
 
 interface ProtectedShellProps {
@@ -111,6 +113,15 @@ export function ProtectedShell({ activeNav, children }: ProtectedShellProps) {
                 <MessagesSquare size={20} strokeWidth={2.1} />
               </span>
               Messages
+            </Link>
+            <Link
+              href="/track"
+              className={`${navLinkClass(activeNav === "track")} group`}
+            >
+              <span className={navIconWrapClass(activeNav === "track")}>
+                <MapPinned size={20} strokeWidth={2.1} />
+              </span>
+              Track Ride
             </Link>
             <Link
               href="/profile"
