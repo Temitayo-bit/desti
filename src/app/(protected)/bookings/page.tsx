@@ -206,6 +206,13 @@ export default function BookingsPage() {
     isDriver: viewerIsDriverForSelectedTrip,
     pollIntervalMs: 10_000,
   });
+  const locationLatitude = locationTracking.location?.latitude;
+  const locationLongitude = locationTracking.location?.longitude;
+  const hasLatitude = typeof locationLatitude === "number";
+  const hasLongitude = typeof locationLongitude === "number";
+  const noLocationYet = !hasLatitude && !hasLongitude;
+  const latitudeDisplay = hasLatitude ? locationLatitude.toFixed(5) : "—";
+  const longitudeDisplay = hasLongitude ? locationLongitude.toFixed(5) : "—";
 
   async function openBookingMessages(bookingId: string) {
     setActionNotice(null);
@@ -517,7 +524,7 @@ export default function BookingsPage() {
                         Latitude
                       </p>
                       <p className="mt-1 text-sm font-medium text-zinc-800">
-                        {locationTracking.location?.latitude ?? "No location yet"}
+                        {latitudeDisplay}
                       </p>
                     </div>
                     <div className="rounded-xl border border-zinc-200 bg-white p-3">
@@ -525,10 +532,14 @@ export default function BookingsPage() {
                         Longitude
                       </p>
                       <p className="mt-1 text-sm font-medium text-zinc-800">
-                        {locationTracking.location?.longitude ?? "No location yet"}
+                        {longitudeDisplay}
                       </p>
                     </div>
                   </div>
+
+                  {noLocationYet ? (
+                    <p className="mt-2 text-sm text-zinc-500">No location yet</p>
+                  ) : null}
 
                   <div className="mt-3 rounded-xl border border-zinc-200 bg-white p-3">
                     <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">

@@ -77,6 +77,113 @@ describe("useBookingLocationTracking", () => {
         expect(fetchMock.mock.calls.length).toBe(callsBeforeUnmount);
     });
 
+    it("continues rider polling before the driver starts sharing", async () => {
+        const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+            jsonResponse(
+                {
+                    code: "TRIP_NOT_STARTED",
+                    message: "Trip location sharing has not been started.",
+                },
+                409
+            )
+        );
+
+        const { result } = renderHook(() =>
+            useBookingLocationTracking({
+                bookingId: "booking-1",
+                enabled: true,
+                isDriver: false,
+                pollIntervalMs: 1000,
+            })
+        );
+
+        await flushMicrotasks();
+
+        const callsAfterMount = fetchMock.mock.calls.length;
+        expect(result.current.location?.bookingId).toBe("booking-1");
+        expect(result.current.location?.isLocationSharingActive).toBe(false);
+        expect(result.current.error).toBeNull();
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(1000);
+        });
+        await flushMicrotasks();
+
+        expect(fetchMock.mock.calls.length).toBeGreaterThan(callsAfterMount);
+    });
+
+    it("ignores stale rider responses when switching active bookings", async () => {
+        let resolveBookingOne:
+            | ((value: Response | PromiseLike<Response>) => void)
+            | null = null;
+
+        const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+            const url = typeof input === "string" ? input : input.toString();
+
+            if (url.includes("/api/bookings/booking-1/location")) {
+                return new Promise<Response>((resolve) => {
+                    resolveBookingOne = resolve;
+                });
+            }
+
+            if (url.includes("/api/bookings/booking-2/location")) {
+                return Promise.resolve(
+                    jsonResponse({
+                        bookingId: "booking-2",
+                        latitude: 29.31,
+                        longitude: -81.11,
+                        locationUpdatedAt: "2030-01-01T10:01:00.000Z",
+                        tripStartedAt: "2030-01-01T09:50:00.000Z",
+                        isLocationSharingActive: true,
+                    })
+                );
+            }
+
+            return Promise.resolve(jsonResponse({}, 500));
+        });
+
+        const { result, rerender } = renderHook(
+            ({ bookingId }: { bookingId: string }) =>
+                useBookingLocationTracking({
+                    bookingId,
+                    enabled: true,
+                    isDriver: false,
+                    pollIntervalMs: 1000,
+                }),
+            {
+                initialProps: { bookingId: "booking-1" },
+            }
+        );
+
+        await flushMicrotasks();
+
+        rerender({ bookingId: "booking-2" });
+        await flushMicrotasks();
+
+        expect(fetchMock).toHaveBeenCalledWith("/api/bookings/booking-2/location", {
+            method: "GET",
+        });
+        expect(result.current.location?.bookingId).toBe("booking-2");
+        expect(result.current.location?.latitude).toBe(29.31);
+
+        await act(async () => {
+            resolveBookingOne?.(
+                jsonResponse({
+                    bookingId: "booking-1",
+                    latitude: 20.0,
+                    longitude: -80.0,
+                    locationUpdatedAt: "2030-01-01T10:02:00.000Z",
+                    tripStartedAt: "2030-01-01T09:40:00.000Z",
+                    isLocationSharingActive: true,
+                })
+            );
+        });
+        await flushMicrotasks();
+
+        expect(result.current.location?.bookingId).toBe("booking-2");
+        expect(result.current.location?.latitude).toBe(29.31);
+    });
+
     it("starts sharing for drivers and posts periodic location updates", async () => {
         const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(
             async (input: string | URL | Request, init?: RequestInit) => {

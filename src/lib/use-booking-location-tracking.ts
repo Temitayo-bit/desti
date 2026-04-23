@@ -39,6 +39,11 @@ export interface UseBookingLocationTrackingResult {
 
 const DEFAULT_POLL_INTERVAL_MS = 10_000;
 
+interface ReadRequestToken {
+    bookingId: string;
+    sequence: number;
+}
+
 function makeEmptyLocation(bookingId: string): BookingLocationPayload {
     return {
         bookingId,
@@ -166,7 +171,8 @@ export function useBookingLocationTracking({
     const [error, setError] = useState<string | null>(null);
     const [geolocationError, setGeolocationError] = useState<string | null>(null);
 
-    const readInFlightRef = useRef(false);
+    const readInFlightRef = useRef<ReadRequestToken | null>(null);
+    const readSequenceRef = useRef(0);
     const writeInFlightRef = useRef(false);
     const geolocationBlockedRef = useRef(false);
 
@@ -190,19 +196,39 @@ export function useBookingLocationTracking({
             return;
         }
 
-        if (readInFlightRef.current) {
+        if (readInFlightRef.current?.bookingId === activeBookingId) {
             return;
         }
 
-        readInFlightRef.current = true;
+        const requestToken: ReadRequestToken = {
+            bookingId: activeBookingId,
+            sequence: readSequenceRef.current + 1,
+        };
+        readSequenceRef.current = requestToken.sequence;
+        readInFlightRef.current = requestToken;
+
+        const isCurrentRequest = () => {
+            const inFlight = readInFlightRef.current;
+            return (
+                inFlight?.bookingId === requestToken.bookingId &&
+                inFlight?.sequence === requestToken.sequence
+            );
+        };
 
         try {
-            const response = await fetch(`/api/bookings/${activeBookingId}/location`, {
+            const response = await fetch(`/api/bookings/${requestToken.bookingId}/location`, {
                 method: "GET",
             });
 
+            if (!isCurrentRequest()) {
+                return;
+            }
+
             if (response.ok) {
                 const payload = toLocationPayload(await response.json());
+                if (!isCurrentRequest()) {
+                    return;
+                }
                 if (payload) {
                     setLocation(payload);
                     setError(null);
@@ -214,24 +240,31 @@ export function useBookingLocationTracking({
             }
 
             const apiError = await parseApiError(response);
+            if (!isCurrentRequest()) {
+                return;
+            }
 
             if (apiError.code === "TRIP_NOT_STARTED") {
-                setLocation(makeEmptyLocation(activeBookingId));
+                setLocation(makeEmptyLocation(requestToken.bookingId));
                 setError(null);
                 return;
             }
 
             if (apiError.code === "BOOKING_NOT_ACTIVE") {
-                setInactiveSharing(activeBookingId);
+                setInactiveSharing(requestToken.bookingId);
                 setError(apiError.message ?? "Trip is no longer active.");
                 return;
             }
 
             setError(apiError.message ?? "Failed to fetch trip location.");
         } catch {
-            setError("Failed to fetch trip location.");
+            if (isCurrentRequest()) {
+                setError("Failed to fetch trip location.");
+            }
         } finally {
-            readInFlightRef.current = false;
+            if (isCurrentRequest()) {
+                readInFlightRef.current = null;
+            }
         }
     }, [activeBookingId, setInactiveSharing]);
 
@@ -338,6 +371,7 @@ export function useBookingLocationTracking({
 
     useEffect(() => {
         if (!activeBookingId) {
+            readInFlightRef.current = null;
             setLocation(null);
             setError(null);
             setGeolocationError(null);
@@ -380,7 +414,7 @@ export function useBookingLocationTracking({
     }, [activeBookingId, enabled, isDriver, sharingActive, pollIntervalMs, pushDriverLocation]);
 
     useEffect(() => {
-        if (!activeBookingId || !enabled || isDriver || !sharingActive) {
+        if (!activeBookingId || !enabled || isDriver) {
             return;
         }
 
@@ -402,7 +436,7 @@ export function useBookingLocationTracking({
             disposed = true;
             clearInterval(intervalId);
         };
-    }, [activeBookingId, enabled, isDriver, sharingActive, pollIntervalMs, loadCurrentLocation]);
+    }, [activeBookingId, enabled, isDriver, pollIntervalMs, loadCurrentLocation]);
 
     return useMemo(
         () => ({

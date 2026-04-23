@@ -93,15 +93,24 @@ describe("POST /api/bookings/:bookingId/start", () => {
                 where: expect.objectContaining({
                     id: "booking-1",
                     status: "CONFIRMED",
+                    OR: expect.arrayContaining([
+                        expect.objectContaining({ rideId: null }),
+                        expect.objectContaining({
+                            ride: expect.objectContaining({
+                                status: "ACTIVE",
+                            }),
+                        }),
+                    ]),
                 }),
                 data: expect.objectContaining({
                     isLocationSharingActive: true,
+                    tripStartedAt: expect.any(Date),
                 }),
             })
         );
     });
 
-    it("returns 403 when a non-driver participant tries to start sharing", async () => {
+    it("returns 404 when a non-driver participant tries to start sharing", async () => {
         mockRequireStetsonAuth.mockResolvedValue(successAuth("rider-1"));
         mockPrisma.booking.findUnique.mockResolvedValue(fakeBookingContextRow());
 
@@ -109,7 +118,10 @@ describe("POST /api/bookings/:bookingId/start", () => {
             params: Promise.resolve({ bookingId: "booking-1" }),
         });
 
-        expect(response.status).toBe(403);
+        const body = await response.json();
+
+        expect(response.status).toBe(404);
+        expect(body.code).toBe("BOOKING_NOT_FOUND");
         expect(mockPrisma.booking.updateMany).not.toHaveBeenCalled();
     });
 

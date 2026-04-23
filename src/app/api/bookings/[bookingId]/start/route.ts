@@ -17,6 +17,17 @@ const bookingLocationSelect = {
     isLocationSharingActive: true,
 } satisfies Prisma.BookingSelect;
 
+function notFoundResponse() {
+    return NextResponse.json(
+        {
+            error: "Not Found",
+            code: "BOOKING_NOT_FOUND",
+            message: "Booking not found.",
+        },
+        { status: 404 }
+    );
+}
+
 /**
  * POST /api/bookings/:bookingId/start
  *
@@ -47,25 +58,11 @@ export async function POST(
         const context = await getActiveTripBookingContext(trimmedBookingId);
 
         if (!context) {
-            return NextResponse.json(
-                {
-                    error: "Not Found",
-                    code: "BOOKING_NOT_FOUND",
-                    message: "Booking not found.",
-                },
-                { status: 404 }
-            );
+            return notFoundResponse();
         }
 
         if (!isUserBookingParticipant(auth.user.clerkUserId, context)) {
-            return NextResponse.json(
-                {
-                    error: "Not Found",
-                    code: "BOOKING_NOT_FOUND",
-                    message: "Booking not found.",
-                },
-                { status: 404 }
-            );
+            return notFoundResponse();
         }
 
         if (!context.driverUserId) {
@@ -80,14 +77,7 @@ export async function POST(
         }
 
         if (context.driverUserId !== auth.user.clerkUserId) {
-            return NextResponse.json(
-                {
-                    error: "Forbidden",
-                    code: "TRIP_START_FORBIDDEN",
-                    message: "Only the booking's driver can start trip location sharing.",
-                },
-                { status: 403 }
-            );
+            return notFoundResponse();
         }
 
         if (!context.isActiveWindow) {
@@ -110,7 +100,7 @@ export async function POST(
             });
         }
 
-        const startedAt = context.booking.tripStartedAt ?? new Date();
+        const startedAt = new Date();
 
         const updateResult = await prisma.booking.updateMany({
             where: {
@@ -141,14 +131,7 @@ export async function POST(
         });
 
         if (!updatedBooking) {
-            return NextResponse.json(
-                {
-                    error: "Not Found",
-                    code: "BOOKING_NOT_FOUND",
-                    message: "Booking not found.",
-                },
-                { status: 404 }
-            );
+            return notFoundResponse();
         }
 
         return NextResponse.json(toBookingLocationPayload(updatedBooking), {
