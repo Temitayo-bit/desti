@@ -281,11 +281,14 @@ export function LocationAutocompleteInput({
         </p>
       )}
 
-      {!error && autocompleteEnabled && !hasExactSelection && (
+      {!error &&
+        autocompleteEnabled &&
+        !hasExactSelection &&
+        selectionRequiredInvalid && (
         <p className="mt-1 text-xs text-red-600">
           Please select a valid location from suggestions.
         </p>
-      )}
+        )}
 
     </div>
   );

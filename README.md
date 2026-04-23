@@ -115,7 +115,7 @@ The worker exposes three operations:
 | [Cloudflare Workers + R2](https://developers.cloudflare.com/r2/) | Yes | Profile picture storage and serving |
 | [Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai/) | Yes | Human detection on profile picture uploads (free tier: ~14,700 validations/day) |
 | [Google Gemini](https://ai.google.dev/) | No | AI-powered in-app help assistant (gracefully degrades if unavailable) |
-| [Mapbox Geocoding API](https://docs.mapbox.com/api/search/geocoding/) | No | Frontend location suggestions/autocomplete while posting rides and trip requests |
+| [Mapbox Geocoding API](https://docs.mapbox.com/api/search/geocoding/) | Yes | Required frontend location suggestions/autocomplete for ride and trip-request posting flows |
 
 ## Steps to Install or Recreate the Project on Another Machine
 
@@ -400,12 +400,10 @@ This starts the worker on `http://localhost:8787`. Set `WORKER_UPLOAD_URL=http:/
 | `CLERK_SECRET_KEY` | Yes | Clerk secret key (from Clerk dashboard) |
 | `NEXT_PUBLIC_CLERK_SIGN_IN_URL` | Yes | Sign-in route path (`/sign-in`) |
 | `NEXT_PUBLIC_CLERK_SIGN_UP_URL` | Yes | Sign-up route path (`/sign-up`) |
-| `NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN` | No* | Mapbox public token used for frontend location suggestions (`pk...`) |
+| `NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN` | Yes | Required Mapbox public token (`pk...`) for frontend location suggestions/autocomplete used in ride and trip-request posting flows |
 | `WORKER_UPLOAD_URL` | Yes | Cloudflare Worker URL for profile picture uploads |
 | `WORKER_UPLOAD_API_KEY` | Yes | Shared secret for authenticating upload/delete requests to the worker (generate with `openssl rand -hex 32`) |
 | `GEMINI_API_KEY` | No | Google Gemini API key for the AI assistant |
 | `GEMINI_MODEL` | No | Override the default Gemini model (`gemini-2.5-flash`) |
 | `NOMINATIM_BASE_URL` | No | Override geocoder base URL (default: `https://nominatim.openstreetmap.org`) |
 | `GEOCODER_CONTACT_EMAIL` | No | Optional contact email included with Nominatim requests |
-
-`*` Required if you want frontend location autocomplete in ride/trip-request creation forms. This is a frontend-safe public token and should use Mapbox's `pk` format.
