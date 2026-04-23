@@ -19,7 +19,11 @@ export interface DashboardRideInBooking {
   id: string;
   driverUserId: string;
   originText: string;
+  originLatitude?: number | null;
+  originLongitude?: number | null;
   destinationText: string;
+  destinationLatitude?: number | null;
+  destinationLongitude?: number | null;
   earliestDepartAt: string;
   latestDepartAt: string;
   preferredDepartAt: string | null;
@@ -34,7 +38,11 @@ export interface DashboardRideInBooking {
 export interface DashboardTripRequestInBooking {
   id: string;
   originText: string;
+  originLatitude?: number | null;
+  originLongitude?: number | null;
   destinationText: string;
+  destinationLatitude?: number | null;
+  destinationLongitude?: number | null;
   earliestDesiredAt: string;
   latestDesiredAt: string;
   preferredDepartAt: string | null;
@@ -113,7 +121,11 @@ export interface NormalizedDashboardBooking {
   seatsBooked: number;
   totalSeatsBooked: number | null;
   originText: string;
+  originLatitude: number | null;
+  originLongitude: number | null;
   destinationText: string;
+  destinationLatitude: number | null;
+  destinationLongitude: number | null;
   startsAt: string;
   endsAt: string;
   distanceCategory: DistanceCategory;
@@ -136,7 +148,11 @@ export function normalizeDashboardBooking(
         booking.ride.seatsTotal - booking.ride.seatsAvailable
       ),
       originText: booking.ride.originText,
+      originLatitude: booking.ride.originLatitude ?? null,
+      originLongitude: booking.ride.originLongitude ?? null,
       destinationText: booking.ride.destinationText,
+      destinationLatitude: booking.ride.destinationLatitude ?? null,
+      destinationLongitude: booking.ride.destinationLongitude ?? null,
       startsAt: booking.ride.earliestDepartAt,
       endsAt: booking.ride.latestDepartAt,
       distanceCategory: booking.ride.distanceCategory,
@@ -153,7 +169,11 @@ export function normalizeDashboardBooking(
     seatsBooked: booking.seatsBooked,
     totalSeatsBooked: booking.seatsBooked,
     originText: booking.tripRequest.originText,
+    originLatitude: booking.tripRequest.originLatitude ?? null,
+    originLongitude: booking.tripRequest.originLongitude ?? null,
     destinationText: booking.tripRequest.destinationText,
+    destinationLatitude: booking.tripRequest.destinationLatitude ?? null,
+    destinationLongitude: booking.tripRequest.destinationLongitude ?? null,
     startsAt: booking.tripRequest.earliestDesiredAt,
     endsAt: booking.tripRequest.latestDesiredAt,
     distanceCategory: booking.tripRequest.distanceCategory,

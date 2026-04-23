@@ -6,7 +6,9 @@ import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { ChevronLeft, MessageCircle, X } from "lucide-react";
 import { ProtectedShell } from "../_components/ProtectedShell";
+import { TripVisualizationMap } from "@/components/TripVisualizationMap";
 import { openBookingConversationThread } from "@/lib/booking-conversation";
+import { deriveDriverTripMapMarker, deriveStaticTripMapMarkers } from "@/lib/trip-map";
 import { useBookingLocationTracking } from "@/lib/use-booking-location-tracking";
 import {
   type DashboardBookingItem,
@@ -199,10 +201,12 @@ export default function BookingsPage() {
   const viewerIsDriverForSelectedTrip = Boolean(
     selectedTrip && viewerUserId && selectedTrip.driverUserId === viewerUserId
   );
+  const trackingEnabled =
+    Boolean(selectedBookingId) && selectedTrip?.status === "CONFIRMED";
 
   const locationTracking = useBookingLocationTracking({
     bookingId: selectedBookingId,
-    enabled: Boolean(selectedBookingId),
+    enabled: trackingEnabled,
     isDriver: viewerIsDriverForSelectedTrip,
     pollIntervalMs: 10_000,
   });
@@ -210,9 +214,48 @@ export default function BookingsPage() {
   const locationLongitude = locationTracking.location?.longitude;
   const hasLatitude = typeof locationLatitude === "number";
   const hasLongitude = typeof locationLongitude === "number";
-  const noLocationYet = !hasLatitude && !hasLongitude;
+  const noLocationYet = !(hasLatitude && hasLongitude);
   const latitudeDisplay = hasLatitude ? locationLatitude.toFixed(5) : "—";
   const longitudeDisplay = hasLongitude ? locationLongitude.toFixed(5) : "—";
+  const staticTripMarkers = useMemo(
+    () =>
+      selectedTrip
+        ? deriveStaticTripMapMarkers({
+            originLabel: selectedTrip.originText,
+            originLatitude: selectedTrip.originLatitude,
+            originLongitude: selectedTrip.originLongitude,
+            destinationLabel: selectedTrip.destinationText,
+            destinationLatitude: selectedTrip.destinationLatitude,
+            destinationLongitude: selectedTrip.destinationLongitude,
+          })
+        : null,
+    [selectedTrip]
+  );
+  const driverTripMarker = useMemo(
+    () => deriveDriverTripMapMarker(locationLatitude, locationLongitude),
+    [locationLatitude, locationLongitude]
+  );
+  const liveDriverStatus = useMemo(() => {
+    if (!locationTracking.isTripActive) {
+      return "stopped" as const;
+    }
+
+    if (locationTracking.isSharingActive) {
+      return "updating" as const;
+    }
+
+    return "unavailable" as const;
+  }, [locationTracking.isSharingActive, locationTracking.isTripActive]);
+  const sharingBadgeClass = !locationTracking.isTripActive
+    ? "bg-amber-100 text-amber-700"
+    : locationTracking.isSharingActive
+      ? "bg-emerald-100 text-emerald-700"
+      : "bg-zinc-200 text-zinc-700";
+  const sharingBadgeLabel = !locationTracking.isTripActive
+    ? "Trip Inactive"
+    : locationTracking.isSharingActive
+      ? "Sharing Active"
+      : "Sharing Inactive";
 
   async function openBookingMessages(bookingId: string) {
     setActionNotice(null);
@@ -471,13 +514,9 @@ export default function BookingsPage() {
                       </p>
                     </div>
                     <span
-                      className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${
-                        locationTracking.isSharingActive
-                          ? "bg-emerald-100 text-emerald-700"
-                          : "bg-zinc-200 text-zinc-700"
-                      }`}
+                      className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${sharingBadgeClass}`}
                     >
-                      {locationTracking.isSharingActive ? "Sharing Active" : "Sharing Inactive"}
+                      {sharingBadgeLabel}
                     </span>
                   </div>
 
@@ -493,7 +532,9 @@ export default function BookingsPage() {
                           void locationTracking.startSharing();
                         }}
                         disabled={
-                          locationTracking.starting || locationTracking.isSharingActive
+                          locationTracking.starting ||
+                          locationTracking.isSharingActive ||
+                          !locationTracking.isTripActive
                         }
                         className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
                       >
@@ -517,6 +558,23 @@ export default function BookingsPage() {
                       {locationTracking.geolocationError}
                     </div>
                   ) : null}
+
+                  <div className="mb-4">
+                    <TripVisualizationMap
+                      key={selectedTrip.id}
+                      originMarker={staticTripMarkers?.origin ?? null}
+                      destinationMarker={staticTripMarkers?.destination ?? null}
+                      driverMarker={driverTripMarker}
+                      liveDriverStatus={liveDriverStatus}
+                      lastDriverUpdateAt={
+                        locationTracking.location?.locationUpdatedAt
+                          ? formatLocationTimestamp(
+                              locationTracking.location.locationUpdatedAt
+                            )
+                          : null
+                      }
+                    />
+                  </div>
 
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div className="rounded-xl border border-zinc-200 bg-white p-3">

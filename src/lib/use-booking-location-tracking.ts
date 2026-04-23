@@ -35,6 +35,7 @@ export interface UseBookingLocationTrackingResult {
     geolocationError: string | null;
     startSharing: () => Promise<void>;
     isSharingActive: boolean;
+    isTripActive: boolean;
 }
 
 const DEFAULT_POLL_INTERVAL_MS = 10_000;
@@ -170,6 +171,7 @@ export function useBookingLocationTracking({
     const [starting, setStarting] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [geolocationError, setGeolocationError] = useState<string | null>(null);
+    const [isTripActive, setIsTripActive] = useState(true);
 
     const readInFlightRef = useRef<ReadRequestToken | null>(null);
     const readSequenceRef = useRef(0);
@@ -179,6 +181,7 @@ export function useBookingLocationTracking({
     const activeBookingId = enabled && bookingId ? bookingId : null;
 
     const setInactiveSharing = useCallback((id: string) => {
+        setIsTripActive(false);
         setLocation((current) => {
             if (!current || current.bookingId !== id) {
                 return makeEmptyLocation(id);
@@ -284,6 +287,9 @@ export function useBookingLocationTracking({
 
             if (!response.ok) {
                 const apiError = await parseApiError(response);
+                if (apiError.code === "BOOKING_NOT_ACTIVE") {
+                    setInactiveSharing(activeBookingId);
+                }
                 setError(apiError.message ?? "Failed to start trip sharing.");
                 return;
             }
@@ -297,12 +303,13 @@ export function useBookingLocationTracking({
             setLocation(payload);
             setError(null);
             setGeolocationError(null);
+            setIsTripActive(true);
         } catch {
             setError("Failed to start trip sharing.");
         } finally {
             setStarting(false);
         }
-    }, [activeBookingId, enabled, isDriver]);
+    }, [activeBookingId, enabled, isDriver, setInactiveSharing]);
 
     const pushDriverLocation = useCallback(async () => {
         if (!activeBookingId || !enabled || !isDriver) {
@@ -376,10 +383,12 @@ export function useBookingLocationTracking({
             setError(null);
             setGeolocationError(null);
             setLoading(false);
+            setIsTripActive(true);
             geolocationBlockedRef.current = false;
             return;
         }
 
+        setIsTripActive(true);
         setLoading(true);
         void loadCurrentLocation().finally(() => {
             setLoading(false);
@@ -389,7 +398,7 @@ export function useBookingLocationTracking({
     const sharingActive = Boolean(location?.isLocationSharingActive);
 
     useEffect(() => {
-        if (!activeBookingId || !enabled || !isDriver || !sharingActive) {
+        if (!activeBookingId || !enabled || !isDriver || !sharingActive || !isTripActive) {
             return;
         }
 
@@ -411,10 +420,18 @@ export function useBookingLocationTracking({
             disposed = true;
             clearInterval(intervalId);
         };
-    }, [activeBookingId, enabled, isDriver, sharingActive, pollIntervalMs, pushDriverLocation]);
+    }, [
+        activeBookingId,
+        enabled,
+        isDriver,
+        isTripActive,
+        sharingActive,
+        pollIntervalMs,
+        pushDriverLocation,
+    ]);
 
     useEffect(() => {
-        if (!activeBookingId || !enabled || isDriver) {
+        if (!activeBookingId || !enabled || isDriver || !isTripActive) {
             return;
         }
 
@@ -436,7 +453,7 @@ export function useBookingLocationTracking({
             disposed = true;
             clearInterval(intervalId);
         };
-    }, [activeBookingId, enabled, isDriver, pollIntervalMs, loadCurrentLocation]);
+    }, [activeBookingId, enabled, isDriver, isTripActive, pollIntervalMs, loadCurrentLocation]);
 
     return useMemo(
         () => ({
@@ -447,10 +464,12 @@ export function useBookingLocationTracking({
             geolocationError,
             startSharing,
             isSharingActive: sharingActive,
+            isTripActive,
         }),
         [
             error,
             geolocationError,
+            isTripActive,
             loading,
             location,
             sharingActive,

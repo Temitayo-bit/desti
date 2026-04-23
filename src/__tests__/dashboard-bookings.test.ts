@@ -120,6 +120,23 @@ describe("GET /api/dashboard/bookings", () => {
         ]);
     });
 
+    it("selects origin and destination coordinates for map pin visualization", async () => {
+        await GET();
+
+        const rideBookingSelect = mockPrisma.booking.findMany.mock.calls[0][0].select.ride.select;
+        expect(rideBookingSelect.originLatitude).toBe(true);
+        expect(rideBookingSelect.originLongitude).toBe(true);
+        expect(rideBookingSelect.destinationLatitude).toBe(true);
+        expect(rideBookingSelect.destinationLongitude).toBe(true);
+
+        const tripRequestSelect =
+            mockPrisma.booking.findMany.mock.calls[1][0].select.tripRequest.select;
+        expect(tripRequestSelect.originLatitude).toBe(true);
+        expect(tripRequestSelect.originLongitude).toBe(true);
+        expect(tripRequestSelect.destinationLatitude).toBe(true);
+        expect(tripRequestSelect.destinationLongitude).toBe(true);
+    });
+
     it("merges and sorts ride and trip-request bookings by earliest time ascending", async () => {
         const later = new Date(FUTURE.getTime() + 60000);
         const earlier = new Date(FUTURE.getTime());
