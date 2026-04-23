@@ -177,8 +177,21 @@ export function useBookingLocationTracking({
     const readSequenceRef = useRef(0);
     const writeInFlightRef = useRef(false);
     const geolocationBlockedRef = useRef(false);
+    const activeBookingIdRef = useRef<string | null>(null);
 
     const activeBookingId = enabled && bookingId ? bookingId : null;
+
+    useEffect(() => {
+        activeBookingIdRef.current = activeBookingId;
+    }, [activeBookingId]);
+
+    const isActiveBooking = useCallback((candidateBookingId: string | null) => {
+        if (!candidateBookingId) {
+            return false;
+        }
+
+        return activeBookingIdRef.current === candidateBookingId;
+    }, []);
 
     const setInactiveSharing = useCallback((id: string) => {
         setIsTripActive(false);
@@ -276,25 +289,35 @@ export function useBookingLocationTracking({
             return;
         }
 
+        const requestBookingId = activeBookingId;
         setStarting(true);
         setError(null);
         geolocationBlockedRef.current = false;
 
         try {
-            const response = await fetch(`/api/bookings/${activeBookingId}/start`, {
+            const response = await fetch(`/api/bookings/${requestBookingId}/start`, {
                 method: "POST",
             });
+            if (!isActiveBooking(requestBookingId)) {
+                return;
+            }
 
             if (!response.ok) {
                 const apiError = await parseApiError(response);
+                if (!isActiveBooking(requestBookingId)) {
+                    return;
+                }
                 if (apiError.code === "BOOKING_NOT_ACTIVE") {
-                    setInactiveSharing(activeBookingId);
+                    setInactiveSharing(requestBookingId);
                 }
                 setError(apiError.message ?? "Failed to start trip sharing.");
                 return;
             }
 
             const payload = toLocationPayload(await response.json());
+            if (!isActiveBooking(requestBookingId)) {
+                return;
+            }
             if (!payload) {
                 setError("Unexpected trip start payload received from server.");
                 return;
@@ -305,11 +328,13 @@ export function useBookingLocationTracking({
             setGeolocationError(null);
             setIsTripActive(true);
         } catch {
-            setError("Failed to start trip sharing.");
+            if (isActiveBooking(requestBookingId)) {
+                setError("Failed to start trip sharing.");
+            }
         } finally {
             setStarting(false);
         }
-    }, [activeBookingId, enabled, isDriver, setInactiveSharing]);
+    }, [activeBookingId, enabled, isActiveBooking, isDriver, setInactiveSharing]);
 
     const pushDriverLocation = useCallback(async () => {
         if (!activeBookingId || !enabled || !isDriver) {
@@ -320,22 +345,32 @@ export function useBookingLocationTracking({
             return;
         }
 
+        const requestBookingId = activeBookingId;
         writeInFlightRef.current = true;
 
         try {
             const coords = await resolveDevicePosition();
+            if (!isActiveBooking(requestBookingId)) {
+                return;
+            }
             setGeolocationError(null);
 
-            const response = await fetch(`/api/bookings/${activeBookingId}/location`, {
+            const response = await fetch(`/api/bookings/${requestBookingId}/location`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
                 },
                 body: JSON.stringify(coords),
             });
+            if (!isActiveBooking(requestBookingId)) {
+                return;
+            }
 
             if (response.ok) {
                 const payload = toLocationPayload(await response.json());
+                if (!isActiveBooking(requestBookingId)) {
+                    return;
+                }
                 if (payload) {
                     setLocation(payload);
                     setError(null);
@@ -347,15 +382,18 @@ export function useBookingLocationTracking({
             }
 
             const apiError = await parseApiError(response);
+            if (!isActiveBooking(requestBookingId)) {
+                return;
+            }
 
             if (apiError.code === "BOOKING_NOT_ACTIVE") {
-                setInactiveSharing(activeBookingId);
+                setInactiveSharing(requestBookingId);
                 setError(apiError.message ?? "Trip is no longer active.");
                 return;
             }
 
             if (apiError.code === "TRIP_NOT_STARTED") {
-                setLocation(makeEmptyLocation(activeBookingId));
+                setLocation(makeEmptyLocation(requestBookingId));
                 setError(apiError.message ?? "Start the trip before sharing location.");
                 return;
             }
@@ -363,6 +401,9 @@ export function useBookingLocationTracking({
             setError(apiError.message ?? "Failed to share trip location.");
         } catch (cause) {
             if (cause instanceof DeviceLocationError) {
+                if (!isActiveBooking(requestBookingId)) {
+                    return;
+                }
                 setGeolocationError(cause.message);
                 if (cause.code === "PERMISSION_DENIED") {
                     geolocationBlockedRef.current = true;
@@ -370,11 +411,19 @@ export function useBookingLocationTracking({
                 return;
             }
 
-            setGeolocationError("Unable to determine your current location.");
+            if (isActiveBooking(requestBookingId)) {
+                setGeolocationError("Unable to determine your current location.");
+            }
         } finally {
             writeInFlightRef.current = false;
         }
-    }, [activeBookingId, enabled, isDriver, setInactiveSharing]);
+    }, [
+        activeBookingId,
+        enabled,
+        isActiveBooking,
+        isDriver,
+        setInactiveSharing,
+    ]);
 
     useEffect(() => {
         if (!activeBookingId) {

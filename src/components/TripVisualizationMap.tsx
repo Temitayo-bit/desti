@@ -8,6 +8,8 @@ const MAPBOX_GL_VERSION = "v3.4.0";
 const MAPBOX_SCRIPT_ID = "desti-mapbox-gl-script";
 const MAPBOX_STYLE_LINK_ID = "desti-mapbox-gl-style";
 const MAPBOX_DEFAULT_STYLE = "mapbox://styles/mapbox/streets-v12";
+const DEFAULT_MAPBOX_ASSET_TIMEOUT_MS = 8_000;
+const DEFAULT_MAPBOX_LOAD_TIMEOUT_MS = 8_000;
 
 type MapLoadingStatus = "loading" | "ready" | "error";
 type LiveDriverStatus = "updating" | "unavailable" | "stopped";
@@ -23,6 +25,8 @@ interface TripVisualizationMapProps {
   driverMarker: TripMapMarker | null;
   liveDriverStatus: LiveDriverStatus;
   lastDriverUpdateAt: string | null;
+  mapAssetTimeoutMs?: number;
+  mapLoadTimeoutMs?: number;
 }
 
 interface MapboxGlNamespace {
@@ -46,6 +50,7 @@ interface MapboxGlNamespace {
 
 interface MapboxGlMap {
   on: (event: string, callback: (...args: unknown[]) => void) => void;
+  off?: (event: string, callback: (...args: unknown[]) => void) => void;
   remove: () => void;
   fitBounds: (
     bounds: MapboxGlLngLatBounds,
@@ -121,6 +126,10 @@ function ensureMapboxScript(): Promise<MapboxGlNamespace> {
       };
 
       if (existingScript) {
+        if (window.mapboxgl) {
+          resolve(window.mapboxgl);
+          return;
+        }
         existingScript.addEventListener("load", onLoaded, { once: true });
         existingScript.addEventListener("error", onError, { once: true });
         return;
@@ -159,6 +168,28 @@ function createDotMarkerElement(color: string, label: string): HTMLDivElement {
   return element;
 }
 
+function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  timeoutMessage: string
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      reject(new Error(timeoutMessage));
+    }, timeoutMs);
+
+    promise
+      .then((value) => {
+        clearTimeout(timeoutId);
+        resolve(value);
+      })
+      .catch((error) => {
+        clearTimeout(timeoutId);
+        reject(error);
+      });
+  });
+}
+
 function getLiveStatusLabel(
   status: LiveDriverStatus,
   hasDriverMarker: boolean
@@ -184,6 +215,8 @@ export function TripVisualizationMap({
   driverMarker,
   liveDriverStatus,
   lastDriverUpdateAt,
+  mapAssetTimeoutMs = DEFAULT_MAPBOX_ASSET_TIMEOUT_MS,
+  mapLoadTimeoutMs = DEFAULT_MAPBOX_LOAD_TIMEOUT_MS,
 }: TripVisualizationMapProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapboxGlMap | null>(null);
@@ -196,36 +229,56 @@ export function TripVisualizationMap({
 
   const mapboxToken = getMapboxPublicAccessToken();
   const hasStaticMarkers = Boolean(originMarker || destinationMarker);
+  const originLatitude = originMarker?.latitude ?? null;
+  const originLongitude = originMarker?.longitude ?? null;
+  const destinationLatitude = destinationMarker?.latitude ?? null;
+  const destinationLongitude = destinationMarker?.longitude ?? null;
+  const driverLatitude = driverMarker?.latitude ?? null;
+  const driverLongitude = driverMarker?.longitude ?? null;
 
   const initialCenter = useMemo<CoordinateTuple | null>(() => {
-    if (originMarker) {
-      return toCoordinateTuple(originMarker);
+    if (originLatitude !== null && originLongitude !== null) {
+      return [originLongitude, originLatitude];
     }
 
-    if (destinationMarker) {
-      return toCoordinateTuple(destinationMarker);
+    if (destinationLatitude !== null && destinationLongitude !== null) {
+      return [destinationLongitude, destinationLatitude];
     }
 
-    if (driverMarker) {
-      return toCoordinateTuple(driverMarker);
+    if (driverLatitude !== null && driverLongitude !== null) {
+      return [driverLongitude, driverLatitude];
     }
 
     return null;
-  }, [destinationMarker, driverMarker, originMarker]);
+  }, [
+    destinationLatitude,
+    destinationLongitude,
+    driverLatitude,
+    driverLongitude,
+    originLatitude,
+    originLongitude,
+  ]);
 
   const allRelevantPoints = useMemo<CoordinateTuple[]>(() => {
     const points: CoordinateTuple[] = [];
-    if (originMarker) {
-      points.push(toCoordinateTuple(originMarker));
+    if (originLatitude !== null && originLongitude !== null) {
+      points.push([originLongitude, originLatitude]);
     }
-    if (destinationMarker) {
-      points.push(toCoordinateTuple(destinationMarker));
+    if (destinationLatitude !== null && destinationLongitude !== null) {
+      points.push([destinationLongitude, destinationLatitude]);
     }
-    if (driverMarker) {
-      points.push(toCoordinateTuple(driverMarker));
+    if (driverLatitude !== null && driverLongitude !== null) {
+      points.push([driverLongitude, driverLatitude]);
     }
     return points;
-  }, [destinationMarker, driverMarker, originMarker]);
+  }, [
+    destinationLatitude,
+    destinationLongitude,
+    driverLatitude,
+    driverLongitude,
+    originLatitude,
+    originLongitude,
+  ]);
 
   const clearMarker = useCallback((markerState: MarkerState) => {
     markerState.marker?.remove();
@@ -284,11 +337,8 @@ export function TripVisualizationMap({
         map.setCenter(allRelevantPoints[0]);
         map.setZoom(12);
       } else {
-        const bounds = new mapboxgl.LngLatBounds(
-          allRelevantPoints[0],
-          allRelevantPoints[0]
-        );
-        for (const point of allRelevantPoints.slice(1)) {
+        const bounds = new mapboxgl.LngLatBounds();
+        for (const point of allRelevantPoints) {
           bounds.extend(point);
         }
 
@@ -314,8 +364,16 @@ export function TripVisualizationMap({
     const originMarkerState = originMarkerRef.current;
     const destinationMarkerState = destinationMarkerRef.current;
     const driverMarkerState = driverMarkerRef.current;
+    let mapInstance: MapboxGlMap | null = null;
+    let loadListener: ((...args: unknown[]) => void) | null = null;
+    let errorListener: ((...args: unknown[]) => void) | null = null;
+    let mapLoadTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
-    void ensureMapboxScript()
+    void withTimeout(
+      ensureMapboxScript(),
+      mapAssetTimeoutMs,
+      "Timed out while loading Mapbox assets."
+    )
       .then((mapboxgl) => {
         if (disposed || !mapContainerRef.current) {
           return;
@@ -331,21 +389,51 @@ export function TripVisualizationMap({
           zoom: 11,
         });
 
+        mapInstance = map;
         mapRef.current = map;
 
-        map.on("load", () => {
+        loadListener = () => {
           if (disposed) {
             return;
+          }
+          if (mapLoadTimeoutId !== null) {
+            clearTimeout(mapLoadTimeoutId);
+            mapLoadTimeoutId = null;
           }
           setMapStatus("ready");
-        });
+        };
 
-        map.on("error", () => {
+        errorListener = () => {
           if (disposed) {
             return;
           }
+          if (mapLoadTimeoutId !== null) {
+            clearTimeout(mapLoadTimeoutId);
+            mapLoadTimeoutId = null;
+          }
           setMapStatus("error");
-        });
+        };
+
+        map.on("load", loadListener);
+        map.on("error", errorListener);
+
+        mapLoadTimeoutId = setTimeout(() => {
+          if (disposed) {
+            return;
+          }
+
+          disposed = true;
+          if (mapInstance?.off && loadListener) {
+            mapInstance.off("load", loadListener);
+          }
+          if (mapInstance?.off && errorListener) {
+            mapInstance.off("error", errorListener);
+          }
+          mapInstance?.remove();
+          mapRef.current = null;
+          mapboxNamespaceRef.current = null;
+          setMapStatus("error");
+        }, mapLoadTimeoutMs);
       })
       .catch(() => {
         if (!disposed) {
@@ -355,6 +443,16 @@ export function TripVisualizationMap({
 
     return () => {
       disposed = true;
+      if (mapLoadTimeoutId !== null) {
+        clearTimeout(mapLoadTimeoutId);
+        mapLoadTimeoutId = null;
+      }
+      if (mapInstance?.off && loadListener) {
+        mapInstance.off("load", loadListener);
+      }
+      if (mapInstance?.off && errorListener) {
+        mapInstance.off("error", errorListener);
+      }
       clearMarker(originMarkerState);
       clearMarker(destinationMarkerState);
       clearMarker(driverMarkerState);
@@ -366,6 +464,8 @@ export function TripVisualizationMap({
     clearMarker,
     hasStaticMarkers,
     initialCenter,
+    mapAssetTimeoutMs,
+    mapLoadTimeoutMs,
     mapboxToken,
   ]);
 
