@@ -87,10 +87,18 @@ export function MapArea({ trip }: { trip: MockTripData }) {
                 transition={{ delay: 0.7 }}
                 className="absolute bottom-8 right-6 flex flex-col gap-3"
             >
-                <button className="flex h-12 w-12 items-center justify-center rounded-xl bg-white text-zinc-700 shadow-lg hover:bg-zinc-50 active:scale-95 transition-all">
+                <button
+                    type="button"
+                    aria-label="Recenter map"
+                    className="flex h-12 w-12 items-center justify-center rounded-xl bg-white text-zinc-700 shadow-lg hover:bg-zinc-50 active:scale-95 transition-all"
+                >
                     <Crosshair size={22} />
                 </button>
-                <button className="flex h-12 w-12 items-center justify-center rounded-xl bg-white text-zinc-700 shadow-lg hover:bg-zinc-50 active:scale-95 transition-all">
+                <button
+                    type="button"
+                    aria-label="Map layers"
+                    className="flex h-12 w-12 items-center justify-center rounded-xl bg-white text-zinc-700 shadow-lg hover:bg-zinc-50 active:scale-95 transition-all"
+                >
                     <Layers size={22} />
                 </button>
             </motion.div>
