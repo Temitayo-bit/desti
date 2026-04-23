@@ -7,6 +7,7 @@ import { format } from "date-fns";
 import { ChevronLeft, MessageCircle, X } from "lucide-react";
 import { ProtectedShell } from "../_components/ProtectedShell";
 import { openBookingConversationThread } from "@/lib/booking-conversation";
+import { useBookingLocationTracking } from "@/lib/use-booking-location-tracking";
 import {
   type DashboardBookingItem,
   type NormalizedDashboardBooking,
@@ -103,6 +104,19 @@ function formatTimeRange(startIso: string, endIso: string): string {
   }
 }
 
+function formatLocationTimestamp(isoTimestamp: string | null): string {
+  if (!isoTimestamp) {
+    return "No update yet";
+  }
+
+  const timestamp = new Date(isoTimestamp);
+  if (Number.isNaN(timestamp.getTime())) {
+    return "No update yet";
+  }
+
+  return format(timestamp, "MMM d, h:mm:ss a");
+}
+
 export default function BookingsPage() {
   const router = useRouter();
   const [bookings, setBookings] = useState<DashboardBookingItem[]>([]);
@@ -181,6 +195,24 @@ export default function BookingsPage() {
     () => bookings.map(normalizeDashboardBooking),
     [bookings]
   );
+  const selectedBookingId = selectedTrip?.id ?? null;
+  const viewerIsDriverForSelectedTrip = Boolean(
+    selectedTrip && viewerUserId && selectedTrip.driverUserId === viewerUserId
+  );
+
+  const locationTracking = useBookingLocationTracking({
+    bookingId: selectedBookingId,
+    enabled: Boolean(selectedBookingId),
+    isDriver: viewerIsDriverForSelectedTrip,
+    pollIntervalMs: 10_000,
+  });
+  const locationLatitude = locationTracking.location?.latitude;
+  const locationLongitude = locationTracking.location?.longitude;
+  const hasLatitude = typeof locationLatitude === "number";
+  const hasLongitude = typeof locationLongitude === "number";
+  const noLocationYet = !hasLatitude && !hasLongitude;
+  const latitudeDisplay = hasLatitude ? locationLatitude.toFixed(5) : "—";
+  const longitudeDisplay = hasLongitude ? locationLongitude.toFixed(5) : "—";
 
   async function openBookingMessages(bookingId: string) {
     setActionNotice(null);
@@ -427,6 +459,97 @@ export default function BookingsPage() {
                     <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-4 text-zinc-800 font-medium text-lg">
                       {formatPrice(selectedTrip.priceCents) ?? "TBD"}
                     </div>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-5 md:p-6">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-lg font-bold text-zinc-900">Trip Location Sharing</h3>
+                      <p className="text-sm text-zinc-600">
+                        Latest-location polling only while the trip is active.
+                      </p>
+                    </div>
+                    <span
+                      className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${
+                        locationTracking.isSharingActive
+                          ? "bg-emerald-100 text-emerald-700"
+                          : "bg-zinc-200 text-zinc-700"
+                      }`}
+                    >
+                      {locationTracking.isSharingActive ? "Sharing Active" : "Sharing Inactive"}
+                    </span>
+                  </div>
+
+                  {locationTracking.loading ? (
+                    <p className="text-sm text-zinc-500">Loading trip location status...</p>
+                  ) : null}
+
+                  {viewerIsDriverForSelectedTrip ? (
+                    <div className="mb-4">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void locationTracking.startSharing();
+                        }}
+                        disabled={
+                          locationTracking.starting || locationTracking.isSharingActive
+                        }
+                        className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {locationTracking.starting
+                          ? "Starting..."
+                          : locationTracking.isSharingActive
+                            ? "Trip Sharing Started"
+                            : "Start Trip / Share Location"}
+                      </button>
+                    </div>
+                  ) : null}
+
+                  {locationTracking.error ? (
+                    <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                      {locationTracking.error}
+                    </div>
+                  ) : null}
+
+                  {locationTracking.geolocationError ? (
+                    <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+                      {locationTracking.geolocationError}
+                    </div>
+                  ) : null}
+
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div className="rounded-xl border border-zinc-200 bg-white p-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                        Latitude
+                      </p>
+                      <p className="mt-1 text-sm font-medium text-zinc-800">
+                        {latitudeDisplay}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-zinc-200 bg-white p-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                        Longitude
+                      </p>
+                      <p className="mt-1 text-sm font-medium text-zinc-800">
+                        {longitudeDisplay}
+                      </p>
+                    </div>
+                  </div>
+
+                  {noLocationYet ? (
+                    <p className="mt-2 text-sm text-zinc-500">No location yet</p>
+                  ) : null}
+
+                  <div className="mt-3 rounded-xl border border-zinc-200 bg-white p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                      Last Updated
+                    </p>
+                    <p className="mt-1 text-sm font-medium text-zinc-800">
+                      {formatLocationTimestamp(
+                        locationTracking.location?.locationUpdatedAt ?? null
+                      )}
+                    </p>
                   </div>
                 </div>
               </div>

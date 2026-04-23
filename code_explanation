@@ -3393,3 +3393,276 @@ Confirmed for this slice:
 - ratings only for completed bookings
 - unauthorized users cannot complete or rate others’ bookings
 - cancellation and lifecycle transitions remain explicitly guarded
+
+## 2026-04-22 — Location Tracking Core (Backend + Frontend Polling)
+
+### Scope implemented
+
+Implemented the requested latest-location trip tracking core across backend and frontend with strict scope control:
+
+- driver can start trip location sharing
+- driver can overwrite latest trip location
+- confirmed trip participants can read latest location while active
+- driver and rider polling integrated into existing trip UI
+- no realtime transport and no location history table
+
+No websockets, no SSE, no background tracking, no breadcrumb history, no ETA logic, and no route replay were added.
+
+---
+
+### Data model changes (Option A: store latest location on existing trip record)
+
+Chosen storage record: **`Booking`**.
+
+Why `Booking` is the right place in this codebase:
+
+1. Existing active-trip lifecycle and permissions already center on booking participation (`CONFIRMED` / `COMPLETED` / `CANCELLED`) and driver-vs-rider actor checks.
+2. The project already has booking-level completion flow and booking-level active-trip visibility helper logic, so this keeps tracking aligned with current domain boundaries.
+3. Booking supports both current ride-backed and trip-request-backed confirmed trip relationships without introducing a second tracking record type.
+4. It allows minimal additive changes without rewriting ride/booking architecture.
+
+Added fields to `Booking` in `prisma/schema.prisma`:
+
+- `currentLatitude Float?` (`current_latitude`)
+- `currentLongitude Float?` (`current_longitude`)
+- `locationUpdatedAt DateTime?` (`location_updated_at`)
+- `tripStartedAt DateTime?` (`trip_started_at`)
+- `isLocationSharingActive Boolean @default(false)` (`is_location_sharing_active`)
+
+Migration added:
+
+- `prisma/migrations/20260422202000_add_booking_location_tracking_core/migration.sql`
+
+This is latest-location-only storage (overwrite semantics), with no history table.
+
+---
+
+### Shared visibility/permission helper extension
+
+Extended `src/services/active-trip-visibility-service.ts` to make route checks reusable and consistent:
+
+New shared context + helper exports:
+
+- `activeTripBookingSelect` now includes tracking fields
+- `ActiveTripBookingRecord`
+- `ActiveTripBookingContext`
+- `getActiveTripBookingContext(bookingId)`
+- `isUserBookingParticipant(userId, context)`
+- `canUserAccessActiveTripDataInBookingContext(userId, context)`
+
+Existing behavior remains intact:
+
+- `canUserAccessActiveTripDataByBooking`
+- `canUserAccessActiveTripDataByRide`
+
+This keeps participant and active-window logic centralized and reusable for location routes.
+
+---
+
+### Backend endpoints implemented
+
+#### 1) Start sharing
+
+New route:
+
+- `POST /api/bookings/:bookingId/start`
+- file: `src/app/api/bookings/[bookingId]/start/route.ts`
+
+Behavior:
+
+- requires authenticated/onboarded Stetson user via `requireStetsonAuth`
+- validates booking id
+- resolves booking context via shared helper
+- enforces participant membership (non-participants get not found)
+- enforces driver-only start
+- enforces active trip window (`CONFIRMED`, and ride-backed trips must still be `ACTIVE`)
+- sets `isLocationSharingActive = true`
+- sets `tripStartedAt` if unset
+- idempotent-style success when already started
+
+Response includes latest-location payload shape:
+
+- `bookingId`
+- `latitude`
+- `longitude`
+- `locationUpdatedAt`
+- `tripStartedAt`
+- `isLocationSharingActive`
+
+#### 2) Driver location update
+
+New route:
+
+- `POST /api/bookings/:bookingId/location`
+- file: `src/app/api/bookings/[bookingId]/location/route.ts`
+
+Behavior:
+
+- requires authenticated/onboarded user
+- validates JSON payload and coordinate ranges:
+  - latitude in `[-90, 90]`
+  - longitude in `[-180, 180]`
+- enforces participant membership first
+- enforces active trip window
+- enforces driver-only writes
+- enforces sharing started (`isLocationSharingActive` + `tripStartedAt`)
+- overwrites `currentLatitude` and `currentLongitude`
+- updates `locationUpdatedAt`
+
+No append/history behavior exists.
+
+#### 3) Current location read
+
+New route:
+
+- `GET /api/bookings/:bookingId/location`
+- file: `src/app/api/bookings/[bookingId]/location/route.ts`
+
+Behavior:
+
+- requires authenticated/onboarded user
+- enforces participant membership (driver or confirmed rider for the booking)
+- enforces active trip window
+- enforces sharing started
+- returns latest stored location payload
+
+No-location-yet handling:
+
+- when sharing is active but no point has been posted yet, returns `200` with `latitude/longitude/locationUpdatedAt = null`.
+
+#### 4) Stop sharing after trip end
+
+No background task was added. Blocking is enforced by normal lifecycle gates:
+
+- if booking is `COMPLETED`/`CANCELLED` or ride-backed parent ride is no longer active, start/read/write routes reject with conflict state responses.
+
+---
+
+### Frontend polling integration
+
+Added reusable frontend hook:
+
+- `src/lib/use-booking-location-tracking.ts`
+
+Hook responsibilities:
+
+- loads current location/share status for selected booking
+- starts sharing (driver action)
+- driver polling loop (10s default):
+  - reads device geolocation
+  - posts latest coordinates
+- rider polling loop (10s default):
+  - fetches latest driver location
+- avoids overlapping network writes/reads with in-flight guards
+- stops polling on:
+  - sharing inactive
+  - screen unmount
+  - booking context unmount/change
+- handles geolocation errors and permission denial gracefully
+- prevents repeated post attempts after hard permission denial in current session
+
+Integrated into existing trip details UI:
+
+- file: `src/app/(protected)/bookings/page.tsx`
+- location panel added inside existing booking details modal
+
+Driver-side behavior in UI:
+
+- "Start Trip / Share Location" action
+- sharing status badge
+- lat/lng + last updated display
+- geolocation and API errors surfaced clearly
+
+Rider-side behavior in UI:
+
+- polls and displays latest lat/lng + last updated when sharing is active
+- clean inactive/no-location messaging via status payload
+
+No map overbuild was added. Display is minimal and demo-friendly.
+
+---
+
+### Backend authorization and lifecycle guarantees
+
+Read/write authorization now enforces:
+
+- write (`POST /location`): only driver participant
+- read (`GET /location`): only booking participants (driver or confirmed rider)
+- non-participants cannot read/write trip location
+
+Lifecycle gating enforces:
+
+- only active confirmed trip windows can start/read/write
+- completed/cancelled/inactive states reject location operations
+- sharing must be started before update/read location operations
+
+---
+
+### Tests added/updated
+
+#### New backend tests
+
+1. `src/__tests__/booking-start-route.test.ts`
+   - driver can start eligible trip
+   - non-driver cannot start
+   - completed trip cannot start
+   - cancelled trip cannot start
+
+2. `src/__tests__/booking-location-route.test.ts`
+   - driver can update location for active trip
+   - non-driver cannot update
+   - invalid coordinates rejected
+   - inactive/completed/cancelled updates rejected
+   - driver can read
+   - confirmed rider can read
+   - unrelated user cannot read
+   - inactive/completed/cancelled reads blocked
+   - no-location-yet returns clean null location payload
+
+#### Updated helper coverage (already present)
+
+- `src/__tests__/active-trip-visibility-service.test.ts` remains valid and was rerun.
+
+#### Frontend test work
+
+Added focused hook tests:
+
+- `src/__tests__/use-booking-location-tracking.test.ts`
+
+Covers intended behaviors:
+
+- polling start/stop lifecycle
+- interval cleanup behavior
+- geolocation permission denied handling
+
+Execution boundary encountered in this local environment:
+
+- vitest jsdom worker startup currently times out (`[vitest-pool-runner]: Timeout waiting for worker to respond`), including existing jsdom suites.
+- backend test suites run and pass.
+
+---
+
+### Commands executed
+
+- `npm run postinstall` (Prisma generate) — success
+- `npm run lint -- <changed files>` — success
+- `npm test -- src/__tests__/booking-start-route.test.ts src/__tests__/booking-location-route.test.ts src/__tests__/active-trip-visibility-service.test.ts` — success (`22 passed`)
+- attempted jsdom test execution for frontend hook; blocked by local vitest worker startup timeout as noted above
+
+---
+
+### Invariants and non-scope confirmation
+
+Confirmed preserved:
+
+- no overselling seat logic changed
+- no self-booking flow changes
+- ride/trip request editing restrictions untouched
+- cancellation rules untouched
+- onboarding gate still enforced via `requireStetsonAuth`
+- only driver writes live location
+- only confirmed trip participants read live location
+- latest-location only (overwrite)
+- inactive/completed/cancelled trips blocked for tracking endpoints
+- no websocket/history/ETA/map-overbuild scope creep
+

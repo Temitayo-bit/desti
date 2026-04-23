@@ -233,6 +233,11 @@ model Booking {
   riderUserId   String        @map("rider_user_id")
   seatsBooked   Int           @map("seats_booked")
   priceCents    Int?          @map("price_cents")
+  currentLatitude          Float?        @map("current_latitude") @db.DoublePrecision
+  currentLongitude         Float?        @map("current_longitude") @db.DoublePrecision
+  locationUpdatedAt        DateTime?     @map("location_updated_at")
+  tripStartedAt            DateTime?     @map("trip_started_at")
+  isLocationSharingActive  Boolean       @default(false) @map("is_location_sharing_active")
   status        BookingStatus @default(CONFIRMED)
   completedAt   DateTime?     @map("completed_at")
   createdAt     DateTime      @default(now()) @map("created_at")
