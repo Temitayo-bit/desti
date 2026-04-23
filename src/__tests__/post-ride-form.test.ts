@@ -37,6 +37,10 @@ function validFormValues(overrides: Partial<PostRideFormValues> = {}): PostRideF
     seatsTotal: "3",
     priceDollars: "12.50",
     distanceCategory: "MEDIUM",
+    musicPreference: "",
+    hasAc: "",
+    hasTrunkSpace: "",
+    vehicleType: "",
     pickupInstructions: "",
     dropoffInstructions: "",
     ...overrides,
@@ -62,6 +66,30 @@ describe("post-ride form helpers", () => {
     expect(result.payload?.pickupInstructions).toBeUndefined();
     expect(result.payload?.dropoffInstructions).toBeUndefined();
     expect(result.payload?.preferredDepartAt).toBeUndefined();
+    expect(result.payload?.musicPreference).toBeUndefined();
+    expect(result.payload?.hasAc).toBeUndefined();
+    expect(result.payload?.hasTrunkSpace).toBeUndefined();
+    expect(result.payload?.vehicleType).toBeUndefined();
+  });
+
+  it("builds payload with optional ride attributes when provided", () => {
+    const now = new Date("2030-01-01T09:00:00.000Z");
+    const result = buildPostRidePayload(
+      validFormValues({
+        musicPreference: "NO_MUSIC",
+        hasAc: "true",
+        hasTrunkSpace: "false",
+        vehicleType: "SUV",
+      }),
+      now,
+    );
+
+    expect(result.submitError).toBeNull();
+    expect(result.payload).not.toBeNull();
+    expect(result.payload?.musicPreference).toBe("NO_MUSIC");
+    expect(result.payload?.hasAc).toBe(true);
+    expect(result.payload?.hasTrunkSpace).toBe(false);
+    expect(result.payload?.vehicleType).toBe("SUV");
   });
 
   it("validates missing required fields and invalid ranges", () => {

@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireStetsonAuth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { DistanceCategory, BookingStatus, RideStatus } from "@prisma/client";
+import {
+    BookingStatus,
+    DistanceCategory,
+    MusicPreference,
+    RideStatus,
+    VehicleType,
+} from "@prisma/client";
 import {
     assertDistinctResolvedLocationsOrThrow,
     GeocodingError,
@@ -10,6 +16,12 @@ import {
 
 const VALID_DISTANCE_CATEGORIES: ReadonlySet<string> = new Set(
     Object.values(DistanceCategory)
+);
+const VALID_MUSIC_PREFERENCES: ReadonlySet<string> = new Set(
+    Object.values(MusicPreference)
+);
+const VALID_VEHICLE_TYPES: ReadonlySet<string> = new Set(
+    Object.values(VehicleType)
 );
 const MAX_DEPARTURE_WINDOW_MS = 48 * 60 * 60 * 1000; // 48 hours
 const CLOCK_SKEW_GRACE_MS = 10 * 60 * 1000; // 10 minutes
@@ -23,6 +35,10 @@ const ALLOWED_UPDATE_FIELDS = new Set([
     "distanceCategory",
     "priceCents",
     "seatsTotal",
+    "musicPreference",
+    "hasAc",
+    "hasTrunkSpace",
+    "vehicleType",
     "pickupInstructions",
     "dropoffInstructions"
 ]);
@@ -30,6 +46,13 @@ const ALLOWED_UPDATE_FIELDS = new Set([
 interface ValidationError {
     field: string;
     message: string;
+}
+
+function getErrorMessage(error: unknown): string | null {
+    if (error instanceof Error) {
+        return error.message;
+    }
+    return null;
 }
 
 function geocodingErrorResponse(
@@ -271,6 +294,74 @@ export async function PATCH(
             }
         }
 
+        let finalMusicPreference = ride.musicPreference;
+        if (body.musicPreference !== undefined) {
+            const val = body.musicPreference;
+            if (val === null) {
+                finalMusicPreference = null;
+            } else if (
+                typeof val !== "string" ||
+                !VALID_MUSIC_PREFERENCES.has(val)
+            ) {
+                errors.push({
+                    field: "musicPreference",
+                    message:
+                        "musicPreference must be one of MUSIC_ALLOWED or NO_MUSIC, or null.",
+                });
+            } else {
+                finalMusicPreference = val as MusicPreference;
+            }
+        }
+
+        let finalHasAc = ride.hasAc;
+        if (body.hasAc !== undefined) {
+            const val = body.hasAc;
+            if (val === null) {
+                finalHasAc = null;
+            } else if (typeof val !== "boolean") {
+                errors.push({
+                    field: "hasAc",
+                    message: "hasAc must be true, false, or null.",
+                });
+            } else {
+                finalHasAc = val;
+            }
+        }
+
+        let finalHasTrunkSpace = ride.hasTrunkSpace;
+        if (body.hasTrunkSpace !== undefined) {
+            const val = body.hasTrunkSpace;
+            if (val === null) {
+                finalHasTrunkSpace = null;
+            } else if (typeof val !== "boolean") {
+                errors.push({
+                    field: "hasTrunkSpace",
+                    message: "hasTrunkSpace must be true, false, or null.",
+                });
+            } else {
+                finalHasTrunkSpace = val;
+            }
+        }
+
+        let finalVehicleType = ride.vehicleType;
+        if (body.vehicleType !== undefined) {
+            const val = body.vehicleType;
+            if (val === null) {
+                finalVehicleType = null;
+            } else if (
+                typeof val !== "string" ||
+                !VALID_VEHICLE_TYPES.has(val)
+            ) {
+                errors.push({
+                    field: "vehicleType",
+                    message:
+                        "vehicleType must be one of SEDAN, SUV, TRUCK, VAN, COUPE, or OTHER, or null.",
+                });
+            } else {
+                finalVehicleType = val as VehicleType;
+            }
+        }
+
         let finalPickupInstructions = ride.pickupInstructions;
         if (body.pickupInstructions !== undefined) {
             const val = body.pickupInstructions;
@@ -449,6 +540,10 @@ export async function PATCH(
                         priceCents: finalPriceCents,
                         seatsTotal: finalSeatsTotal,
                         seatsAvailable: finalSeatsAvailable,
+                        musicPreference: finalMusicPreference,
+                        hasAc: finalHasAc,
+                        hasTrunkSpace: finalHasTrunkSpace,
+                        vehicleType: finalVehicleType,
                         pickupInstructions: finalPickupInstructions,
                         dropoffInstructions: finalDropoffInstructions
                     }
@@ -476,7 +571,7 @@ export async function PATCH(
             }
 
             return NextResponse.json(transUpdatedRide, { status: 200 });
-        } catch (updateError: any) {
+        } catch (updateError: unknown) {
             console.error("[PATCH /api/rides/:rideId] Unexpected error during update:", updateError);
             throw updateError;
         }
@@ -601,22 +696,24 @@ export async function DELETE(
         });
 
         return NextResponse.json(result, { status: 200 });
-    } catch (error: any) {
-        if (error.message === "Ride not found.") {
+    } catch (error: unknown) {
+        const message = getErrorMessage(error);
+
+        if (message === "Ride not found.") {
             return NextResponse.json(
                 { error: "Not Found", message: "Ride not found." },
                 { status: 404 }
             );
         }
 
-        if (error.message === "Unauthorized access to ride.") {
+        if (message === "Unauthorized access to ride.") {
             return NextResponse.json(
                 { error: "Forbidden", message: "You don't own this ride." },
                 { status: 403 }
             );
         }
 
-        if (error.message === "Ride already departed.") {
+        if (message === "Ride already departed.") {
             return NextResponse.json(
                 {
                     error: "Conflict",

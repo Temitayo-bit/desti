@@ -23,6 +23,10 @@ interface EditRideFormData {
   latestDepartAt?: string;
   seatsTotal?: number;
   priceDollars?: string;
+  musicPreference?: "" | "MUSIC_ALLOWED" | "NO_MUSIC";
+  hasAc?: "" | "true" | "false";
+  hasTrunkSpace?: "" | "true" | "false";
+  vehicleType?: "" | "SEDAN" | "SUV" | "TRUCK" | "VAN" | "COUPE" | "OTHER";
 }
 
 const MapPinIcon = () => (
@@ -249,6 +253,33 @@ export function MyRidesView() {
     return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
   };
 
+  const toNullableBooleanSelectValue = (
+    value: boolean | null,
+  ): "" | "true" | "false" => {
+    if (value === true) return "true";
+    if (value === false) return "false";
+    return "";
+  };
+
+  const formatOptionalFeature = (value: boolean | null) => {
+    if (value === true) return "Yes";
+    if (value === false) return "No";
+    return "Unspecified";
+  };
+
+  const formatMusicPreference = (
+    value: ManagedRideSummary["musicPreference"],
+  ) => {
+    if (value === "MUSIC_ALLOWED") return "Music allowed";
+    if (value === "NO_MUSIC") return "No music";
+    return "Unspecified";
+  };
+
+  const formatVehicleType = (value: ManagedRideSummary["vehicleType"]) => {
+    if (!value) return "Unspecified";
+    return toTitleCase(value);
+  };
+
   const startEditing = () => {
     if (!selectedRide || selectedRide.confirmedBookings.length > 0) return;
 
@@ -265,6 +296,10 @@ export function MyRidesView() {
       ),
       seatsTotal: selectedRide.seatsTotal,
       priceDollars: (selectedRide.priceCents / 100).toFixed(2),
+      musicPreference: selectedRide.musicPreference ?? "",
+      hasAc: toNullableBooleanSelectValue(selectedRide.hasAc),
+      hasTrunkSpace: toNullableBooleanSelectValue(selectedRide.hasTrunkSpace),
+      vehicleType: selectedRide.vehicleType ?? "",
     });
     setIsEditing(true);
   };
@@ -325,6 +360,20 @@ export function MyRidesView() {
             : undefined,
           seatsTotal: editFormData.seatsTotal,
           priceCents: parsedPriceCents,
+          musicPreference: editFormData.musicPreference || null,
+          hasAc:
+            editFormData.hasAc === "true"
+              ? true
+              : editFormData.hasAc === "false"
+                ? false
+                : null,
+          hasTrunkSpace:
+            editFormData.hasTrunkSpace === "true"
+              ? true
+              : editFormData.hasTrunkSpace === "false"
+                ? false
+                : null,
+          vehicleType: editFormData.vehicleType || null,
         }),
       });
 
@@ -881,6 +930,92 @@ export function MyRidesView() {
                           />
                         </div>
                       </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-semibold text-emerald-800 mb-2">
+                            Music Preference
+                          </label>
+                          <select
+                            value={editFormData.musicPreference || ""}
+                            onChange={(event) =>
+                              setEditFormData({
+                                ...editFormData,
+                                musicPreference: event.target
+                                  .value as EditRideFormData["musicPreference"],
+                              })
+                            }
+                            className="w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-3 text-zinc-900 outline-none"
+                          >
+                            <option value="">Unspecified</option>
+                            <option value="MUSIC_ALLOWED">Music allowed</option>
+                            <option value="NO_MUSIC">No music</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-emerald-800 mb-2">
+                            Vehicle Type
+                          </label>
+                          <select
+                            value={editFormData.vehicleType || ""}
+                            onChange={(event) =>
+                              setEditFormData({
+                                ...editFormData,
+                                vehicleType: event.target
+                                  .value as EditRideFormData["vehicleType"],
+                              })
+                            }
+                            className="w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-3 text-zinc-900 outline-none"
+                          >
+                            <option value="">Unspecified</option>
+                            <option value="SEDAN">Sedan</option>
+                            <option value="SUV">SUV</option>
+                            <option value="TRUCK">Truck</option>
+                            <option value="VAN">Van</option>
+                            <option value="COUPE">Coupe</option>
+                            <option value="OTHER">Other</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-emerald-800 mb-2">
+                            AC Availability
+                          </label>
+                          <select
+                            value={editFormData.hasAc || ""}
+                            onChange={(event) =>
+                              setEditFormData({
+                                ...editFormData,
+                                hasAc: event.target.value as EditRideFormData["hasAc"],
+                              })
+                            }
+                            className="w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-3 text-zinc-900 outline-none"
+                          >
+                            <option value="">Unspecified</option>
+                            <option value="true">Yes</option>
+                            <option value="false">No</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-emerald-800 mb-2">
+                            Trunk Space Availability
+                          </label>
+                          <select
+                            value={editFormData.hasTrunkSpace || ""}
+                            onChange={(event) =>
+                              setEditFormData({
+                                ...editFormData,
+                                hasTrunkSpace: event.target
+                                  .value as EditRideFormData["hasTrunkSpace"],
+                              })
+                            }
+                            className="w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-3 text-zinc-900 outline-none"
+                          >
+                            <option value="">Unspecified</option>
+                            <option value="true">Yes</option>
+                            <option value="false">No</option>
+                          </select>
+                        </div>
+                      </div>
                     </div>
 
                     <div className="mt-8 pt-6 border-t border-zinc-100 flex gap-3 justify-end items-center">
@@ -974,6 +1109,36 @@ export function MyRidesView() {
                           </div>
                           <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-4 text-zinc-800 font-medium text-lg">
                             ${(selectedRide.priceCents / 100).toFixed(2)}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-5 md:p-6">
+                        <h4 className="font-semibold text-zinc-900 mb-4">Ride attributes</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                          <div className="bg-white border border-zinc-200 rounded-xl p-3">
+                            <p className="text-zinc-500">Music</p>
+                            <p className="font-medium text-zinc-800">
+                              {formatMusicPreference(selectedRide.musicPreference)}
+                            </p>
+                          </div>
+                          <div className="bg-white border border-zinc-200 rounded-xl p-3">
+                            <p className="text-zinc-500">Vehicle type</p>
+                            <p className="font-medium text-zinc-800">
+                              {formatVehicleType(selectedRide.vehicleType)}
+                            </p>
+                          </div>
+                          <div className="bg-white border border-zinc-200 rounded-xl p-3">
+                            <p className="text-zinc-500">AC available</p>
+                            <p className="font-medium text-zinc-800">
+                              {formatOptionalFeature(selectedRide.hasAc)}
+                            </p>
+                          </div>
+                          <div className="bg-white border border-zinc-200 rounded-xl p-3">
+                            <p className="text-zinc-500">Trunk space</p>
+                            <p className="font-medium text-zinc-800">
+                              {formatOptionalFeature(selectedRide.hasTrunkSpace)}
+                            </p>
                           </div>
                         </div>
                       </div>

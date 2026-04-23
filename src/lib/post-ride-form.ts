@@ -4,6 +4,14 @@ import {
 } from "@/lib/location-field";
 
 export type DistanceCategoryOption = "SHORT" | "MEDIUM" | "LONG";
+export type MusicPreferenceOption = "MUSIC_ALLOWED" | "NO_MUSIC";
+export type VehicleTypeOption =
+  | "SEDAN"
+  | "SUV"
+  | "TRUCK"
+  | "VAN"
+  | "COUPE"
+  | "OTHER";
 
 export interface PostRideFormValues {
   origin: LocationField;
@@ -14,6 +22,10 @@ export interface PostRideFormValues {
   seatsTotal: string;
   priceDollars: string;
   distanceCategory: "" | DistanceCategoryOption;
+  musicPreference: "" | MusicPreferenceOption;
+  hasAc: "" | "true" | "false";
+  hasTrunkSpace: "" | "true" | "false";
+  vehicleType: "" | VehicleTypeOption;
   pickupInstructions: string;
   dropoffInstructions: string;
 }
@@ -24,6 +36,10 @@ export interface CreateRidePayload {
   earliestDepartAt: string;
   latestDepartAt: string;
   distanceCategory: DistanceCategoryOption;
+  musicPreference?: MusicPreferenceOption;
+  hasAc?: boolean;
+  hasTrunkSpace?: boolean;
+  vehicleType?: VehicleTypeOption;
   priceCents: number;
   seatsTotal: number;
   pickupInstructions?: string;
@@ -40,6 +56,10 @@ export type PostRideFieldKey =
   | "seatsTotal"
   | "priceDollars"
   | "distanceCategory"
+  | "musicPreference"
+  | "hasAc"
+  | "hasTrunkSpace"
+  | "vehicleType"
   | "pickupInstructions"
   | "dropoffInstructions";
 
@@ -181,6 +201,20 @@ export function buildPostRidePayload(
     distanceCategory: formValues.distanceCategory as DistanceCategoryOption,
     priceCents: priceCents!,
     seatsTotal: seatsTotal!,
+    ...(formValues.musicPreference
+      ? { musicPreference: formValues.musicPreference }
+      : {}),
+    ...(formValues.hasAc === "true"
+      ? { hasAc: true }
+      : formValues.hasAc === "false"
+        ? { hasAc: false }
+        : {}),
+    ...(formValues.hasTrunkSpace === "true"
+      ? { hasTrunkSpace: true }
+      : formValues.hasTrunkSpace === "false"
+        ? { hasTrunkSpace: false }
+        : {}),
+    ...(formValues.vehicleType ? { vehicleType: formValues.vehicleType } : {}),
     ...(pickupInstructions ? { pickupInstructions } : {}),
     ...(dropoffInstructions ? { dropoffInstructions } : {}),
     ...(preferredIso ? { preferredDepartAt: preferredIso } : {}),

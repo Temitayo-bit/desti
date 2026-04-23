@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireStetsonAuth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { DistanceCategory, Prisma } from "@prisma/client";
+import {
+    DistanceCategory,
+    MusicPreference,
+    Prisma,
+    VehicleType,
+} from "@prisma/client";
 import {
     assertDistinctResolvedLocationsOrThrow,
     GeocodingError,
@@ -22,6 +27,12 @@ import {
 const VALID_DISTANCE_CATEGORIES: ReadonlySet<string> = new Set(
     Object.values(DistanceCategory)
 );
+const VALID_MUSIC_PREFERENCES: ReadonlySet<string> = new Set(
+    Object.values(MusicPreference)
+);
+const VALID_VEHICLE_TYPES: ReadonlySet<string> = new Set(
+    Object.values(VehicleType)
+);
 const MAX_DEPARTURE_WINDOW_MS = 48 * 60 * 60 * 1000; // 48 hours
 const CLOCK_SKEW_GRACE_MS = 10 * 60 * 1000; // 10 minutes
 
@@ -36,6 +47,10 @@ const rideSummarySelect = {
     priceCents: true,
     seatsTotal: true,
     seatsAvailable: true,
+    musicPreference: true,
+    hasAc: true,
+    hasTrunkSpace: true,
+    vehicleType: true,
     pickupInstructions: true,
     dropoffInstructions: true,
     preferredDepartAt: true,
@@ -87,6 +102,20 @@ export async function GET(request: NextRequest) {
             "latestBefore"
         );
         const seatsMin = parseSeatsParam(searchParams.get("seatsMin"), "seatsMin");
+        const musicPreference = parseMusicPreferenceParam(
+            searchParams.get("musicPreference")
+        );
+        const hasAc = parseOptionalBooleanParam(
+            searchParams.get("hasAc"),
+            "hasAc"
+        );
+        const hasTrunkSpace = parseOptionalBooleanParam(
+            searchParams.get("hasTrunkSpace"),
+            "hasTrunkSpace"
+        );
+        const vehicleType = parseVehicleTypeParam(
+            searchParams.get("vehicleType")
+        );
 
         const andClauses: Prisma.RideWhereInput[] = [
             { status: "ACTIVE" },
@@ -100,6 +129,18 @@ export async function GET(request: NextRequest) {
         }
         if (distanceCategory) {
             andClauses.push({ distanceCategory });
+        }
+        if (musicPreference) {
+            andClauses.push({ musicPreference });
+        }
+        if (hasAc !== undefined) {
+            andClauses.push({ hasAc });
+        }
+        if (hasTrunkSpace !== undefined) {
+            andClauses.push({ hasTrunkSpace });
+        }
+        if (vehicleType) {
+            andClauses.push({ vehicleType });
         }
 
         const seatsThreshold = seatsMin ?? (includeFull ? undefined : 1);
@@ -156,6 +197,40 @@ export async function GET(request: NextRequest) {
             { status: 500 }
         );
     }
+}
+
+function parseMusicPreferenceParam(
+    value: string | null
+): MusicPreference | undefined {
+    if (value === null) return undefined;
+    if (!VALID_MUSIC_PREFERENCES.has(value)) {
+        throw new QueryValidationError(
+            "musicPreference",
+            "musicPreference must be one of MUSIC_ALLOWED or NO_MUSIC."
+        );
+    }
+    return value as MusicPreference;
+}
+
+function parseVehicleTypeParam(value: string | null): VehicleType | undefined {
+    if (value === null) return undefined;
+    if (!VALID_VEHICLE_TYPES.has(value)) {
+        throw new QueryValidationError(
+            "vehicleType",
+            "vehicleType must be one of SEDAN, SUV, TRUCK, VAN, COUPE, or OTHER."
+        );
+    }
+    return value as VehicleType;
+}
+
+function parseOptionalBooleanParam(
+    value: string | null,
+    field: "hasAc" | "hasTrunkSpace"
+): boolean | undefined {
+    if (value === null) return undefined;
+    if (value === "true") return true;
+    if (value === "false") return false;
+    throw new QueryValidationError(field, `${field} must be either true or false.`);
 }
 
 // ── Validation helpers ───────────────────────────────────────────────────────
@@ -225,6 +300,10 @@ function validateRideBody(body: Record<string, unknown>): {
         distanceCategory: DistanceCategory;
         priceCents: number;
         seatsTotal: number;
+        musicPreference: MusicPreference | null;
+        hasAc: boolean | null;
+        hasTrunkSpace: boolean | null;
+        vehicleType: VehicleType | null;
         pickupInstructions: string | null;
         dropoffInstructions: string | null;
         preferredDepartAt: Date | null;
@@ -316,6 +395,63 @@ function validateRideBody(body: Record<string, unknown>): {
     }
 
     // — pickupInstructions (optional) ———————————————————————————————————————
+    let musicPreference: MusicPreference | null = null;
+    if (body.musicPreference !== undefined && body.musicPreference !== null) {
+        if (
+            typeof body.musicPreference !== "string" ||
+            !VALID_MUSIC_PREFERENCES.has(body.musicPreference)
+        ) {
+            errors.push({
+                field: "musicPreference",
+                message:
+                    "musicPreference must be one of MUSIC_ALLOWED or NO_MUSIC.",
+            });
+        } else {
+            musicPreference = body.musicPreference as MusicPreference;
+        }
+    }
+
+    let hasAc: boolean | null = null;
+    if (body.hasAc !== undefined && body.hasAc !== null) {
+        if (typeof body.hasAc !== "boolean") {
+            errors.push({
+                field: "hasAc",
+                message: "hasAc must be true, false, or null.",
+            });
+        } else {
+            hasAc = body.hasAc;
+        }
+    }
+
+    let hasTrunkSpace: boolean | null = null;
+    if (body.hasTrunkSpace !== undefined && body.hasTrunkSpace !== null) {
+        if (typeof body.hasTrunkSpace !== "boolean") {
+            errors.push({
+                field: "hasTrunkSpace",
+                message: "hasTrunkSpace must be true, false, or null.",
+            });
+        } else {
+            hasTrunkSpace = body.hasTrunkSpace;
+        }
+    }
+
+    let vehicleType: VehicleType | null = null;
+    if (body.vehicleType !== undefined && body.vehicleType !== null) {
+        if (
+            typeof body.vehicleType !== "string" ||
+            !VALID_VEHICLE_TYPES.has(body.vehicleType)
+        ) {
+            errors.push({
+                field: "vehicleType",
+                message:
+                    "vehicleType must be one of SEDAN, SUV, TRUCK, VAN, COUPE, or OTHER.",
+            });
+        } else {
+            vehicleType = body.vehicleType as VehicleType;
+        }
+    }
+
+    // — pickupInstructions (optional) ———————————————————————————————————————
     let pickupInstructions: string | null = null;
     if (body.pickupInstructions !== undefined && body.pickupInstructions !== null) {
         if (typeof body.pickupInstructions !== "string") {
@@ -383,6 +519,10 @@ function validateRideBody(body: Record<string, unknown>): {
             distanceCategory: distRaw as DistanceCategory,
             priceCents: priceRaw as number,
             seatsTotal: seatsRaw as number,
+            musicPreference,
+            hasAc,
+            hasTrunkSpace,
+            vehicleType,
             pickupInstructions,
             dropoffInstructions,
             preferredDepartAt,
@@ -546,6 +686,10 @@ export async function POST(request: NextRequest) {
                         priceCents: parsed.priceCents,
                         seatsTotal: parsed.seatsTotal,
                         seatsAvailable: parsed.seatsTotal, // ← invariant: seatsAvailable == seatsTotal on create
+                        musicPreference: parsed.musicPreference,
+                        hasAc: parsed.hasAc,
+                        hasTrunkSpace: parsed.hasTrunkSpace,
+                        vehicleType: parsed.vehicleType,
                         pickupInstructions: parsed.pickupInstructions,
                         dropoffInstructions: parsed.dropoffInstructions,
                         preferredDepartAt: parsed.preferredDepartAt,

@@ -60,6 +60,18 @@ vi.mock("@prisma/client", () => ({
         MEDIUM: "MEDIUM",
         LONG: "LONG",
     },
+    MusicPreference: {
+        MUSIC_ALLOWED: "MUSIC_ALLOWED",
+        NO_MUSIC: "NO_MUSIC",
+    },
+    VehicleType: {
+        SEDAN: "SEDAN",
+        SUV: "SUV",
+        TRUCK: "TRUCK",
+        VAN: "VAN",
+        COUPE: "COUPE",
+        OTHER: "OTHER",
+    },
 }));
 
 // ── Import handler AFTER mocks are set up ────────────────────────────────────
@@ -133,6 +145,10 @@ function fakeRide(overrides: Record<string, unknown> = {}) {
         priceCents: 500,
         seatsTotal: 4,
         seatsAvailable: 4,
+        musicPreference: null,
+        hasAc: null,
+        hasTrunkSpace: null,
+        vehicleType: null,
         status: "ACTIVE",
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -194,11 +210,53 @@ describe("POST /api/rides", () => {
                         "Daytona Beach, Florida, United States",
                     destinationLatitude: 29.2108,
                     destinationLongitude: -81.0228,
+                    musicPreference: null,
+                    hasAc: null,
+                    hasTrunkSpace: null,
+                    vehicleType: null,
                 }),
             })
         );
         // Verify $transaction was used for atomicity
         expect(mockPrisma.$transaction).toHaveBeenCalledOnce();
+    });
+
+    it("supports creating a ride with all optional ride attributes", async () => {
+        const ride = fakeRide({
+            musicPreference: "MUSIC_ALLOWED",
+            hasAc: true,
+            hasTrunkSpace: false,
+            vehicleType: "SUV",
+        });
+        mockPrisma.ride.create.mockResolvedValue(ride);
+        mockPrisma.idempotencyKey.create.mockResolvedValue({});
+
+        const req = makeRequest(
+            validBody({
+                musicPreference: "MUSIC_ALLOWED",
+                hasAc: true,
+                hasTrunkSpace: false,
+                vehicleType: "SUV",
+            })
+        );
+        const res = await POST(req as never);
+        const json = await res.json();
+
+        expect(res.status).toBe(201);
+        expect(json.musicPreference).toBe("MUSIC_ALLOWED");
+        expect(json.hasAc).toBe(true);
+        expect(json.hasTrunkSpace).toBe(false);
+        expect(json.vehicleType).toBe("SUV");
+        expect(mockPrisma.ride.create).toHaveBeenCalledWith(
+            expect.objectContaining({
+                data: expect.objectContaining({
+                    musicPreference: "MUSIC_ALLOWED",
+                    hasAc: true,
+                    hasTrunkSpace: false,
+                    vehicleType: "SUV",
+                }),
+            })
+        );
     });
 
     // 2) Missing Idempotency-Key → 400
@@ -446,6 +504,25 @@ describe("POST /api/rides", () => {
 
         expect(res.status).toBe(503);
         expect(json.error).toBe("Service Unavailable");
+        expect(mockPrisma.ride.create).not.toHaveBeenCalled();
+    });
+
+    it("rejects invalid musicPreference and vehicleType enum values", async () => {
+        const req = makeRequest(
+            validBody({
+                musicPreference: "LOUD_ONLY",
+                vehicleType: "JET",
+            })
+        );
+
+        const res = await POST(req as never);
+        const json = await res.json();
+
+        expect(res.status).toBe(400);
+        expect(json.error).toBe("Validation Error");
+        const fields = json.details.map((d: { field: string }) => d.field);
+        expect(fields).toContain("musicPreference");
+        expect(fields).toContain("vehicleType");
         expect(mockPrisma.ride.create).not.toHaveBeenCalled();
     });
 });
