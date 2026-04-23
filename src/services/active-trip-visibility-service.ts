@@ -1,11 +1,16 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
-const activeTripBookingSelect = {
+export const activeTripBookingSelect = {
     id: true,
     rideId: true,
     riderUserId: true,
     driverUserId: true,
+    currentLatitude: true,
+    currentLongitude: true,
+    locationUpdatedAt: true,
+    tripStartedAt: true,
+    isLocationSharingActive: true,
     status: true,
     ride: {
         select: {
@@ -16,11 +21,19 @@ const activeTripBookingSelect = {
     },
 } satisfies Prisma.BookingSelect;
 
-type ActiveTripBookingRecord = Prisma.BookingGetPayload<{
+export type ActiveTripBookingRecord = Prisma.BookingGetPayload<{
     select: typeof activeTripBookingSelect;
 }>;
 
-function getBookingDriverUserId(booking: ActiveTripBookingRecord): string | null {
+export interface ActiveTripBookingContext {
+    booking: ActiveTripBookingRecord;
+    driverUserId: string | null;
+    isActiveWindow: boolean;
+}
+
+export function getBookingDriverUserId(
+    booking: ActiveTripBookingRecord
+): string | null {
     if (booking.driverUserId) {
         return booking.driverUserId;
     }
@@ -32,7 +45,7 @@ function getBookingDriverUserId(booking: ActiveTripBookingRecord): string | null
     return null;
 }
 
-function isBookingInActiveWindow(booking: ActiveTripBookingRecord): boolean {
+export function isBookingInActiveWindow(booking: ActiveTripBookingRecord): boolean {
     if (booking.status !== "CONFIRMED") {
         return false;
     }
@@ -44,6 +57,53 @@ function isBookingInActiveWindow(booking: ActiveTripBookingRecord): boolean {
     return true;
 }
 
+export function toActiveTripBookingContext(
+    booking: ActiveTripBookingRecord
+): ActiveTripBookingContext {
+    return {
+        booking,
+        driverUserId: getBookingDriverUserId(booking),
+        isActiveWindow: isBookingInActiveWindow(booking),
+    };
+}
+
+export function isUserBookingParticipant(
+    userId: string,
+    context: ActiveTripBookingContext
+): boolean {
+    return userId === context.booking.riderUserId || userId === context.driverUserId;
+}
+
+export function canUserAccessActiveTripDataInBookingContext(
+    userId: string,
+    context: ActiveTripBookingContext
+): boolean {
+    if (!context.isActiveWindow) {
+        return false;
+    }
+
+    if (!context.driverUserId) {
+        return false;
+    }
+
+    return isUserBookingParticipant(userId, context);
+}
+
+export async function getActiveTripBookingContext(
+    bookingId: string
+): Promise<ActiveTripBookingContext | null> {
+    const booking = await prisma.booking.findUnique({
+        where: { id: bookingId },
+        select: activeTripBookingSelect,
+    });
+
+    if (!booking) {
+        return null;
+    }
+
+    return toActiveTripBookingContext(booking);
+}
+
 /**
  * True only when user is a participant (driver or rider) on an active booking.
  */
@@ -51,21 +111,12 @@ export async function canUserAccessActiveTripDataByBooking(
     userId: string,
     bookingId: string
 ): Promise<boolean> {
-    const booking = await prisma.booking.findUnique({
-        where: { id: bookingId },
-        select: activeTripBookingSelect,
-    });
-
-    if (!booking || !isBookingInActiveWindow(booking)) {
+    const context = await getActiveTripBookingContext(bookingId);
+    if (!context) {
         return false;
     }
 
-    const driverUserId = getBookingDriverUserId(booking);
-    if (!driverUserId) {
-        return false;
-    }
-
-    return userId === booking.riderUserId || userId === driverUserId;
+    return canUserAccessActiveTripDataInBookingContext(userId, context);
 }
 
 /**
