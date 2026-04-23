@@ -115,6 +115,7 @@ The worker exposes three operations:
 | [Cloudflare Workers + R2](https://developers.cloudflare.com/r2/) | Yes | Profile picture storage and serving |
 | [Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai/) | Yes | Human detection on profile picture uploads (free tier: ~14,700 validations/day) |
 | [Google Gemini](https://ai.google.dev/) | No | AI-powered in-app help assistant (gracefully degrades if unavailable) |
+| [Mapbox Geocoding API](https://docs.mapbox.com/api/search/geocoding/) | Yes | Required frontend location suggestions/autocomplete for ride and trip-request posting flows |
 
 ## Steps to Install or Recreate the Project on Another Machine
 
@@ -157,6 +158,9 @@ CLERK_SECRET_KEY=sk_test_YOUR_KEY
 # Clerk redirect URLs
 NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
 NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
+
+# Mapbox (frontend autocomplete)
+NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN=pk.YOUR_MAPBOX_PUBLIC_TOKEN
 
 # Cloudflare Worker for profile picture uploads
 WORKER_UPLOAD_URL=https://desti-profile-pictures.YOUR-ACCOUNT.workers.dev
@@ -258,6 +262,9 @@ CLERK_SECRET_KEY=sk_test_YOUR_KEY
 # Clerk redirect URLs
 NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
 NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
+
+# Mapbox (frontend autocomplete)
+NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN=pk.YOUR_MAPBOX_PUBLIC_TOKEN
 
 # Cloudflare Worker for profile picture uploads
 WORKER_UPLOAD_URL=https://desti-profile-pictures.YOUR-ACCOUNT.workers.dev
@@ -393,6 +400,7 @@ This starts the worker on `http://localhost:8787`. Set `WORKER_UPLOAD_URL=http:/
 | `CLERK_SECRET_KEY` | Yes | Clerk secret key (from Clerk dashboard) |
 | `NEXT_PUBLIC_CLERK_SIGN_IN_URL` | Yes | Sign-in route path (`/sign-in`) |
 | `NEXT_PUBLIC_CLERK_SIGN_UP_URL` | Yes | Sign-up route path (`/sign-up`) |
+| `NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN` | Yes | Required Mapbox public token (`pk...`) for frontend location suggestions/autocomplete used in ride and trip-request posting flows |
 | `WORKER_UPLOAD_URL` | Yes | Cloudflare Worker URL for profile picture uploads |
 | `WORKER_UPLOAD_API_KEY` | Yes | Shared secret for authenticating upload/delete requests to the worker (generate with `openssl rand -hex 32`) |
 | `GEMINI_API_KEY` | No | Google Gemini API key for the AI assistant |

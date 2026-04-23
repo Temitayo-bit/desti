@@ -1,8 +1,13 @@
+import {
+  hasValidLocationFieldSelection,
+  type LocationField,
+} from "@/lib/location-field";
+
 export type DistanceCategoryOption = "SHORT" | "MEDIUM" | "LONG";
 
 export interface PostRideFormValues {
-  originText: string;
-  destinationText: string;
+  origin: LocationField;
+  destination: LocationField;
   earliestDepartAt: string;
   latestDepartAt: string;
   preferredDepartAt: string;
@@ -88,16 +93,21 @@ export function buildPostRidePayload(
   now: Date = new Date(),
 ): BuildPostRidePayloadResult {
   const fieldErrors: PostRideFieldErrors = {};
-  const originText = formValues.originText.trim();
-  const destinationText = formValues.destinationText.trim();
+  const originText = formValues.origin.inputText.trim();
+  const destinationText = formValues.destination.inputText.trim();
   const pickupInstructions = formValues.pickupInstructions.trim();
   const dropoffInstructions = formValues.dropoffInstructions.trim();
 
   if (!originText) {
     fieldErrors.originText = "Origin is required.";
+  } else if (!hasValidLocationFieldSelection(formValues.origin)) {
+    fieldErrors.originText = "Please select a valid location from suggestions.";
   }
   if (!destinationText) {
     fieldErrors.destinationText = "Destination is required.";
+  } else if (!hasValidLocationFieldSelection(formValues.destination)) {
+    fieldErrors.destinationText =
+      "Please select a valid location from suggestions.";
   }
   if (!formValues.earliestDepartAt) {
     fieldErrors.earliestDepartAt = "Earliest departure is required.";

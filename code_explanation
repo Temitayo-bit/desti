@@ -3666,3 +3666,132 @@ Confirmed preserved:
 - inactive/completed/cancelled trips blocked for tracking endpoints
 - no websocket/history/ETA/map-overbuild scope creep
 
+
+## 2026-04-22 — Mapbox Autocomplete Refinement (Strict Selection + Unified Location State)
+
+### Scope
+
+Refined the existing Mapbox autocomplete UX and form integration for:
+- `Post Ride`
+- `Post Trip Request`
+
+This refinement is intentionally narrow:
+- no backend architecture rewrite
+- no new location persistence model
+- no routing/map/ETA/live-tracking scope additions
+
+### Files Changed
+
+- `src/lib/location-field.ts` (NEW)
+- `src/components/LocationAutocompleteInput.tsx` (MODIFIED)
+- `src/lib/mapbox-location-autocomplete.ts` (MODIFIED)
+- `src/lib/post-ride-form.ts` (MODIFIED)
+- `src/lib/post-trip-request-form.ts` (MODIFIED)
+- `src/app/(protected)/post-ride/page.tsx` (MODIFIED)
+- `src/app/(protected)/post-trip-request/page.tsx` (MODIFIED)
+- `src/__tests__/post-ride-form.test.ts` (MODIFIED)
+- `src/__tests__/post-trip-request-form.test.ts` (MODIFIED)
+- `src/__tests__/location-autocomplete-input.test.tsx` (MODIFIED)
+
+### Final Location Field State Structure
+
+All location form inputs now use one standardized shape:
+
+```ts
+locationField = {
+  inputText: string,
+  selectedLabel: string | null,
+  latitude: number | null,
+  longitude: number | null,
+  isValidSelection: boolean,
+}
+```
+
+Applied in both forms as:
+- `formValues.origin: locationField`
+- `formValues.destination: locationField`
+
+### Selection and Invalidation Rules
+
+Implemented consistently for ride + trip request forms:
+
+1. Suggestion selected:
+- `inputText = suggestion.label`
+- `selectedLabel = suggestion.label`
+- `latitude/longitude = suggestion coordinates`
+- `isValidSelection = true`
+
+2. User edits text after selection:
+- `selectedLabel = null`
+- `latitude = null`
+- `longitude = null`
+- `isValidSelection = false`
+
+This is centralized in `src/lib/location-field.ts` via:
+- `createLocationFieldFromSelection(...)`
+- `updateLocationFieldInput(...)`
+- `hasValidLocationFieldSelection(...)`
+
+### Submission Blocking (No Free Text Submit)
+
+Submission is now hard-blocked unless each location field has a valid selected suggestion state.
+
+Validation behavior:
+- if `inputText` is blank -> required error
+- if text exists but `isValidSelection` is not valid -> error:
+  - `Please select a valid location from suggestions.`
+
+This is enforced in payload builders:
+- `buildPostRidePayload(...)`
+- `buildPostTripRequestPayload(...)`
+
+No fallback path allows arbitrary typed text through as a valid location field for these autocomplete inputs.
+
+### UI Validity Signal
+
+`LocationAutocompleteInput` now reflects validity directly:
+- invalid state (no valid selection): red border + message
+- valid state (selection present): green confirmation text
+
+It also marks the input with `aria-invalid` when invalid.
+
+### Mapbox Result Filtering Applied
+
+Suggestion filtering is intentionally simple and strict:
+- Mapbox query now uses `types=address,place,poi`
+- explicitly excludes broad `country` / `region` results when returned
+- keeps `country=us` constraint
+
+This improves precision while avoiding scope expansion.
+
+### Debounce + Request Cancellation + Race Safety
+
+Implemented request control in `LocationAutocompleteInput`:
+- debounce set to `300ms`
+- in-flight requests aborted via `AbortController` when query changes
+- request sequencing guard (`latestRequestIdRef`) ensures stale/older responses cannot overwrite newer results
+
+This prevents race-condition UI regressions during rapid typing.
+
+### Backend Boundary Confirmation
+
+Backend location persistence/geocoding architecture remains intact.
+
+No changes were made to:
+- ride/trip request API storage model
+- matching logic
+- tracking logic
+- database schema for suggestions
+
+Autocomplete remains a frontend UX layer feeding existing submit flows.
+
+### Test Coverage Notes
+
+Updated focused tests for form-level selection requirements:
+- `post-ride-form.test.ts`
+- `post-trip-request-form.test.ts`
+
+A focused component test exists for autocomplete behavior:
+- `location-autocomplete-input.test.tsx`
+
+In this environment, jsdom/vitest worker startup still times out for that test file (`[vitest-pool-runner]: Timeout waiting for worker to respond`), so it could not be executed locally here despite being lint-clean.
