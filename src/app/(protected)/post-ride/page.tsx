@@ -5,6 +5,12 @@ import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown } from "lucide-react";
 import { ProtectedShell } from "../_components/ProtectedShell";
+import { LocationAutocompleteInput } from "@/components/LocationAutocompleteInput";
+import {
+  createEmptyLocationField,
+  createLocationFieldFromSelection,
+  updateLocationFieldInput,
+} from "@/lib/location-field";
 import {
   type PostRideFieldErrors,
   type PostRideFormValues,
@@ -18,8 +24,8 @@ interface ApiValidationDetail {
 }
 
 const initialFormValues: PostRideFormValues = {
-  originText: "",
-  destinationText: "",
+  origin: createEmptyLocationField(),
+  destination: createEmptyLocationField(),
   earliestDepartAt: "",
   latestDepartAt: "",
   preferredDepartAt: "",
@@ -112,12 +118,65 @@ export default function PostRidePage() {
     return "Post Ride";
   }, [isSubmitting]);
 
-  function updateField<K extends keyof PostRideFormValues>(
+  type NonLocationField = Exclude<
+    keyof PostRideFormValues,
+    | "origin"
+    | "destination"
+  >;
+
+  function updateField<K extends NonLocationField>(
     field: K,
     value: PostRideFormValues[K],
   ) {
     setFormValues((prev) => ({ ...prev, [field]: value }));
-    setFieldErrors((prev) => ({ ...prev, [field]: undefined }));
+    setFieldErrors((prev) => ({
+      ...prev,
+      [field]: undefined,
+    }));
+  }
+
+  function updateLocationInput(
+    field: "origin" | "destination",
+    nextValue: string,
+  ) {
+    if (field === "origin") {
+      setFormValues((prev) => ({
+        ...prev,
+        origin: updateLocationFieldInput(prev.origin, nextValue),
+      }));
+      setFieldErrors((prev) => ({ ...prev, originText: undefined }));
+      return;
+    }
+
+    setFormValues((prev) => ({
+      ...prev,
+      destination: updateLocationFieldInput(prev.destination, nextValue),
+    }));
+    setFieldErrors((prev) => ({ ...prev, destinationText: undefined }));
+  }
+
+  function applyLocationSelection(
+    field: "origin" | "destination",
+    selection: {
+      label: string;
+      latitude: number;
+      longitude: number;
+    },
+  ) {
+    if (field === "origin") {
+      setFormValues((prev) => ({
+        ...prev,
+        origin: createLocationFieldFromSelection(selection),
+      }));
+      setFieldErrors((prev) => ({ ...prev, originText: undefined }));
+      return;
+    }
+
+    setFormValues((prev) => ({
+      ...prev,
+      destination: createLocationFieldFromSelection(selection),
+    }));
+    setFieldErrors((prev) => ({ ...prev, destinationText: undefined }));
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -239,39 +298,33 @@ export default function PostRidePage() {
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="md:col-span-1">
-                <label htmlFor="originText" className="block text-sm font-semibold text-emerald-800 mb-2">
-                  Origin
-                </label>
-                <input
-                  id="originText"
-                  type="text"
-                  value={formValues.originText}
-                  onChange={(e) => updateField("originText", e.target.value)}
-                  className="w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-3 text-zinc-900 transition-all outline-none"
-                  placeholder="Enter origin location..."
-                />
-                {fieldErrors.originText && (
-                  <p className="mt-1 text-sm text-red-600">{fieldErrors.originText}</p>
-                )}
-              </div>
+              <LocationAutocompleteInput
+                id="originText"
+                label="Origin"
+                placeholder="Enter origin location..."
+                locationField={formValues.origin}
+                error={fieldErrors.originText}
+                onInputChange={(nextValue) =>
+                  updateLocationInput("origin", nextValue)
+                }
+                onSuggestionSelect={(selection) =>
+                  applyLocationSelection("origin", selection)
+                }
+              />
 
-              <div className="md:col-span-1">
-                <label htmlFor="destinationText" className="block text-sm font-semibold text-emerald-800 mb-2">
-                  Destination
-                </label>
-                <input
-                  id="destinationText"
-                  type="text"
-                  value={formValues.destinationText}
-                  onChange={(e) => updateField("destinationText", e.target.value)}
-                  className="w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-3 text-zinc-900 transition-all outline-none"
-                  placeholder="Enter destination location..."
-                />
-                {fieldErrors.destinationText && (
-                  <p className="mt-1 text-sm text-red-600">{fieldErrors.destinationText}</p>
-                )}
-              </div>
+              <LocationAutocompleteInput
+                id="destinationText"
+                label="Destination"
+                placeholder="Enter destination location..."
+                locationField={formValues.destination}
+                error={fieldErrors.destinationText}
+                onInputChange={(nextValue) =>
+                  updateLocationInput("destination", nextValue)
+                }
+                onSuggestionSelect={(selection) =>
+                  applyLocationSelection("destination", selection)
+                }
+              />
             </div>
 
             <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-5 md:p-6 overflow-x-hidden">

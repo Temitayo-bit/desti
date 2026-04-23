@@ -1,8 +1,13 @@
+import {
+  hasValidLocationFieldSelection,
+  type LocationField,
+} from "@/lib/location-field";
+
 export type DistanceCategoryOption = "SHORT" | "MEDIUM" | "LONG";
 
 export interface PostTripRequestFormValues {
-  originText: string;
-  destinationText: string;
+  origin: LocationField;
+  destination: LocationField;
   earliestDesiredAt: string;
   latestDesiredAt: string;
   preferredDepartAt: string;
@@ -77,8 +82,8 @@ export function buildPostTripRequestPayload(
   now: Date = new Date(),
 ): BuildPostTripRequestPayloadResult {
   const fieldErrors: PostTripRequestFieldErrors = {};
-  const originText = formValues.originText.trim();
-  const destinationText = formValues.destinationText.trim();
+  const originText = formValues.origin.inputText.trim();
+  const destinationText = formValues.destination.inputText.trim();
   const pickupInstructions = formValues.pickupInstructions.trim();
   const dropoffInstructions = formValues.dropoffInstructions.trim();
 
@@ -86,12 +91,17 @@ export function buildPostTripRequestPayload(
     fieldErrors.originText = "Origin is required.";
   } else if (originText.length < 3 || originText.length > 200) {
     fieldErrors.originText = "Origin must be between 3 and 200 characters.";
+  } else if (!hasValidLocationFieldSelection(formValues.origin)) {
+    fieldErrors.originText = "Please select a valid location from suggestions.";
   }
 
   if (!destinationText) {
     fieldErrors.destinationText = "Destination is required.";
   } else if (destinationText.length < 3 || destinationText.length > 200) {
     fieldErrors.destinationText = "Destination must be between 3 and 200 characters.";
+  } else if (!hasValidLocationFieldSelection(formValues.destination)) {
+    fieldErrors.destinationText =
+      "Please select a valid location from suggestions.";
   }
 
   if (!formValues.earliestDesiredAt) {

@@ -4,13 +4,34 @@ import {
   canSubmitPostTripRequest,
   type PostTripRequestFormValues,
 } from "@/lib/post-trip-request-form";
+import type { LocationField } from "@/lib/location-field";
+
+function validLocationField(label: string, latitude: number, longitude: number): LocationField {
+  return {
+    inputText: label,
+    selectedLabel: label,
+    latitude,
+    longitude,
+    isValidSelection: true,
+  };
+}
+
+function invalidLocationField(inputText: string): LocationField {
+  return {
+    inputText,
+    selectedLabel: null,
+    latitude: null,
+    longitude: null,
+    isValidSelection: false,
+  };
+}
 
 function validFormValues(
   overrides: Partial<PostTripRequestFormValues> = {},
 ): PostTripRequestFormValues {
   return {
-    originText: "Stetson University",
-    destinationText: "Daytona Beach",
+    origin: validLocationField("Stetson University", 29.0361, -81.302),
+    destination: validLocationField("Daytona Beach", 29.2108, -81.0228),
     earliestDesiredAt: "2030-01-01T10:00",
     latestDesiredAt: "2030-01-01T12:00",
     preferredDepartAt: "",
@@ -41,8 +62,8 @@ describe("post-trip-request form helpers", () => {
     const now = new Date("2030-01-01T15:00:00.000Z");
     const result = buildPostTripRequestPayload(
       validFormValues({
-        originText: "ab",
-        destinationText: " ",
+        origin: invalidLocationField("ab"),
+        destination: invalidLocationField(" "),
         earliestDesiredAt: "2030-01-01T08:30",
         latestDesiredAt: "2030-01-01T08:15",
         seatsNeeded: "9",
@@ -84,6 +105,25 @@ describe("post-trip-request form helpers", () => {
 
     expect(result.payload).toBeNull();
     expect(result.fieldErrors.preferredDepartAt).toBeDefined();
+  });
+
+  it("requires a valid selected suggestion for both locations", () => {
+    const now = new Date("2030-01-01T09:00:00.000Z");
+    const result = buildPostTripRequestPayload(
+      validFormValues({
+        origin: invalidLocationField("Stetson University"),
+        destination: invalidLocationField("Daytona Beach"),
+      }),
+      now,
+    );
+
+    expect(result.payload).toBeNull();
+    expect(result.fieldErrors.originText).toContain(
+      "Please select a valid location from suggestions.",
+    );
+    expect(result.fieldErrors.destinationText).toContain(
+      "Please select a valid location from suggestions.",
+    );
   });
 
   it("blocks submit while a request is already in-flight", () => {
