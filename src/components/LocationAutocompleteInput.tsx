@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import {
   LOCATION_AUTOCOMPLETE_DEBOUNCE_MS,
   LOCATION_AUTOCOMPLETE_MIN_QUERY_LENGTH,
@@ -20,6 +27,9 @@ interface LocationAutocompleteInputProps {
   placeholder: string;
   locationField: LocationField;
   error?: string;
+  /** Optional icon or prefix shown inside the field (e.g. map pin). */
+  startAdornment?: ReactNode;
+  labelClassName?: string;
   onInputChange: (nextValue: string) => void;
   onSuggestionSelect: (selection: {
     label: string;
@@ -34,6 +44,8 @@ export function LocationAutocompleteInput({
   placeholder,
   locationField,
   error,
+  startAdornment,
+  labelClassName = "mb-2 block text-sm font-semibold text-emerald-800",
   onInputChange,
   onSuggestionSelect,
 }: LocationAutocompleteInputProps) {
@@ -190,42 +202,83 @@ export function LocationAutocompleteInput({
 
   return (
     <div className="md:col-span-1">
-      <label htmlFor={id} className="mb-2 block text-sm font-semibold text-emerald-800">
+      <label htmlFor={id} className={labelClassName}>
         {label}
       </label>
 
       <div className="relative">
-        <input
-          id={id}
-          type="text"
-          value={locationField.inputText}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => {
-            blurTimeoutRef.current = window.setTimeout(() => {
-              setIsFocused(false);
-            }, 100);
-          }}
-          onChange={(event) => {
-            onInputChange(event.target.value);
-            setSuggestions([]);
-            setHighlightedIndex(-1);
-            setRequestError(null);
-            setIsLoading(false);
-          }}
-          onKeyDown={handleInputKeyDown}
-          className={`w-full rounded-xl border p-3 text-zinc-900 transition-all outline-none ${
-            error || selectionRequiredInvalid
-              ? "border-red-300 focus:border-red-500 focus:ring-1 focus:ring-red-500"
-              : "border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
-          }`}
-          placeholder={placeholder}
-          autoComplete="off"
-          role="combobox"
-          aria-expanded={showDropdown}
-          aria-controls={`${id}-autocomplete-list`}
-          aria-autocomplete="list"
-          aria-invalid={Boolean(error || selectionRequiredInvalid)}
-        />
+        {startAdornment ? (
+          <div
+            className={`flex w-full items-center gap-2 rounded-xl border bg-zinc-50 text-zinc-900 transition-all ${
+              error || selectionRequiredInvalid
+                ? "border-red-300 focus-within:border-red-500 focus-within:ring-1 focus-within:ring-red-500"
+                : "border-zinc-200/80 focus-within:border-emerald-500 focus-within:ring-1 focus-within:ring-emerald-500"
+            }`}
+          >
+            <span className="pl-3 text-zinc-500 shrink-0" aria-hidden>
+              {startAdornment}
+            </span>
+            <input
+              id={id}
+              type="text"
+              value={locationField.inputText}
+              onFocus={() => setIsFocused(true)}
+              onBlur={() => {
+                blurTimeoutRef.current = window.setTimeout(() => {
+                  setIsFocused(false);
+                }, 100);
+              }}
+              onChange={(event) => {
+                onInputChange(event.target.value);
+                setSuggestions([]);
+                setHighlightedIndex(-1);
+                setRequestError(null);
+                setIsLoading(false);
+              }}
+              onKeyDown={handleInputKeyDown}
+              className="min-w-0 flex-1 border-0 bg-transparent py-3 pr-3 pl-0 text-zinc-900 outline-none"
+              placeholder={placeholder}
+              autoComplete="off"
+              role="combobox"
+              aria-expanded={showDropdown}
+              aria-controls={`${id}-autocomplete-list`}
+              aria-autocomplete="list"
+              aria-invalid={Boolean(error || selectionRequiredInvalid)}
+            />
+          </div>
+        ) : (
+          <input
+            id={id}
+            type="text"
+            value={locationField.inputText}
+            onFocus={() => setIsFocused(true)}
+            onBlur={() => {
+              blurTimeoutRef.current = window.setTimeout(() => {
+                setIsFocused(false);
+              }, 100);
+            }}
+            onChange={(event) => {
+              onInputChange(event.target.value);
+              setSuggestions([]);
+              setHighlightedIndex(-1);
+              setRequestError(null);
+              setIsLoading(false);
+            }}
+            onKeyDown={handleInputKeyDown}
+            className={`w-full rounded-xl border p-3 text-zinc-900 transition-all outline-none ${
+              error || selectionRequiredInvalid
+                ? "border-red-300 focus:border-red-500 focus:ring-1 focus:ring-red-500"
+                : "border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+            }`}
+            placeholder={placeholder}
+            autoComplete="off"
+            role="combobox"
+            aria-expanded={showDropdown}
+            aria-controls={`${id}-autocomplete-list`}
+            aria-autocomplete="list"
+            aria-invalid={Boolean(error || selectionRequiredInvalid)}
+          />
+        )}
 
         {showDropdown && (
           <div

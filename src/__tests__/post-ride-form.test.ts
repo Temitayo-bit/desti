@@ -36,7 +36,6 @@ function validFormValues(overrides: Partial<PostRideFormValues> = {}): PostRideF
     preferredDepartAt: "",
     seatsTotal: "3",
     priceDollars: "12.50",
-    distanceCategory: "MEDIUM",
     musicPreference: "",
     hasAc: "",
     hasTrunkSpace: "",
@@ -61,7 +60,7 @@ describe("post-ride form helpers", () => {
     expect(result.submitError).toBeNull();
     expect(result.fieldErrors).toEqual({});
     expect(result.payload).not.toBeNull();
-    expect(result.payload?.distanceCategory).toBe("MEDIUM");
+    expect(result.payload?.distanceCategory).toBe("MEDIUM"); // Stetson → Daytona ≈ 33 km straight-line
     expect(result.payload?.priceCents).toBe(1250);
     expect(result.payload?.pickupInstructions).toBeUndefined();
     expect(result.payload?.dropoffInstructions).toBeUndefined();
@@ -70,6 +69,18 @@ describe("post-ride form helpers", () => {
     expect(result.payload?.hasAc).toBeUndefined();
     expect(result.payload?.hasTrunkSpace).toBeUndefined();
     expect(result.payload?.vehicleType).toBeUndefined();
+  });
+
+  it("computes SHORT when origin and destination are close", () => {
+    const now = new Date("2030-01-01T09:00:00.000Z");
+    const result = buildPostRidePayload(
+      validFormValues({
+        destination: validLocationField("Nearby", 29.04, -81.3),
+      }),
+      now,
+    );
+
+    expect(result.payload?.distanceCategory).toBe("SHORT");
   });
 
   it("builds payload with optional ride attributes when provided", () => {
@@ -102,7 +113,6 @@ describe("post-ride form helpers", () => {
         latestDepartAt: "2030-01-01T08:15",
         seatsTotal: "9",
         priceDollars: "-1",
-        distanceCategory: "",
       }),
       now,
     );

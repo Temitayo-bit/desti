@@ -1,9 +1,11 @@
+import { distanceCategoryFromLocationFields } from "@/lib/distance-category";
+import type { DistanceCategoryOption } from "@/lib/distance-category";
 import {
   hasValidLocationFieldSelection,
   type LocationField,
 } from "@/lib/location-field";
 
-export type DistanceCategoryOption = "SHORT" | "MEDIUM" | "LONG";
+export type { DistanceCategoryOption };
 
 export interface PostTripRequestFormValues {
   origin: LocationField;
@@ -12,7 +14,6 @@ export interface PostTripRequestFormValues {
   latestDesiredAt: string;
   preferredDepartAt: string;
   seatsNeeded: string;
-  distanceCategory: "" | DistanceCategoryOption;
   pickupInstructions: string;
   dropoffInstructions: string;
 }
@@ -112,8 +113,13 @@ export function buildPostTripRequestPayload(
     fieldErrors.latestDesiredAt = "Latest desired departure is required.";
   }
 
-  if (!formValues.distanceCategory) {
-    fieldErrors.distanceCategory = "Distance category is required.";
+  const computedDistanceCategory = distanceCategoryFromLocationFields(
+    formValues.origin,
+    formValues.destination,
+  );
+  if (!computedDistanceCategory) {
+    fieldErrors.distanceCategory =
+      "Select origin and destination first; distance category is calculated automatically.";
   }
 
   const earliestIso = localDateTimeToIso(formValues.earliestDesiredAt);
@@ -191,7 +197,7 @@ export function buildPostTripRequestPayload(
     destinationText,
     earliestDesiredAt: earliestIso!,
     latestDesiredAt: latestIso!,
-    distanceCategory: formValues.distanceCategory as DistanceCategoryOption,
+    distanceCategory: computedDistanceCategory!,
     seatsNeeded: seatsNeeded!,
     ...(pickupInstructions ? { pickupInstructions } : {}),
     ...(dropoffInstructions ? { dropoffInstructions } : {}),

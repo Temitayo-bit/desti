@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { act, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LocationAutocompleteInput } from "@/components/LocationAutocompleteInput";
@@ -57,6 +57,7 @@ describe("LocationAutocompleteInput", () => {
   });
 
   afterEach(() => {
+    cleanup();
     vi.clearAllMocks();
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
@@ -103,11 +104,11 @@ describe("LocationAutocompleteInput", () => {
   it("renders loading, no-results, and error states", async () => {
     const fetchMock = vi.mocked(fetch);
 
-    let resolveFirst: ((value: Response) => void) | null = null;
+    const pendingFirst: { release?: (value: Response) => void } = {};
     fetchMock.mockImplementationOnce(
       () =>
         new Promise<Response>((resolve) => {
-          resolveFirst = resolve;
+          pendingFirst.release = resolve;
         }),
     );
 
@@ -123,9 +124,7 @@ describe("LocationAutocompleteInput", () => {
 
     expect(screen.queryByText("Loading suggestions...")).not.toBeNull();
 
-    if (resolveFirst) {
-      resolveFirst(mockJsonResponse({ features: [] }));
-    }
+    pendingFirst.release?.(mockJsonResponse({ features: [] }));
 
     await waitFor(() => {
       expect(screen.queryByText("No results found.")).not.toBeNull();

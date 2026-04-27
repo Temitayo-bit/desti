@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import {
     DESTINATION_THRESHOLD_KM,
     findCandidateRidesForTripRequest,
+    findCandidateTripRequestsForRide,
     haversineDistanceKm,
     ORIGIN_THRESHOLD_KM,
     TIME_WINDOW_MINUTES,
@@ -82,6 +83,49 @@ const managedMatchSelect = {
     },
 } satisfies Prisma.MatchSelect;
 
+const rideEligibilitySelect = {
+    id: true,
+    driverUserId: true,
+    status: true,
+    originText: true,
+    destinationText: true,
+    originLatitude: true,
+    originLongitude: true,
+    destinationLatitude: true,
+    destinationLongitude: true,
+    preferredDepartAt: true,
+    earliestDepartAt: true,
+    seatsAvailable: true,
+} satisfies Prisma.RideSelect;
+
+const driverSuggestedMatchSelect = {
+    id: true,
+    state: true,
+    scoreSnapshot: true,
+    originDistanceSnapshot: true,
+    destinationDistanceSnapshot: true,
+    timeDifferenceSnapshot: true,
+    tripRequest: {
+        select: {
+            id: true,
+            originText: true,
+            destinationText: true,
+            earliestDesiredAt: true,
+            latestDesiredAt: true,
+            preferredDepartAt: true,
+            seatsNeeded: true,
+            riderUserId: true,
+            rider: {
+                select: {
+                    name: true,
+                    clerkUserId: true,
+                    profilePictureUrl: true,
+                },
+            },
+        },
+    },
+} satisfies Prisma.MatchSelect;
+
 const MATCH_STATE = {
     SUGGESTED: "SUGGESTED",
     ACCEPTED: "ACCEPTED",
@@ -116,6 +160,10 @@ type ManagedMatchRecord = Prisma.MatchGetPayload<{
     select: typeof managedMatchSelect;
 }>;
 
+type DriverSuggestedMatchRecord = Prisma.MatchGetPayload<{
+    select: typeof driverSuggestedMatchSelect;
+}>;
+
 export interface ActiveTripRequestMatch {
     matchId: string;
     rideId: string;
@@ -136,6 +184,24 @@ export interface ManagedTripRequestMatch extends ActiveTripRequestMatch {
     rejectedAt: string | null;
     expiredAt: string | null;
     expirationReason: string | null;
+}
+
+export interface SuggestedTripRequestForDriver {
+    matchId: string;
+    tripRequestId: string;
+    state: MatchState;
+    scoreSnapshot: number;
+    originText: string;
+    destinationText: string;
+    earliestDesiredAt: string;
+    latestDesiredAt: string;
+    preferredDepartAt: string | null;
+    seatsNeeded: number;
+    originDistanceSnapshot: number;
+    destinationDistanceSnapshot: number;
+    timeDifferenceSnapshot: number;
+    riderName: string | null;
+    riderProfilePictureUrl: string | null;
 }
 
 export class MatchLifecycleError extends Error {
@@ -265,6 +331,30 @@ function toActiveMatch(record: SuggestedMatchRecord): ActiveTripRequestMatch {
     };
 }
 
+function toSuggestedTripRequestForDriver(
+    record: DriverSuggestedMatchRecord
+): SuggestedTripRequestForDriver {
+    return {
+        matchId: record.id,
+        tripRequestId: record.tripRequest.id,
+        state: record.state,
+        scoreSnapshot: record.scoreSnapshot,
+        originText: record.tripRequest.originText,
+        destinationText: record.tripRequest.destinationText,
+        earliestDesiredAt: record.tripRequest.earliestDesiredAt.toISOString(),
+        latestDesiredAt: record.tripRequest.latestDesiredAt.toISOString(),
+        preferredDepartAt: record.tripRequest.preferredDepartAt
+            ? record.tripRequest.preferredDepartAt.toISOString()
+            : null,
+        seatsNeeded: record.tripRequest.seatsNeeded,
+        originDistanceSnapshot: record.originDistanceSnapshot,
+        destinationDistanceSnapshot: record.destinationDistanceSnapshot,
+        timeDifferenceSnapshot: record.timeDifferenceSnapshot,
+        riderName: record.tripRequest.rider.name,
+        riderProfilePictureUrl: record.tripRequest.rider.profilePictureUrl,
+    };
+}
+
 function toManagedMatch(record: ManagedMatchRecord): ManagedTripRequestMatch {
     return {
         ...toActiveMatch(record),
@@ -320,6 +410,24 @@ async function expireAllNonExpiredMatches(
     await prisma.match.updateMany({
         where: {
             tripRequestId,
+            state: { not: MATCH_STATE.EXPIRED },
+        },
+        data: {
+            state: MATCH_STATE.EXPIRED,
+            expiredAt: now,
+            expirationReason: reason,
+        },
+    });
+}
+
+async function expireAllNonExpiredMatchesForRide(
+    rideId: string,
+    reason: string,
+    now: Date
+): Promise<void> {
+    await prisma.match.updateMany({
+        where: {
+            rideId,
             state: { not: MATCH_STATE.EXPIRED },
         },
         data: {
@@ -506,6 +614,199 @@ export async function persistMatchesForTripRequest(
         data: rowsToCreate,
         skipDuplicates: true,
     });
+}
+
+async function assertDriverOwnsRide(
+    rideId: string,
+    driverUserId: string
+): Promise<void> {
+    const ride = await prisma.ride.findUnique({
+        where: { id: rideId },
+        select: { driverUserId: true },
+    });
+    if (!ride) {
+        throw new MatchLifecycleError("Ride not found.", {
+            statusCode: 404,
+            error: "Not Found",
+            code: "RIDE_NOT_FOUND",
+        });
+    }
+    if (ride.driverUserId !== driverUserId) {
+        throw new MatchLifecycleError(
+            "You are not allowed to access matches for this ride.",
+            {
+                statusCode: 403,
+                error: "Forbidden",
+                code: "RIDE_MATCH_FORBIDDEN",
+            }
+        );
+    }
+}
+
+export async function expireInvalidMatchesForRide(rideId: string): Promise<void> {
+    const now = new Date();
+    const ride = await prisma.ride.findUnique({ where: { id: rideId } });
+    if (!ride) {
+        return;
+    }
+    if (ride.status !== "ACTIVE") {
+        await expireAllNonExpiredMatchesForRide(rideId, "RIDE_NOT_ACTIVE", now);
+        return;
+    }
+    const rideTime = ride.preferredDepartAt ?? ride.earliestDepartAt;
+    if (rideTime.getTime() <= now.getTime()) {
+        await expireAllNonExpiredMatchesForRide(rideId, "RIDE_DEPARTURE_PASSED", now);
+        return;
+    }
+    if (
+        ride.originLatitude === null ||
+        ride.originLongitude === null ||
+        ride.destinationLatitude === null ||
+        ride.destinationLongitude === null
+    ) {
+        await expireAllNonExpiredMatchesForRide(rideId, "RIDE_COORDINATES_REQUIRED", now);
+        return;
+    }
+
+    const existingNonExpired = await prisma.match.findMany({
+        where: {
+            rideId,
+            state: { not: MATCH_STATE.EXPIRED },
+        },
+        select: {
+            id: true,
+            tripRequest: {
+                select: tripRequestLifecycleSelect,
+            },
+            ride: {
+                select: rideEligibilitySelect,
+            },
+        },
+    });
+
+    const ineligibleIds = existingNonExpired
+        .filter(
+            (m) =>
+                !isRideMatchEligible(
+                    m.ride as SuggestedMatchRecord["ride"],
+                    m.tripRequest,
+                    now
+                )
+        )
+        .map((m) => m.id);
+
+    if (ineligibleIds.length === 0) {
+        return;
+    }
+
+    await prisma.match.updateMany({
+        where: {
+            id: { in: ineligibleIds },
+            state: { not: MATCH_STATE.EXPIRED },
+        },
+        data: {
+            state: MATCH_STATE.EXPIRED,
+            expiredAt: now,
+            expirationReason: "PAIR_NO_LONGER_MATCH_ELIGIBLE",
+        },
+    });
+}
+
+export async function persistMatchesForRide(rideId: string): Promise<void> {
+    await expireInvalidMatchesForRide(rideId);
+    const ride = await prisma.ride.findUnique({ where: { id: rideId } });
+    if (!ride) {
+        return;
+    }
+    if (ride.status !== "ACTIVE") {
+        return;
+    }
+    const rideTime = ride.preferredDepartAt ?? ride.earliestDepartAt;
+    const now = new Date();
+    if (rideTime.getTime() <= now.getTime()) {
+        return;
+    }
+    if (
+        ride.originLatitude === null ||
+        ride.originLongitude === null ||
+        ride.destinationLatitude === null ||
+        ride.destinationLongitude === null
+    ) {
+        return;
+    }
+
+    let candidates;
+    try {
+        candidates = await findCandidateTripRequestsForRide(rideId);
+    } catch (error) {
+        if (error instanceof TripRequestRideMatchingError) {
+            if (error.code === "RIDE_NOT_FOUND") {
+                return;
+            }
+        }
+        throw error;
+    }
+
+    if (candidates.length === 0) {
+        return;
+    }
+
+    const tripRequestIds = candidates.map((c) => c.tripRequestId);
+    const existingRows = await prisma.match.findMany({
+        where: {
+            rideId,
+            tripRequestId: { in: tripRequestIds },
+        },
+        select: {
+            tripRequestId: true,
+            state: true,
+        },
+    });
+    const existingByTrip = new Map(
+        existingRows.map((row) => [row.tripRequestId, row.state])
+    );
+
+    const rowsToCreate = candidates
+        .filter((candidate) => {
+            return !existingByTrip.get(candidate.tripRequestId);
+        })
+        .map((candidate) => ({
+            tripRequestId: candidate.tripRequestId,
+            rideId,
+            state: MATCH_STATE.SUGGESTED,
+            scoreSnapshot: candidate.score,
+            originDistanceSnapshot: candidate.originDistance,
+            destinationDistanceSnapshot: candidate.destinationDistance,
+            timeDifferenceSnapshot: candidate.timeDifference,
+        }));
+
+    if (rowsToCreate.length === 0) {
+        return;
+    }
+
+    await prisma.match.createMany({
+        data: rowsToCreate,
+        skipDuplicates: true,
+    });
+}
+
+export async function getActiveMatchesForDriverRide(
+    rideId: string,
+    driverUserId: string
+): Promise<SuggestedTripRequestForDriver[]> {
+    await assertDriverOwnsRide(rideId, driverUserId);
+    await persistMatchesForRide(rideId);
+
+    const activeMatches = await prisma.match.findMany({
+        where: {
+            rideId,
+            state: MATCH_STATE.SUGGESTED,
+        },
+        orderBy: [{ scoreSnapshot: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+        select: driverSuggestedMatchSelect,
+    });
+
+    return activeMatches.map(toSuggestedTripRequestForDriver);
 }
 
 export async function getActiveMatchesForTripRequest(

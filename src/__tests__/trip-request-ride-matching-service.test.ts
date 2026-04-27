@@ -22,19 +22,23 @@ import {
     MAX_MATCH_RESULTS,
     ORIGIN_THRESHOLD_KM,
     TIME_WINDOW_MINUTES,
-    TripRequestRideMatchingError,
 } from "@/services/trip-request-ride-matching-service";
 
 function fakeTripRequest(overrides: Record<string, unknown> = {}) {
     return {
         id: "trip-1",
         riderUserId: "rider-1",
+        status: "ACTIVE",
+        originText: "Stetson University",
+        destinationText: "Daytona Beach",
         originLatitude: 29.0361,
         originLongitude: -81.302,
         destinationLatitude: 29.2108,
         destinationLongitude: -81.0228,
         earliestDesiredAt: new Date("2030-01-01T10:00:00.000Z"),
+        latestDesiredAt: new Date("2030-01-01T12:00:00.000Z"),
         preferredDepartAt: null,
+        seatsNeeded: 1,
         ...overrides,
     };
 }
@@ -305,7 +309,7 @@ describe("trip request ride matching service", () => {
 
         await expect(
             findCandidateRidesForTripRequest("trip-missing")
-        ).rejects.toMatchObject<TripRequestRideMatchingError>({
+        ).rejects.toMatchObject({
             statusCode: 404,
             code: "TRIP_REQUEST_NOT_FOUND",
         });
@@ -320,7 +324,7 @@ describe("trip request ride matching service", () => {
 
         await expect(
             findCandidateRidesForTripRequest("trip-1")
-        ).rejects.toMatchObject<TripRequestRideMatchingError>({
+        ).rejects.toMatchObject({
             statusCode: 400,
             code: "TRIP_REQUEST_COORDINATES_REQUIRED",
         });

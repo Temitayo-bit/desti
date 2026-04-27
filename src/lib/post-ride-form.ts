@@ -1,9 +1,11 @@
+import { distanceCategoryFromLocationFields } from "@/lib/distance-category";
+import type { DistanceCategoryOption } from "@/lib/distance-category";
 import {
   hasValidLocationFieldSelection,
   type LocationField,
 } from "@/lib/location-field";
 
-export type DistanceCategoryOption = "SHORT" | "MEDIUM" | "LONG";
+export type { DistanceCategoryOption } from "@/lib/distance-category";
 export type MusicPreferenceOption = "MUSIC_ALLOWED" | "NO_MUSIC";
 export type VehicleTypeOption =
   | "SEDAN"
@@ -21,7 +23,6 @@ export interface PostRideFormValues {
   preferredDepartAt: string;
   seatsTotal: string;
   priceDollars: string;
-  distanceCategory: "" | DistanceCategoryOption;
   musicPreference: "" | MusicPreferenceOption;
   hasAc: "" | "true" | "false";
   hasTrunkSpace: "" | "true" | "false";
@@ -135,8 +136,14 @@ export function buildPostRidePayload(
   if (!formValues.latestDepartAt) {
     fieldErrors.latestDepartAt = "Latest departure is required.";
   }
-  if (!formValues.distanceCategory) {
-    fieldErrors.distanceCategory = "Distance category is required.";
+
+  const computedDistanceCategory = distanceCategoryFromLocationFields(
+    formValues.origin,
+    formValues.destination,
+  );
+  if (!computedDistanceCategory) {
+    fieldErrors.distanceCategory =
+      "Select origin and destination first; distance category is calculated automatically.";
   }
 
   const earliestIso = localDateTimeToIso(formValues.earliestDepartAt);
@@ -198,7 +205,7 @@ export function buildPostRidePayload(
     destinationText,
     earliestDepartAt: earliestIso!,
     latestDepartAt: latestIso!,
-    distanceCategory: formValues.distanceCategory as DistanceCategoryOption,
+    distanceCategory: computedDistanceCategory!,
     priceCents: priceCents!,
     seatsTotal: seatsTotal!,
     ...(formValues.musicPreference

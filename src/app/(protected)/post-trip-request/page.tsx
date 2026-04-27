@@ -11,6 +11,10 @@ import {
   updateLocationFieldInput,
 } from "@/lib/location-field";
 import {
+  distanceCategoryFromLocationFields,
+  formatPostRideDistanceCategory,
+} from "@/lib/distance-category";
+import {
   type PostTripRequestFieldErrors,
   type PostTripRequestFormValues,
   buildPostTripRequestPayload,
@@ -29,7 +33,6 @@ const initialFormValues: PostTripRequestFormValues = {
   latestDesiredAt: "",
   preferredDepartAt: "",
   seatsNeeded: "1",
-  distanceCategory: "",
   pickupInstructions: "",
   dropoffInstructions: "",
 };
@@ -119,6 +122,11 @@ export default function PostTripRequestPage() {
     return "Post Trip Request";
   }, [isSubmitting]);
 
+  const computedDistanceCategory = useMemo(
+    () => distanceCategoryFromLocationFields(formValues.origin, formValues.destination),
+    [formValues.origin, formValues.destination],
+  );
+
   type NonLocationField = Exclude<
     keyof PostTripRequestFormValues,
     | "origin"
@@ -142,7 +150,11 @@ export default function PostTripRequestPage() {
         ...prev,
         origin: updateLocationFieldInput(prev.origin, nextValue),
       }));
-      setFieldErrors((prev) => ({ ...prev, originText: undefined }));
+      setFieldErrors((prev) => ({
+        ...prev,
+        originText: undefined,
+        distanceCategory: undefined,
+      }));
       return;
     }
 
@@ -150,7 +162,11 @@ export default function PostTripRequestPage() {
       ...prev,
       destination: updateLocationFieldInput(prev.destination, nextValue),
     }));
-    setFieldErrors((prev) => ({ ...prev, destinationText: undefined }));
+    setFieldErrors((prev) => ({
+      ...prev,
+      destinationText: undefined,
+      distanceCategory: undefined,
+    }));
   }
 
   function applyLocationSelection(
@@ -166,7 +182,11 @@ export default function PostTripRequestPage() {
         ...prev,
         origin: createLocationFieldFromSelection(selection),
       }));
-      setFieldErrors((prev) => ({ ...prev, originText: undefined }));
+      setFieldErrors((prev) => ({
+        ...prev,
+        originText: undefined,
+        distanceCategory: undefined,
+      }));
       return;
     }
 
@@ -174,7 +194,11 @@ export default function PostTripRequestPage() {
       ...prev,
       destination: createLocationFieldFromSelection(selection),
     }));
-    setFieldErrors((prev) => ({ ...prev, destinationText: undefined }));
+    setFieldErrors((prev) => ({
+      ...prev,
+      destinationText: undefined,
+      distanceCategory: undefined,
+    }));
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -408,27 +432,23 @@ export default function PostTripRequestPage() {
 
                 <div>
                   <label
-                    htmlFor="distanceCategory"
+                    htmlFor="distanceCategoryDisplay"
                     className="block text-sm font-semibold text-emerald-800 mb-2"
                   >
                     Distance Category
                   </label>
-                  <select
-                    id="distanceCategory"
-                    value={formValues.distanceCategory}
-                    onChange={(e) =>
-                      updateField(
-                        "distanceCategory",
-                        e.target.value as PostTripRequestFormValues["distanceCategory"],
-                      )
+                  <input
+                    id="distanceCategoryDisplay"
+                    type="text"
+                    readOnly
+                    disabled
+                    value={
+                      computedDistanceCategory
+                        ? formatPostRideDistanceCategory(computedDistanceCategory)
+                        : "Select origin and destination first"
                     }
-                    className="w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-3 text-zinc-900 transition-all outline-none"
-                  >
-                    <option value="">Select distance</option>
-                    <option value="SHORT">SHORT</option>
-                    <option value="MEDIUM">MEDIUM</option>
-                    <option value="LONG">LONG</option>
-                  </select>
+                    className="w-full cursor-not-allowed bg-zinc-100 border border-zinc-200 rounded-xl p-3 text-zinc-800"
+                  />
                   {fieldErrors.distanceCategory && (
                     <p className="mt-1 text-sm text-red-600">
                       {fieldErrors.distanceCategory}
