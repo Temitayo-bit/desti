@@ -677,7 +677,7 @@ export default function DashboardPage() {
                                     </span>
                                   </div>
                                   <Link
-                                    href="/my-rides"
+                                    href={`/rides/${ride.id}`}
                                     className="inline-flex w-full items-center justify-center gap-1 rounded-xl bg-[#0d3d2e] px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-[#0d3d2e]/25 transition hover:bg-[#0a2f24] sm:w-auto"
                                   >
                                     Manage ride
@@ -834,15 +834,23 @@ export default function DashboardPage() {
                         const busy = pendingActions[offer.id] ?? null;
                         const isBusy = Boolean(busy);
                         const driverName = offer.driver?.name?.trim() || "A driver";
-                        const ctx = `Wants to join your request: ${offer.tripRequest.originText} → ${offer.tripRequest.destinationText}`;
+                        const price = `$${(offer.priceCents / 100).toFixed(2)}`;
+                        const seats = offer.seatsOffered;
+                        const route = `${offer.tripRequest.originText} → ${offer.tripRequest.destinationText}`;
                         return (
                           <li
                             key={offer.id}
                             className="rounded-xl border border-zinc-200/90 bg-gradient-to-b from-zinc-50/90 to-white p-3.5 shadow-sm"
                           >
                             <p className="font-semibold text-zinc-900">{driverName}</p>
-                            <p className="mt-0.5 text-xs text-zinc-500">Trip request offer</p>
-                            <p className="mt-1 text-sm text-zinc-600 line-clamp-2">{ctx}</p>
+                            <p className="mt-0.5 text-xs text-zinc-500">Offered a ride on your trip request</p>
+                            <p className="mt-1 text-sm text-zinc-600 line-clamp-2">{route}</p>
+                            <p className="mt-1 text-sm font-semibold text-[#0d3d2e]">
+                              {price} &middot; {seats} {seats === 1 ? "seat" : "seats"}
+                            </p>
+                            {offer.message && (
+                              <p className="mt-1 text-xs text-zinc-500 italic">&ldquo;{offer.message}&rdquo;</p>
+                            )}
                             <p className="mt-1 text-xs text-zinc-400">
                               Sent {formatRelativeTime(offer.createdAt)}
                             </p>

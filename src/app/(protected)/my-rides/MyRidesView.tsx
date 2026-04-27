@@ -871,18 +871,12 @@ export function MyRidesView({
                               {formatDistanceMilesLabel(ride.distanceCategory)}
                             </span>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const el = document.activeElement;
-                              lastFocusedElementRef.current =
-                                el instanceof HTMLElement ? el : null;
-                              setSelectedRide(ride);
-                            }}
+                          <Link
+                            href={`/rides/${ride.id}`}
                             className="inline-flex items-center justify-center self-end rounded-xl bg-[#006837] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#0d3d2e] sm:self-auto"
                           >
                             Manage Ride
-                          </button>
+                          </Link>
                         </div>
                         <ConfirmedBookingsList
                           bookings={ride.confirmedBookings}
@@ -953,20 +947,12 @@ export function MyRidesView({
                       </div>
 
                       <div className="mt-4 flex flex-wrap justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const activeElement = document.activeElement;
-                            lastFocusedElementRef.current =
-                              activeElement instanceof HTMLElement
-                                ? activeElement
-                                : null;
-                            setSelectedRide(ride);
-                          }}
+                        <Link
+                          href={`/rides/${ride.id}`}
                           className="rounded-xl bg-[#006837] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#0d3d2e]"
                         >
                           Manage Ride
-                        </button>
+                        </Link>
                       </div>
                     </div>
 
