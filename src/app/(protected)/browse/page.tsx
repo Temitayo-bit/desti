@@ -1,73 +1,69 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import Link from "next/link";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
-import { format } from "date-fns";
+import { endOfDay, format, startOfDay } from "date-fns";
 import type {
   DistanceCategory,
   MusicPreference,
   VehicleType,
 } from "@prisma/client";
+import { Calendar, MapPin, Search, User } from "lucide-react";
 import { X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ProtectedShell } from "../_components/ProtectedShell";
 import { RidesViewToggle } from "../_components/RidesViewToggle";
 import { MyRidesView } from "../my-rides/MyRidesView";
-import {
-  filterRidesForBrowse,
-  type BrowseRidesQuickFilter,
-} from "@/lib/browse-trip-requests";
+import { filterRidesForBrowse } from "@/lib/browse-trip-requests";
 import { normalizeRidesView } from "@/lib/ride-view";
 import { UserAvatar } from "@/components/UserAvatar";
+import {
+  type BrowseTimeWindow,
+  type SidebarApiFilters,
+  buildActiveDistanceSet,
+  distanceCategoryLabel,
+  EMPTY_SIDEBAR_API,
+  formatDistanceMilesLabel,
+  rideDepartureTimeMatchesWindow,
+} from "@/lib/browse-ride-filters";
+import { BrowsePageFooter } from "./BrowsePageFooter";
+import { BrowseRidesFilterSidebar } from "./BrowseRidesFilterSidebar";
 
-// --- Advanced filter types ---
-interface AdvancedFilters {
-  distanceCategory: string;
-  seatsMin: string;
-  earliestAfter: string;
-  latestBefore: string;
-  priceMin: string;
-  priceMax: string;
-  musicPreference: string;
-  hasAc: string;
-  hasTrunkSpace: string;
-  vehicleType: string;
-}
-
-const EMPTY_ADVANCED_FILTERS: AdvancedFilters = {
-  distanceCategory: "",
-  seatsMin: "",
-  earliestAfter: "",
-  latestBefore: "",
-  priceMin: "",
-  priceMax: "",
-  musicPreference: "",
-  hasAc: "",
-  hasTrunkSpace: "",
-  vehicleType: "",
-};
-
-function isAdvancedFiltersActive(filters: AdvancedFilters): boolean {
-  return Object.values(filters).some((v) => v !== "");
-}
-
-function countActiveAdvancedFilters(filters: AdvancedFilters): number {
-  return Object.values(filters).filter((v) => v !== "").length;
-}
-
-function buildApiQueryString(filters: AdvancedFilters): string {
+function buildBrowseListQuery(opts: {
+  sidebar: SidebarApiFilters;
+  /** When set, narrow the day; API uses earliestAfter default now if unset */
+  departDate: string;
+  /** Single distance for API; omit when multiple or none */
+  distanceCategoryForApi: DistanceCategory | null;
+  cursor: string | null;
+}): string {
   const params = new URLSearchParams();
-  if (filters.distanceCategory) params.set("distanceCategory", filters.distanceCategory);
-  if (filters.seatsMin) params.set("seatsMin", filters.seatsMin);
-  if (filters.earliestAfter) params.set("earliestAfter", new Date(filters.earliestAfter).toISOString());
-  if (filters.latestBefore) params.set("latestBefore", new Date(filters.latestBefore).toISOString());
-  if (filters.musicPreference) params.set("musicPreference", filters.musicPreference);
-  if (filters.hasAc) params.set("hasAc", filters.hasAc);
-  if (filters.hasTrunkSpace) params.set("hasTrunkSpace", filters.hasTrunkSpace);
-  if (filters.vehicleType) params.set("vehicleType", filters.vehicleType);
-  const qs = params.toString();
-  return qs ? `?${qs}` : "";
+  params.set("limit", "20");
+  if (opts.cursor) params.set("cursor", opts.cursor);
+
+  if (opts.departDate) {
+    const d = new Date(`${opts.departDate}T12:00:00`);
+    if (!Number.isNaN(d.getTime())) {
+      params.set("earliestAfter", startOfDay(d).toISOString());
+      params.set("latestBefore", endOfDay(d).toISOString());
+    }
+  }
+
+  if (opts.distanceCategoryForApi) {
+    params.set("distanceCategory", opts.distanceCategoryForApi);
+  }
+
+  if (opts.sidebar.musicPreference) {
+    params.set("musicPreference", opts.sidebar.musicPreference);
+  }
+  if (opts.sidebar.hasAc) params.set("hasAc", opts.sidebar.hasAc);
+  if (opts.sidebar.hasTrunkSpace) {
+    params.set("hasTrunkSpace", opts.sidebar.hasTrunkSpace);
+  }
+  if (opts.sidebar.vehicleType) {
+    params.set("vehicleType", opts.sidebar.vehicleType);
+  }
+  return `?${params.toString()}`;
 }
 
 // --- Types ---
@@ -145,13 +141,6 @@ const UsersIcon = () => (
   </svg>
 );
 
-const ArrowRightIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-400 group-hover:text-emerald-600 transition-colors">
-    <line x1="5" y1="12" x2="19" y2="12"></line>
-    <polyline points="12 5 19 12 12 19"></polyline>
-  </svg>
-);
-
 // --- Component ---
 export default function BrowseRidesPage() {
   const searchParams = useSearchParams();
@@ -171,10 +160,19 @@ export default function BrowseRidesPage() {
     } | null;
   } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeFilter, setActiveFilter] = useState<BrowseRidesQuickFilter>("All");
-  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
-  const [advancedFilters, setAdvancedFilters] = useState<AdvancedFilters>({ ...EMPTY_ADVANCED_FILTERS });
-  const [pendingAdvancedFilters, setPendingAdvancedFilters] = useState<AdvancedFilters>({ ...EMPTY_ADVANCED_FILTERS });
+  const [heroDestinationDraft, setHeroDestinationDraft] = useState("");
+  const [departDate, setDepartDate] = useState(""); // yyyy-mm-dd, optional
+  const [distShort, setDistShort] = useState(true);
+  const [distMedium, setDistMedium] = useState(true);
+  const [distLong, setDistLong] = useState(true);
+  const [timeWindow, setTimeWindow] = useState<BrowseTimeWindow | null>(null);
+  const [sidebarApi, setSidebarApi] = useState<SidebarApiFilters>({ ...EMPTY_SIDEBAR_API });
+  const [sortBy, setSortBy] = useState<"earliest" | "price">("earliest");
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadMoreLoading, setLoadMoreLoading] = useState(false);
+  const [browseError, setBrowseError] = useState<string | null>(null);
+  /** Incremented to re-run the browse `useEffect` fetch with a fresh AbortController (e.g. Retry). */
+  const [browseRefetchKey, setBrowseRefetchKey] = useState(0);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [bookingInProgress, setBookingInProgress] = useState(false);
@@ -186,6 +184,55 @@ export default function BrowseRidesPage() {
   const closeRideDialogButtonRef = useRef<HTMLButtonElement | null>(null);
   const lastFocusedElementRef = useRef<HTMLElement | null>(null);
 
+  const distanceCategoryForQuery = useMemo((): DistanceCategory | null => {
+    const s = new Set<DistanceCategory>();
+    if (distShort) s.add("SHORT");
+    if (distMedium) s.add("MEDIUM");
+    if (distLong) s.add("LONG");
+    if (s.size === 0 || s.size > 1) return null;
+    return [...s][0] ?? null;
+  }, [distShort, distMedium, distLong]);
+
+  const fetchRidesList = useCallback(
+    async (opts: { cursor: string | null; append: boolean; signal: AbortSignal }) => {
+      const qs = buildBrowseListQuery({
+        sidebar: sidebarApi,
+        departDate,
+        distanceCategoryForApi: distanceCategoryForQuery,
+        cursor: opts.cursor,
+      });
+      const res = await fetch(`/api/rides${qs}`, { signal: opts.signal });
+      if (!res.ok) {
+        const errBody = (await res.json().catch(() => null)) as { message?: string } | null;
+        throw new Error(errBody?.message ?? "Failed to fetch rides");
+      }
+      const data = (await res.json()) as {
+        items: RideSummary[];
+        nextCursor: string | null;
+      };
+      const next = excludeCancelledRides(data.items);
+      if (opts.append) {
+        setRides((prev) => {
+          const seen = new Set(prev.map((r) => r.id));
+          const merged = [...prev];
+          for (const r of next) {
+            if (!seen.has(r.id)) {
+              seen.add(r.id);
+              merged.push(r);
+            }
+          }
+          return merged;
+        });
+      } else {
+        setRides(next);
+      }
+      setNextCursor(data.nextCursor);
+      setBrowseError(null);
+      return next;
+    },
+    [sidebarApi, departDate, distanceCategoryForQuery],
+  );
+
   useEffect(() => {
     if (currentView !== "browse") {
       return;
@@ -193,25 +240,42 @@ export default function BrowseRidesPage() {
 
     const controller = new AbortController();
 
-    async function fetchRides() {
+    async function run() {
       try {
         setLoading(true);
-        const qs = buildApiQueryString(advancedFilters);
-        const res = await fetch(`/api/rides${qs}`, { signal: controller.signal });
-        if (!res.ok) throw new Error("Failed to fetch rides");
-        const data = await res.json();
-        if (!controller.signal.aborted) {
-          setRides(excludeCancelledRides(data.items));
-        }
+        setBrowseError(null);
+        setRides([]);
+        setNextCursor(null);
+        await fetchRidesList({ cursor: null, append: false, signal: controller.signal });
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") return;
         console.error("Error fetching rides:", err);
+        if (!controller.signal.aborted) {
+          setBrowseError(
+            err instanceof Error ? err.message : "Failed to load rides.",
+          );
+          setRides([]);
+          setNextCursor(null);
+        }
       } finally {
         if (!controller.signal.aborted) {
           setLoading(false);
         }
       }
     }
+
+    void run();
+    return () => {
+      controller.abort();
+    };
+  }, [currentView, fetchRidesList, browseRefetchKey]);
+
+  useEffect(() => {
+    if (currentView !== "browse") {
+      return;
+    }
+
+    const controller = new AbortController();
 
     async function fetchUser() {
       try {
@@ -253,14 +317,13 @@ export default function BrowseRidesPage() {
       }
     }
 
-    fetchRides();
     fetchUser();
     fetchUserBookings();
 
     return () => {
       controller.abort();
     };
-  }, [currentView, advancedFilters]);
+  }, [currentView]);
 
   useEffect(() => {
     if (!selectedRide) return;
@@ -285,23 +348,68 @@ export default function BrowseRidesPage() {
     });
   }, [selectedRide]);
 
-  const filteredRides = filterRidesForBrowse({
-    rides: excludeCancelledRides(rides),
-    currentUserId: currentUser?.clerkUserId ?? null,
+  const filteredRides = useMemo(() => {
+    let list = filterRidesForBrowse({
+      rides: excludeCancelledRides(rides),
+      currentUserId: currentUser?.clerkUserId ?? null,
+      searchQuery,
+      activeFilter: "All",
+    });
+    const dist = buildActiveDistanceSet({
+      short: distShort,
+      medium: distMedium,
+      long: distLong,
+    });
+    if (dist !== "all") {
+      list = list.filter((r) => dist.has(r.distanceCategory));
+    }
+    list = list.filter((r) =>
+      rideDepartureTimeMatchesWindow(r.earliestDepartAt, timeWindow),
+    );
+    if (sortBy === "price") {
+      list = [...list].sort((a, b) => a.priceCents - b.priceCents);
+    } else {
+      list = [...list].sort(
+        (a, b) =>
+          new Date(a.earliestDepartAt).getTime() -
+          new Date(b.earliestDepartAt).getTime(),
+      );
+    }
+    return list;
+  }, [
+    rides,
+    currentUser?.clerkUserId,
     searchQuery,
-    activeFilter,
-  }).filter((ride) => {
-    if (advancedFilters.priceMin) {
-      const minCents = Math.round(Number(advancedFilters.priceMin) * 100);
-      if (Number.isFinite(minCents) && ride.priceCents < minCents) return false;
+    distShort,
+    distMedium,
+    distLong,
+    timeWindow,
+    sortBy,
+  ]);
+
+  const applyHeroSearch = useCallback(() => {
+    setSearchQuery(heroDestinationDraft.trim());
+  }, [heroDestinationDraft]);
+
+  const loadMoreRides = useCallback(async () => {
+    if (!nextCursor || loadMoreLoading || loading) return;
+    const ac = new AbortController();
+    try {
+      setLoadMoreLoading(true);
+      await fetchRidesList({
+        cursor: nextCursor,
+        append: true,
+        signal: ac.signal,
+      });
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") return;
+      setBrowseError(
+        err instanceof Error ? err.message : "Could not load more rides.",
+      );
+    } finally {
+      setLoadMoreLoading(false);
     }
-    if (advancedFilters.priceMax) {
-      const maxCents = Math.round(Number(advancedFilters.priceMax) * 100);
-      if (Number.isFinite(maxCents) && ride.priceCents > maxCents) return false;
-    }
-    return true;
-  });
-  const quickFilters = ["All", "Soon", "Later", "2+ Seats", "Short Trip"] as const;
+  }, [nextCursor, loadMoreLoading, loading, fetchRidesList]);
 
   const formatTimeRange = (earliest: string, latest: string) => {
     try {
@@ -415,7 +523,7 @@ export default function BrowseRidesPage() {
         setTimeout(() => {
           closeRideModal();
         }, 2500);
-        // In a real app we'd refresh the rides list here
+        // Seat counts for this ride are updated in place via setRides / setSelectedRide above.
       } else {
         const data = await res.json();
         alert(`Failed to book: ${data.message || data.error}`);
@@ -444,16 +552,14 @@ export default function BrowseRidesPage() {
           delete next[rideId];
           return next;
         });
-        // We might want to refresh rides since seatsAvailable increased
-        const refreshRes = await fetch("/api/rides");
-        if (refreshRes.ok) {
-          const data = await refreshRes.json();
-          const activeRides = excludeCancelledRides(data.items);
-          setRides(activeRides);
-          // Update selected ride if still open
-          const updated = activeRides.find((r) => r.id === rideId);
-          if (updated) setSelectedRide(updated);
-        }
+        const ac = new AbortController();
+        const refreshed = await fetchRidesList({
+          cursor: null,
+          append: false,
+          signal: ac.signal,
+        });
+        const updated = refreshed?.find((r) => r.id === rideId);
+        if (updated) setSelectedRide(updated);
       } else {
         const data = await res.json();
         alert(`Failed to cancel booking: ${data.message || data.error}`);
@@ -573,197 +679,333 @@ export default function BrowseRidesPage() {
     }
   };
 
-  if (currentView === "my") {
-    return (
-      <ProtectedShell activeNav="browse">
-        <MyRidesView />
-      </ProtectedShell>
-    );
-  }
+  const isMy = currentView === "my";
+
+  const clearBrowseFilters = () => {
+    setDistShort(true);
+    setDistMedium(true);
+    setDistLong(true);
+    setTimeWindow(null);
+    setSidebarApi({ ...EMPTY_SIDEBAR_API });
+    setDepartDate("");
+    setSearchQuery("");
+    setHeroDestinationDraft("");
+  };
 
   return (
-    <ProtectedShell activeNav="browse">
-
-        {/* Top Header Section */}
-        <div className="bg-white rounded-2xl p-6 md:p-8 shadow-sm border border-zinc-100">
-          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6 md:mb-8">
-            <div>
-              <h1 className="text-2xl md:text-3xl font-bold tracking-tight mb-2">Rides</h1>
-              <p className="text-zinc-500">Find rides from verified Stetson students</p>
-            </div>
-            <Link
-              href="/post-ride"
-              className="bg-emerald-800 hover:bg-emerald-900 text-white px-5 py-2.5 rounded-xl font-medium flex items-center justify-center gap-2 transition-colors whitespace-nowrap shadow-sm"
-            >
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <line x1="12" y1="5" x2="12" y2="19"></line>
-                <line x1="5" y1="12" x2="19" y2="12"></line>
-              </svg>
-              Post a Ride
-            </Link>
-          </div>
-
-          <RidesViewToggle activeView="browse" />
-
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-zinc-400">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-            </div>
-            <input
-              type="text"
-              placeholder="Search destinations..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-zinc-50 border border-zinc-200 rounded-xl py-3.5 pl-11 pr-4 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all font-medium placeholder:font-normal"
-            />
-          </div>
-
-          <div className="mt-5 -mx-1 px-1 overflow-x-auto">
-            <div className="flex min-w-max gap-2 pb-1">
-              {quickFilters.map((filterOpt) => (
+    <ProtectedShell
+      activeNav="browse"
+      layout="topnav"
+      topNavActive="browse"
+    >
+        <div className="overflow-hidden rounded-3xl bg-[#006837] shadow-sm">
+          <div className="px-5 py-7 md:px-8 md:py-9">
+            <h1 className="text-2xl font-bold tracking-tight text-white md:text-3xl">
+              {isMy
+                ? "Your posted rides from DeLand."
+                : "Find your next journey from DeLand."}
+            </h1>
+            <p className="mt-1 text-sm text-white/90">
+              {isMy
+                ? "Filter trips you are offering, then manage or update each listing."
+                : "Search by destination and date, then narrow results in the filters."}
+            </p>
+            <div className="mt-5 flex flex-col gap-3 rounded-2xl bg-white p-3 sm:flex-row sm:items-stretch sm:gap-0 md:p-2">
+              <label className="relative flex min-w-0 flex-1 items-center border-b border-zinc-200 px-3 py-2 sm:border-b-0 sm:border-r sm:py-3">
+                <MapPin
+                  className="mr-2 h-4 w-4 shrink-0 text-zinc-400"
+                  strokeWidth={2}
+                  aria-hidden
+                />
+                <input
+                  type="search"
+                  placeholder="Where to?"
+                  value={heroDestinationDraft}
+                  onChange={(e) => setHeroDestinationDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") applyHeroSearch();
+                  }}
+                  className="w-full min-w-0 border-0 bg-transparent text-sm font-medium text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-0"
+                />
+              </label>
+              <label className="relative flex min-w-0 flex-1 items-center px-3 py-2 sm:py-3">
+                <Calendar
+                  className="mr-2 h-4 w-4 shrink-0 text-zinc-400"
+                  strokeWidth={2}
+                  aria-hidden
+                />
+                <input
+                  type="date"
+                  value={departDate}
+                  onChange={(e) => setDepartDate(e.target.value)}
+                  className="w-full min-w-0 border-0 bg-transparent text-sm font-medium text-zinc-900 focus:outline-none focus:ring-0"
+                />
+              </label>
+              <div className="flex border-t border-zinc-200 px-2 pb-2 pt-1 sm:border-t-0 sm:items-stretch sm:px-2 sm:py-1">
                 <button
-                  key={filterOpt}
-                  onClick={() => setActiveFilter(filterOpt)}
-                  className={`px-4 py-2 rounded-xl text-sm font-medium transition-all whitespace-nowrap ${activeFilter === filterOpt
-                    ? "bg-emerald-800 text-white shadow-sm"
-                    : "bg-zinc-50 text-zinc-600 hover:bg-zinc-100 border border-zinc-200"
-                    }`}
+                  type="button"
+                  onClick={applyHeroSearch}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#006837] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#0d3d2e] sm:w-auto"
                 >
-                  {filterOpt}
+                  <Search className="h-4 w-4" strokeWidth={2.5} aria-hidden />
+                  Search
                 </button>
-              ))}
-              <button
-                type="button"
-                onClick={() => {
-                  setPendingAdvancedFilters({ ...advancedFilters });
-                  setShowAdvancedFilters(true);
-                }}
-                className={`px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-colors flex items-center gap-2 ${
-                  isAdvancedFiltersActive(advancedFilters)
-                    ? "bg-emerald-800 text-white shadow-sm"
-                    : "bg-zinc-50 text-zinc-600 hover:bg-zinc-100 border border-zinc-200"
-                }`}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg>
-                Advanced Filters
-                {isAdvancedFiltersActive(advancedFilters) && (
-                  <span className="bg-white text-emerald-800 text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center">
-                    {countActiveAdvancedFilters(advancedFilters)}
-                  </span>
-                )}
-              </button>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Content Layout */}
-        <div className="w-full max-w-5xl mx-auto">
-          <div className="w-full min-w-0 bg-white rounded-2xl p-4 md:p-6 lg:p-8 shadow-sm border border-zinc-100">
-            <p className="text-sm font-medium text-zinc-500 mb-4 md:mb-6 text-center">
-              {filteredRides.length} {filteredRides.length === 1 ? 'ride' : 'rides'} available
-            </p>
+        <RidesViewToggle activeView={isMy ? "my" : "browse"} />
 
-            {loading ? (
+        <div className="mt-1 grid min-w-0 gap-6 lg:grid-cols-12">
+          <BrowseRidesFilterSidebar
+            distShort={distShort}
+            distMedium={distMedium}
+            distLong={distLong}
+            setDistShort={setDistShort}
+            setDistMedium={setDistMedium}
+            setDistLong={setDistLong}
+            timeWindow={timeWindow}
+            setTimeWindow={setTimeWindow}
+            sidebarApi={sidebarApi}
+            setSidebarApi={setSidebarApi}
+          />
+
+          <div className="min-w-0 space-y-4 lg:col-span-8 xl:col-span-9">
+            {isMy ? (
+              <MyRidesView
+                embedded
+                hubMode
+                hubFilters={{
+                  hubSearchQuery: searchQuery,
+                  departDate,
+                  distShort,
+                  distMedium,
+                  distLong,
+                  timeWindow,
+                  sidebarApi,
+                }}
+                hubControls={{
+                  sortBy,
+                  setSortBy,
+                  onClearHubFilters: clearBrowseFilters,
+                }}
+              />
+            ) : null}
+            {!isMy && (
+            <>
+            {browseError ? (
+              <div
+                className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
+                role="alert"
+              >
+                {browseError}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBrowseError(null);
+                    setBrowseRefetchKey((k) => k + 1);
+                  }}
+                  className="ml-2 font-semibold text-red-900 underline"
+                >
+                  Retry
+                </button>
+              </div>
+            ) : null}
+            <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+              <h2 className="text-lg font-bold text-zinc-900">
+                Available Rides (
+                {loading && rides.length === 0
+                  ? "…"
+                  : filteredRides.length}
+                )
+              </h2>
+              <div className="flex w-full items-center justify-end gap-2 sm:w-auto">
+                <span className="text-sm text-zinc-500">Sort by:</span>
+                <select
+                  value={sortBy}
+                  onChange={(e) =>
+                    setSortBy(e.target.value as "earliest" | "price")
+                  }
+                  className="rounded-xl border border-zinc-200 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800"
+                >
+                  <option value="earliest">Earliest Departure</option>
+                  <option value="price">Lowest price (loaded results)</option>
+                </select>
+              </div>
+            </div>
+
+            {loading && rides.length === 0 ? (
               <div className="flex flex-col gap-4">
-                {[1, 2, 3].map(i => (
-                  <div key={i} className="h-32 bg-zinc-100 animate-pulse rounded-2xl"></div>
+                {[1, 2, 3, 4].map((i) => (
+                  <div
+                    key={i}
+                    className="h-36 animate-pulse rounded-2xl bg-zinc-100"
+                  />
                 ))}
               </div>
             ) : filteredRides.length === 0 ? (
-              <div className="text-center py-16 px-4">
-                <div className="w-16 h-16 bg-zinc-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-400"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                </div>
-                <h3 className="text-lg font-bold text-zinc-900 mb-1">No rides found</h3>
-                <p className="text-zinc-500 max-w-sm mx-auto">We couldn&apos;t find any rides matching your current search and filter criteria.</p>
-                {(activeFilter !== "All" || isAdvancedFiltersActive(advancedFilters)) && (
-                  <button
-                    onClick={() => {
-                      setActiveFilter("All");
-                      setAdvancedFilters({ ...EMPTY_ADVANCED_FILTERS });
-                    }}
-                    className="mt-4 text-emerald-700 font-medium hover:underline"
-                  >
-                    Clear filters
-                  </button>
-                )}
+              <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50/80 py-16 text-center">
+                <h3 className="text-lg font-bold text-zinc-900">No rides found</h3>
+                <p className="mx-auto mt-2 max-w-sm text-sm text-zinc-500">
+                  We couldn&apos;t find any rides matching your search and
+                  filters. Try a different date or clear optional filters.
+                </p>
+                <button
+                  type="button"
+                  onClick={clearBrowseFilters}
+                  className="mt-4 text-sm font-semibold text-[#006837] hover:underline"
+                >
+                  Clear search & filters
+                </button>
               </div>
             ) : (
               <div className="flex flex-col gap-4">
-                {filteredRides.map((ride) => (
-                  <button
-                    type="button"
-                    key={ride.id}
-                    onClick={() => {
-                      const activeElement = document.activeElement;
-                      lastFocusedElementRef.current =
-                        activeElement instanceof HTMLElement ? activeElement : null;
-                      setSelectedRide(ride);
-                      setSelectedSeats(ride.seatsAvailable > 0 ? 1 : 0);
-                    }}
-                    className={`group w-full text-left bg-white border border-zinc-200 rounded-2xl p-5 transition-all relative overflow-hidden ${
-                      ride.seatsAvailable <= 0
-                        ? "opacity-70"
-                        : "hover:border-emerald-500/50 hover:shadow-md cursor-pointer"
-                    }`}
-                  >
-                    {/* Distance Badge */}
-                    <div className="absolute top-5 right-5 bg-amber-100 text-amber-800 text-xs font-bold px-2.5 py-1 rounded-full border border-amber-200 shadow-sm">
-                      {toTitleCase(ride.distanceCategory)}
-                    </div>
-
-                    <div className="pr-20">
-                      <div className="flex items-start gap-3 mb-1">
-                        <div className="mt-1">
-                          <MapPinIcon />
+                {filteredRides.map((ride) => {
+                  const mvp2Bits = [
+                    ride.hasAc === true ? "A/C" : null,
+                    ride.hasTrunkSpace === true ? "Trunk" : null,
+                    ride.musicPreference === "MUSIC_ALLOWED"
+                      ? "Music"
+                      : ride.musicPreference === "NO_MUSIC"
+                        ? "No music"
+                        : null,
+                    ride.vehicleType ? formatVehicleType(ride.vehicleType) : null,
+                  ].filter(Boolean) as string[];
+                  return (
+                    <div
+                      key={ride.id}
+                      className="relative overflow-hidden rounded-2xl border border-zinc-200 bg-white pl-1 shadow-sm"
+                    >
+                      <div
+                        className="absolute bottom-0 left-0 top-0 w-1 bg-[#006837]"
+                        aria-hidden
+                      />
+                      <div className="p-4 pl-5 sm:p-5 sm:pl-6">
+                        <div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-start">
+                          <div>
+                            <div className="flex gap-2">
+                              <div className="mt-0.5 flex w-2 flex-col items-center pt-0.5">
+                                <span className="h-2.5 w-2.5 rounded-full border-2 border-[#006837] bg-white" />
+                                <span className="my-0.5 w-px flex-1 min-h-[1.5rem] bg-zinc-200" />
+                                <span className="h-2.5 w-2.5 rounded-full bg-[#006837]" />
+                              </div>
+                              <div className="min-w-0 space-y-1">
+                                <p className="text-[0.65rem] font-bold uppercase tracking-wide text-zinc-400">
+                                  Origin
+                                </p>
+                                <p className="text-sm font-semibold text-zinc-900">
+                                  {ride.originText}
+                                </p>
+                                <p className="pt-2 text-[0.65rem] font-bold uppercase tracking-wide text-zinc-400">
+                                  Destination
+                                </p>
+                                <p className="text-sm font-semibold text-zinc-900">
+                                  {ride.destinationText}
+                                </p>
+                                {ride.driver ? (
+                                  <div className="mt-2 flex items-center gap-2">
+                                    <UserAvatar
+                                      src={ride.driver.profilePictureUrl}
+                                      name={ride.driver.name}
+                                      size="sm"
+                                    />
+                                    <span className="text-xs font-medium text-zinc-600">
+                                      {ride.driver.name ?? "Driver"}
+                                    </span>
+                                  </div>
+                                ) : null}
+                                {mvp2Bits.length > 0 ? (
+                                  <p className="mt-1 text-xs text-zinc-500">
+                                    {mvp2Bits.join(" · ")}
+                                  </p>
+                                ) : null}
+                              </div>
+                            </div>
+                            {ride.status !== "ACTIVE" ? (
+                              <p className="mt-2 text-xs font-medium text-amber-700">
+                                {ride.status}
+                              </p>
+                            ) : null}
+                          </div>
+                          <div className="text-right sm:pl-4">
+                            <p className="text-2xl font-bold text-[#006837]">
+                              ${(ride.priceCents / 100).toFixed(0)}
+                            </p>
+                            <p className="text-xs text-zinc-500">per seat</p>
+                            <div className="mt-1 flex items-center justify-end gap-0.5">
+                              {Array.from({ length: ride.seatsTotal }).map(
+                                (_, i) => (
+                                  <User
+                                    key={i}
+                                    className={`h-3.5 w-3.5 ${
+                                      i < ride.seatsAvailable
+                                        ? "text-[#006837]"
+                                        : "text-zinc-200"
+                                    }`}
+                                    strokeWidth={2}
+                                    aria-hidden
+                                  />
+                                ),
+                              )}
+                            </div>
+                            <p className="mt-0.5 text-xs text-zinc-500">
+                              {ride.seatsAvailable}/{ride.seatsTotal} seats
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <h3 className="font-bold text-lg leading-tight text-zinc-900 group-hover:text-emerald-800 transition-colors">{ride.destinationText}</h3>
-                          <p className="text-sm text-zinc-500 mt-0.5">from {ride.originText}</p>
+                        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                          <div className="flex flex-wrap gap-2">
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs text-zinc-600">
+                              <ClockIcon />
+                              {formatTimeRange(ride.earliestDepartAt, ride.latestDepartAt)}
+                            </span>
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs text-zinc-600">
+                              <MapPinIcon />
+                              {distanceCategoryLabel(ride.distanceCategory)} · {formatDistanceMilesLabel(ride.distanceCategory)}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const el = document.activeElement;
+                              lastFocusedElementRef.current =
+                                el instanceof HTMLElement ? el : null;
+                              setSelectedRide(ride);
+                              setSelectedSeats(
+                                ride.seatsAvailable > 0 ? 1 : 0,
+                              );
+                            }}
+                            className="inline-flex items-center justify-center self-end rounded-xl bg-[#006837] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#0d3d2e] sm:self-auto"
+                          >
+                            View Ride
+                          </button>
                         </div>
                       </div>
-                      {ride.driver && (
-                        <div className="flex items-center gap-2 mt-3">
-                          <UserAvatar src={ride.driver.profilePictureUrl} name={ride.driver.name} size="sm" />
-                          <span className="text-sm font-medium text-zinc-700">{ride.driver.name ?? "Driver"}</span>
-                        </div>
-                      )}
                     </div>
-
-                    <div className="mt-5 flex items-end justify-between">
-                      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-zinc-600 font-medium">
-                        <div className="flex items-center gap-1.5">
-                          <ClockIcon />
-                          {formatTimeRange(ride.earliestDepartAt, ride.latestDepartAt)}
-                        </div>
-                        <div className="flex items-center gap-1.5 bg-zinc-100 px-2 py-0.5 rounded-md">
-                          <UsersIcon />
-                          {ride.seatsAvailable} {ride.seatsAvailable === 1 ? 'seat' : 'seats'}
-                        </div>
-                      </div>
-                      <div className="flex items-baseline gap-1 text-emerald-800">
-                        <span className="font-bold text-xl">${(ride.priceCents / 100).toFixed(2)}</span>
-                        <ArrowRightIcon />
-                      </div>
-                    </div>
-                  </button>
-                ))}
+                  );
+                })}
+                {nextCursor ? (
+                  <div className="flex justify-center pt-2">
+                    <button
+                      type="button"
+                      onClick={() => void loadMoreRides()}
+                      disabled={loadMoreLoading}
+                      className="rounded-xl border-2 border-[#006837] bg-white px-6 py-2.5 text-sm font-semibold text-[#006837] transition hover:bg-[#006837] hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {loadMoreLoading ? "Loading…" : "Load More Rides"}
+                    </button>
+                  </div>
+                ) : null}
               </div>
+            )}
+            </>
             )}
           </div>
         </div>
 
       {/* Ride Details Modal Overlay */}
-      {selectedRide && (
+      {selectedRide && !isMy && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/40 backdrop-blur-sm">
           <div
             role="dialog"
@@ -1253,256 +1495,7 @@ export default function BrowseRidesPage() {
         </div>
       )}
 
-      {/* Advanced Filters Modal */}
-      {showAdvancedFilters && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/40 backdrop-blur-sm"
-          onClick={() => setShowAdvancedFilters(false)}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="advancedFiltersTitle"
-            className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto relative"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="p-6 md:p-8">
-              <div className="flex items-center justify-between mb-6">
-                <h2 id="advancedFiltersTitle" className="text-xl font-bold text-zinc-900">Advanced Filters</h2>
-                <button
-                  onClick={() => setShowAdvancedFilters(false)}
-                  aria-label="Close advanced filters"
-                  className="p-2 text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 rounded-full transition-colors"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-
-              <div className="space-y-5">
-                {/* Date Range */}
-                <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-5">
-                  <div className="flex items-center gap-2 mb-4 text-emerald-800 font-bold">
-                    <ClockIcon /> Departure Date Range
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label htmlFor="af-earliest" className="block text-sm font-medium text-zinc-600 mb-1">From</label>
-                      <input
-                        id="af-earliest"
-                        type="datetime-local"
-                        value={pendingAdvancedFilters.earliestAfter}
-                        onChange={(e) => setPendingAdvancedFilters({ ...pendingAdvancedFilters, earliestAfter: e.target.value })}
-                        className="w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-2.5 text-sm text-zinc-900 shadow-sm outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="af-latest" className="block text-sm font-medium text-zinc-600 mb-1">To</label>
-                      <input
-                        id="af-latest"
-                        type="datetime-local"
-                        value={pendingAdvancedFilters.latestBefore}
-                        onChange={(e) => setPendingAdvancedFilters({ ...pendingAdvancedFilters, latestBefore: e.target.value })}
-                        className="w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-2.5 text-sm text-zinc-900 shadow-sm outline-none"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Price Range */}
-                <div>
-                  <label className="flex items-center gap-2 mb-3 text-emerald-800 font-bold">
-                    <span className="font-bold text-lg leading-none">$</span> Price Range (per seat)
-                  </label>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label htmlFor="af-price-min" className="block text-sm font-medium text-zinc-600 mb-1">Min ($)</label>
-                      <input
-                        id="af-price-min"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        placeholder="0.00"
-                        value={pendingAdvancedFilters.priceMin}
-                        onChange={(e) => setPendingAdvancedFilters({ ...pendingAdvancedFilters, priceMin: e.target.value })}
-                        className="w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-2.5 text-sm text-zinc-900 shadow-sm outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="af-price-max" className="block text-sm font-medium text-zinc-600 mb-1">Max ($)</label>
-                      <input
-                        id="af-price-max"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        placeholder="Any"
-                        value={pendingAdvancedFilters.priceMax}
-                        onChange={(e) => setPendingAdvancedFilters({ ...pendingAdvancedFilters, priceMax: e.target.value })}
-                        className="w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-2.5 text-sm text-zinc-900 shadow-sm outline-none"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Distance Category */}
-                <div>
-                  <label htmlFor="af-distance" className="flex items-center gap-2 mb-3 text-emerald-800 font-bold">
-                    <MapPinIcon /> Distance Category
-                  </label>
-                  <select
-                    id="af-distance"
-                    value={pendingAdvancedFilters.distanceCategory}
-                    onChange={(e) => setPendingAdvancedFilters({ ...pendingAdvancedFilters, distanceCategory: e.target.value })}
-                    className="w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-3 text-zinc-900 shadow-sm outline-none"
-                  >
-                    <option value="">Any distance</option>
-                    <option value="SHORT">Short</option>
-                    <option value="MEDIUM">Medium</option>
-                    <option value="LONG">Long</option>
-                  </select>
-                </div>
-
-                {/* Minimum Available Seats */}
-                <div>
-                  <label htmlFor="af-seats" className="flex items-center gap-2 mb-3 text-emerald-800 font-bold">
-                    <UsersIcon /> Minimum Available Seats
-                  </label>
-                  <select
-                    id="af-seats"
-                    value={pendingAdvancedFilters.seatsMin}
-                    onChange={(e) => setPendingAdvancedFilters({ ...pendingAdvancedFilters, seatsMin: e.target.value })}
-                    className="w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-3 text-zinc-900 shadow-sm outline-none"
-                  >
-                    <option value="">Any</option>
-                    <option value="1">1+</option>
-                    <option value="2">2+</option>
-                    <option value="3">3+</option>
-                    <option value="4">4+</option>
-                    <option value="5">5+</option>
-                  </select>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label htmlFor="af-music" className="block text-sm font-semibold text-emerald-800 mb-2">
-                      Music Preference
-                    </label>
-                    <select
-                      id="af-music"
-                      value={pendingAdvancedFilters.musicPreference}
-                      onChange={(e) =>
-                        setPendingAdvancedFilters({
-                          ...pendingAdvancedFilters,
-                          musicPreference: e.target.value,
-                        })
-                      }
-                      className="w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-3 text-zinc-900 shadow-sm outline-none"
-                    >
-                      <option value="">Any</option>
-                      <option value="MUSIC_ALLOWED">Music allowed</option>
-                      <option value="NO_MUSIC">No music</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label htmlFor="af-vehicle-type" className="block text-sm font-semibold text-emerald-800 mb-2">
-                      Vehicle Type
-                    </label>
-                    <select
-                      id="af-vehicle-type"
-                      value={pendingAdvancedFilters.vehicleType}
-                      onChange={(e) =>
-                        setPendingAdvancedFilters({
-                          ...pendingAdvancedFilters,
-                          vehicleType: e.target.value,
-                        })
-                      }
-                      className="w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-3 text-zinc-900 shadow-sm outline-none"
-                    >
-                      <option value="">Any</option>
-                      <option value="SEDAN">Sedan</option>
-                      <option value="SUV">SUV</option>
-                      <option value="TRUCK">Truck</option>
-                      <option value="VAN">Van</option>
-                      <option value="COUPE">Coupe</option>
-                      <option value="OTHER">Other</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label htmlFor="af-has-ac" className="block text-sm font-semibold text-emerald-800 mb-2">
-                      AC Availability
-                    </label>
-                    <select
-                      id="af-has-ac"
-                      value={pendingAdvancedFilters.hasAc}
-                      onChange={(e) =>
-                        setPendingAdvancedFilters({
-                          ...pendingAdvancedFilters,
-                          hasAc: e.target.value,
-                        })
-                      }
-                      className="w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-3 text-zinc-900 shadow-sm outline-none"
-                    >
-                      <option value="">Any</option>
-                      <option value="true">Yes</option>
-                      <option value="false">No</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label htmlFor="af-has-trunk-space" className="block text-sm font-semibold text-emerald-800 mb-2">
-                      Trunk Space Availability
-                    </label>
-                    <select
-                      id="af-has-trunk-space"
-                      value={pendingAdvancedFilters.hasTrunkSpace}
-                      onChange={(e) =>
-                        setPendingAdvancedFilters({
-                          ...pendingAdvancedFilters,
-                          hasTrunkSpace: e.target.value,
-                        })
-                      }
-                      className="w-full bg-white border border-zinc-200 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-3 text-zinc-900 shadow-sm outline-none"
-                    >
-                      <option value="">Any</option>
-                      <option value="true">Yes</option>
-                      <option value="false">No</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              {/* Actions */}
-              <div className="mt-8 pt-6 border-t border-zinc-100 flex items-center justify-between">
-                <button
-                  type="button"
-                  onClick={() => setPendingAdvancedFilters({ ...EMPTY_ADVANCED_FILTERS })}
-                  className="text-sm text-zinc-500 hover:text-zinc-700 font-medium transition-colors"
-                >
-                  Clear all
-                </button>
-                <div className="flex gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setShowAdvancedFilters(false)}
-                    className="px-5 py-2.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 font-medium rounded-xl transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAdvancedFilters({ ...pendingAdvancedFilters });
-                      setShowAdvancedFilters(false);
-                    }}
-                    className="px-8 py-2.5 bg-emerald-800 hover:bg-emerald-900 text-white font-medium rounded-xl shadow-sm transition-colors"
-                  >
-                    Apply Filters
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
+      <BrowsePageFooter />
     </ProtectedShell>
   );
 }

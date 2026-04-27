@@ -12,7 +12,7 @@ export function RidesViewToggle({ activeView }: RidesViewToggleProps) {
     <ViewToggle
       activeView={activeView}
       options={[
-        { value: "browse", label: "Browse", href: getRidesViewHref("browse") },
+        { value: "browse", label: "Browse Rides", href: getRidesViewHref("browse") },
         { value: "my", label: "My Rides", href: getRidesViewHref("my") },
       ]}
     />

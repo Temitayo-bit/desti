@@ -1,15 +1,27 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
-import { MessageCircle, X } from "lucide-react";
+import { MapPin, User, X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { RidesViewToggle } from "../_components/RidesViewToggle";
+import { ConfirmedBookingsList } from "./ConfirmedBookingsList";
 import { filterMyRides, type MyRidesQuickFilter } from "@/lib/my-rides";
 import { openBookingConversationThread } from "@/lib/booking-conversation";
 import type { ManagedRideSummary } from "@/types/ride";
+import {
+  type BrowseTimeWindow,
+  type SidebarApiFilters,
+  buildActiveDistanceSet,
+  distanceCategoryLabel,
+  EMPTY_SIDEBAR_API,
+  formatDistanceMilesLabel,
+  matchesLocalDepartDate,
+  myRideMatchesMvp2Sidebar,
+  rideDepartureTimeMatchesWindow,
+} from "@/lib/browse-ride-filters";
 
 type ActionNotice =
   | { type: "success"; text: string }
@@ -82,24 +94,50 @@ const UsersIcon = () => (
   </svg>
 );
 
-const ArrowRightIcon = () => (
-  <svg
-    width="14"
-    height="14"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    className="text-zinc-400 group-hover:text-emerald-600 transition-colors"
-  >
-    <line x1="5" y1="12" x2="19" y2="12"></line>
-    <polyline points="12 5 19 12 12 19"></polyline>
-  </svg>
-);
+export type MyRidesHubFilters = {
+  hubSearchQuery?: string;
+  departDate?: string;
+  distShort?: boolean;
+  distMedium?: boolean;
+  distLong?: boolean;
+  timeWindow?: BrowseTimeWindow | null;
+  sidebarApi?: SidebarApiFilters;
+};
 
-export function MyRidesView() {
+export type MyRidesHubControls = {
+  sortBy?: "earliest" | "price";
+  setSortBy?: (v: "earliest" | "price") => void;
+  onClearHubFilters?: () => void;
+};
+
+interface MyRidesViewProps {
+  /**
+   * When true, the view is shown inside the browse hub (shared hero/toggle in parent).
+   * Omits the page title, post CTA row, and Browse/My toggle.
+   */
+  embedded?: boolean;
+  /** Same hub layout as Browse Rides: shared filters + sort from parent */
+  hubMode?: boolean;
+  hubFilters?: MyRidesHubFilters;
+  hubControls?: MyRidesHubControls;
+}
+
+export function MyRidesView({
+  embedded = false,
+  hubMode = false,
+  hubFilters,
+  hubControls,
+}: MyRidesViewProps) {
+  const hubSearchQuery = hubFilters?.hubSearchQuery ?? "";
+  const departDate = hubFilters?.departDate ?? "";
+  const distShort = hubFilters?.distShort ?? true;
+  const distMedium = hubFilters?.distMedium ?? true;
+  const distLong = hubFilters?.distLong ?? true;
+  const timeWindow = hubFilters?.timeWindow ?? null;
+  const sidebarApi = hubFilters?.sidebarApi;
+  const sortBy = hubControls?.sortBy ?? "earliest";
+  const setSortBy = hubControls?.setSortBy;
+  const onClearHubFilters = hubControls?.onClearHubFilters;
   const router = useRouter();
   const [rides, setRides] = useState<ManagedRideSummary[]>([]);
   const [selectedRide, setSelectedRide] = useState<ManagedRideSummary | null>(
@@ -215,11 +253,41 @@ export function MyRidesView() {
     };
   }, [selectedRide, closeRideModal]);
 
-  const filteredRides = filterMyRides({
-    rides,
-    searchQuery,
-    activeFilter,
-  });
+  const mvp2Bar = sidebarApi ?? EMPTY_SIDEBAR_API;
+
+  const filteredRides = useMemo(() => {
+    const base = filterMyRides({
+      rides,
+      searchQuery: hubMode ? hubSearchQuery : searchQuery,
+      activeFilter: hubMode ? "All" : activeFilter,
+    });
+    if (!hubMode) {
+      return base;
+    }
+    let list = base.filter((r) => matchesLocalDepartDate(r.earliestDepartAt, departDate));
+    const dist = buildActiveDistanceSet({
+      short: distShort,
+      medium: distMedium,
+      long: distLong,
+    });
+    if (dist !== "all") {
+      list = list.filter((r) => dist.has(r.distanceCategory));
+    }
+    list = list.filter((r) =>
+      rideDepartureTimeMatchesWindow(r.earliestDepartAt, timeWindow),
+    );
+    list = list.filter((r) => myRideMatchesMvp2Sidebar(r, mvp2Bar));
+    if (sortBy === "price") {
+      list = [...list].sort((a, b) => a.priceCents - b.priceCents);
+    } else {
+      list = [...list].sort(
+        (a, b) =>
+          new Date(a.earliestDepartAt).getTime() -
+          new Date(b.earliestDepartAt).getTime(),
+      );
+    }
+    return list;
+  }, [rides, hubMode, hubFilters, hubControls, searchQuery, activeFilter]);
   const quickFilters = [
     "All",
     "Today",
@@ -466,85 +534,132 @@ export function MyRidesView() {
 
   return (
     <>
-      <div className="bg-white rounded-2xl p-6 md:p-8 shadow-sm border border-zinc-100">
-        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6 md:mb-8">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold tracking-tight mb-2">My Rides</h1>
-            <p className="text-zinc-500">Manage rides you have posted</p>
-          </div>
-          <Link
-            href="/post-ride"
-            className="bg-emerald-800 hover:bg-emerald-900 text-white px-5 py-2.5 rounded-xl font-medium flex items-center justify-center gap-2 transition-colors whitespace-nowrap shadow-sm"
-          >
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+      {!embedded && !hubMode ? (
+        <div className="mb-4 rounded-2xl border border-zinc-100 bg-white p-6 shadow-sm md:p-8">
+          <div className="mb-6 flex flex-col justify-between gap-4 sm:mb-8 sm:flex-row sm:items-start">
+            <div>
+              <h1 className="mb-2 text-2xl font-bold tracking-tight md:text-3xl">My Rides</h1>
+              <p className="text-zinc-500">Manage rides you have posted</p>
+            </div>
+            <Link
+              href="/post-ride"
+              className="flex items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-emerald-800 px-5 py-2.5 font-medium text-white shadow-sm transition-colors hover:bg-emerald-900"
             >
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-            Post a Ride
-          </Link>
-        </div>
-
-        <RidesViewToggle activeView="my" />
-
-        <div className="relative">
-          <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-zinc-400">
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <circle cx="11" cy="11" r="8"></circle>
-              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-            </svg>
-          </div>
-          <input
-            type="text"
-            aria-label="Search destinations"
-            placeholder="Search destinations..."
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-            className="w-full bg-zinc-50 border border-zinc-200 rounded-xl py-3.5 pl-11 pr-4 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all font-medium placeholder:font-normal"
-          />
-        </div>
-
-        <div className="mt-5 -mx-1 px-1 overflow-x-auto">
-          <div className="flex min-w-max gap-2 pb-1">
-            {quickFilters.map((filterOpt) => (
-              <button
-                key={filterOpt}
-                onClick={() => setActiveFilter(filterOpt)}
-                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all whitespace-nowrap ${
-                  activeFilter === filterOpt
-                    ? "bg-emerald-800 text-white shadow-sm"
-                    : "bg-zinc-50 text-zinc-600 hover:bg-zinc-100 border border-zinc-200"
-                }`}
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
               >
-                {filterOpt}
-              </button>
-            ))}
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+              Post a Ride
+            </Link>
           </div>
-        </div>
-      </div>
 
-      <div className="w-full max-w-5xl mx-auto">
-        <div className="w-full min-w-0 bg-white rounded-2xl p-4 md:p-6 lg:p-8 shadow-sm border border-zinc-100">
-          <p className="text-sm font-medium text-zinc-500 mb-4 md:mb-6 text-center">
-            {filteredRides.length} {filteredRides.length === 1 ? "ride" : "rides"} posted
-          </p>
+          <RidesViewToggle activeView="my" />
+        </div>
+      ) : null}
+
+      <div
+        className={`w-full min-w-0 ${
+          hubMode || embedded ? "" : "max-w-5xl mx-auto"
+        }`}
+      >
+        <div
+          className={
+            hubMode
+              ? "w-full min-w-0"
+              : embedded
+                ? "w-full min-w-0"
+                : "w-full min-w-0 rounded-2xl border border-zinc-100 bg-white p-4 shadow-sm md:p-6 lg:p-8"
+          }
+        >
+          {!hubMode ? (
+            <div className="mb-4">
+              <div className="relative">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-zinc-400">
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                  </svg>
+                </div>
+                <input
+                  type="text"
+                  aria-label="Search destinations"
+                  placeholder="Search destinations..."
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  className="w-full rounded-xl border border-zinc-200 bg-zinc-50 py-3.5 pl-11 pr-4 font-medium placeholder:font-normal transition-all focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                />
+              </div>
+              <div className="mt-4 -mx-1 overflow-x-auto px-1">
+                <div className="flex min-w-max gap-2 pb-1">
+                  {quickFilters.map((filterOpt) => (
+                    <button
+                      key={filterOpt}
+                      type="button"
+                      onClick={() => setActiveFilter(filterOpt)}
+                      className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-medium transition-all ${
+                        activeFilter === filterOpt
+                          ? "bg-emerald-800 text-white shadow-sm"
+                          : "border border-zinc-200 bg-zinc-50 text-zinc-600 hover:bg-zinc-100"
+                      }`}
+                    >
+                      {filterOpt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {hubMode ? (
+            <div className="mb-1 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+              <h2 className="text-lg font-bold text-zinc-900">
+                My Rides (
+                {loading && rides.length === 0 ? "…" : filteredRides.length})
+              </h2>
+              {setSortBy ? (
+                <div className="flex w-full items-center justify-end gap-2 sm:w-auto">
+                  <span className="text-sm text-zinc-500">Sort by:</span>
+                  <select
+                    value={sortBy}
+                    onChange={(e) =>
+                      setSortBy(e.target.value as "earliest" | "price")
+                    }
+                    className="rounded-xl border border-zinc-200 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800"
+                  >
+                    <option value="earliest">Earliest Departure</option>
+                    <option value="price">Lowest price (loaded results)</option>
+                  </select>
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <p
+              className={`text-sm font-medium text-zinc-500 ${
+                embedded ? "mb-3 text-left" : "mb-4 md:mb-6 text-center"
+              }`}
+            >
+              {filteredRides.length}{" "}
+              {filteredRides.length === 1 ? "ride" : "rides"} posted
+            </p>
+          )}
           {actionNotice ? (
             <div
               className={`mb-4 rounded-xl border px-4 py-3 text-sm font-medium ${
@@ -559,11 +674,13 @@ export function MyRidesView() {
 
           {loading ? (
             <div className="flex flex-col gap-4">
-              {[1, 2, 3].map((index) => (
+              {(hubMode ? [1, 2, 3, 4] : [1, 2, 3]).map((index) => (
                 <div
                   key={index}
-                  className="h-32 bg-zinc-100 animate-pulse rounded-2xl"
-                ></div>
+                  className={`${
+                    hubMode ? "h-36" : "h-32"
+                  } animate-pulse rounded-2xl bg-zinc-100`}
+                />
               ))}
             </div>
           ) : loadError ? (
@@ -600,138 +717,268 @@ export function MyRidesView() {
               </button>
             </div>
           ) : filteredRides.length === 0 ? (
-            <div className="text-center py-16 px-4">
-              <div className="w-16 h-16 bg-zinc-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <svg
-                  width="24"
-                  height="24"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="text-zinc-400"
-                >
-                  <circle cx="11" cy="11" r="8"></circle>
-                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                </svg>
-              </div>
-              <h3 className="text-lg font-bold text-zinc-900 mb-1">No rides found</h3>
-              <p className="text-zinc-500 max-w-sm mx-auto">
-                We couldn&apos;t find any of your rides matching your current
-                search and filter criteria.
-              </p>
-              {activeFilter !== "All" && (
-                <button
-                  onClick={() => setActiveFilter("All")}
-                  className="mt-4 text-emerald-700 font-medium hover:underline"
-                >
-                  Clear filters
-                </button>
-              )}
-            </div>
-          ) : (
-            <div className="flex flex-col gap-4">
-              {filteredRides.map((ride) => (
-                <article
-                  key={ride.id}
-                  className="w-full text-left bg-white border border-zinc-200 rounded-2xl p-5 transition-all relative overflow-hidden hover:border-emerald-500/50 hover:shadow-md"
-                >
+            hubMode ? (
+              <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50/80 py-16 text-center">
+                <h3 className="text-lg font-bold text-zinc-900">No rides found</h3>
+                <p className="mx-auto mt-2 max-w-sm text-sm text-zinc-500">
+                  We couldn&apos;t find any of your rides matching your search and
+                  filters. Try a different date or clear optional filters.
+                </p>
+                {onClearHubFilters ? (
                   <button
                     type="button"
-                    onClick={() => {
-                      const activeElement = document.activeElement;
-                      lastFocusedElementRef.current =
-                        activeElement instanceof HTMLElement ? activeElement : null;
-                      setSelectedRide(ride);
-                    }}
-                    className="group w-full text-left cursor-pointer"
+                    onClick={onClearHubFilters}
+                    className="mt-4 text-sm font-semibold text-[#006837] hover:underline"
                   >
-                    <div className="absolute top-5 right-5 bg-amber-100 text-amber-800 text-xs font-bold px-2.5 py-1 rounded-full border border-amber-200 shadow-sm">
-                      {toTitleCase(ride.distanceCategory)}
-                    </div>
-
-                    <div className="pr-20">
-                      <div className="flex items-start gap-3 mb-1">
-                        <div className="mt-1">
-                          <MapPinIcon />
-                        </div>
-                        <div>
-                          <h3 className="font-bold text-lg leading-tight text-zinc-900 group-hover:text-emerald-800 transition-colors">
-                            {ride.destinationText}
-                          </h3>
-                          <p className="text-sm text-zinc-500 mt-0.5">
-                            from {ride.originText}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="mt-5 flex items-end justify-between">
-                      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-zinc-600 font-medium">
-                        <div className="flex items-center gap-1.5">
-                          <ClockIcon />
-                          {formatTimeRange(ride.earliestDepartAt, ride.latestDepartAt)}
-                        </div>
-                        <div className="flex items-center gap-1.5 bg-zinc-100 px-2 py-0.5 rounded-md">
-                          <UsersIcon />
-                          {ride.seatsAvailable}{" "}
-                          {ride.seatsAvailable === 1 ? "seat" : "seats"} available
-                        </div>
-                      </div>
-                      <div className="flex items-baseline gap-1 text-emerald-800">
-                        <span className="font-bold text-xl">${(ride.priceCents / 100).toFixed(2)}</span>
-                        <ArrowRightIcon />
-                      </div>
-                    </div>
+                    Clear search &amp; filters
                   </button>
-
-                  {ride.confirmedBookings.length > 0 ? (
-                    <div className="mt-4 border-t border-zinc-200 pt-4">
-                      <p className="mb-3 text-sm font-semibold text-zinc-900">
-                        Confirmed bookings ({ride.confirmedBookings.length})
-                      </p>
-                      <div className="space-y-2">
-                        {ride.confirmedBookings.map((booking) => {
-                          const openingConversation =
-                            openingConversationBookingId === booking.id;
-                          return (
-                            <div
-                              key={booking.id}
-                              className="rounded-xl border border-zinc-200 bg-zinc-50 p-3"
-                            >
-                              <div className="flex items-center justify-between gap-3">
-                                <div className="space-y-1">
-                                  <p className="text-sm font-semibold text-zinc-900">
-                                    Booking #{booking.id.slice(0, 8)}
+                ) : null}
+              </div>
+            ) : (
+              <div className="px-4 py-16 text-center">
+                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-zinc-100">
+                  <svg
+                    width="24"
+                    height="24"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="text-zinc-400"
+                  >
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                  </svg>
+                </div>
+                <h3 className="mb-1 text-lg font-bold text-zinc-900">No rides found</h3>
+                <p className="mx-auto max-w-sm text-zinc-500">
+                  We couldn&apos;t find any of your rides matching your current
+                  search and filter criteria.
+                </p>
+                {activeFilter !== "All" && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveFilter("All")}
+                    className="mt-4 font-medium text-emerald-700 hover:underline"
+                  >
+                    Clear filters
+                  </button>
+                )}
+              </div>
+            )
+          ) : (
+            <div className="flex flex-col gap-4">
+              {filteredRides.map((ride) => {
+                if (hubMode) {
+                  const mvp2Bits = [
+                    ride.hasAc === true ? "A/C" : null,
+                    ride.hasTrunkSpace === true ? "Trunk" : null,
+                    ride.musicPreference === "MUSIC_ALLOWED"
+                      ? "Music"
+                      : ride.musicPreference === "NO_MUSIC"
+                        ? "No music"
+                        : null,
+                    ride.vehicleType ? formatVehicleType(ride.vehicleType) : null,
+                  ].filter(Boolean) as string[];
+                  return (
+                    <article
+                      key={ride.id}
+                      className="relative w-full overflow-hidden rounded-2xl border border-zinc-200 bg-white pl-1 text-left shadow-sm"
+                    >
+                      <div
+                        className="absolute bottom-0 left-0 top-0 w-1 bg-[#006837]"
+                        aria-hidden
+                      />
+                      <div className="p-4 pl-5 sm:p-5 sm:pl-6">
+                        <div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-start">
+                          <div>
+                            <div className="flex gap-2">
+                              <div className="mt-0.5 flex w-2 flex-col items-center pt-0.5">
+                                <span className="h-2.5 w-2.5 rounded-full border-2 border-[#006837] bg-white" />
+                                <span className="my-0.5 min-h-[1.5rem] w-px flex-1 bg-zinc-200" />
+                                <span className="h-2.5 w-2.5 rounded-full bg-[#006837]" />
+                              </div>
+                              <div className="min-w-0 space-y-1">
+                                <p className="text-[0.65rem] font-bold uppercase tracking-wide text-zinc-400">
+                                  Origin
+                                </p>
+                                <p className="text-sm font-semibold text-zinc-900">
+                                  {ride.originText}
+                                </p>
+                                <p className="pt-2 text-[0.65rem] font-bold uppercase tracking-wide text-zinc-400">
+                                  Destination
+                                </p>
+                                <p className="text-sm font-semibold text-zinc-900">
+                                  {ride.destinationText}
+                                </p>
+                                {mvp2Bits.length > 0 ? (
+                                  <p className="mt-1 text-xs text-zinc-500">
+                                    {mvp2Bits.join(" · ")}
                                   </p>
-                                  <p className="text-xs text-zinc-600">
-                                    {booking.seatsBooked}{" "}
-                                    {booking.seatsBooked === 1 ? "seat" : "seats"} ·{" "}
-                                    {formatTimeRange(booking.startsAt, booking.endsAt)}
-                                  </p>
-                                </div>
-                                <button
-                                  type="button"
-                                  disabled={openingConversation}
-                                  onClick={() =>
-                                    void openBookingMessages(booking.id)
-                                  }
-                                  className="inline-flex items-center gap-1 rounded-lg border border-zinc-300 px-2.5 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
-                                >
-                                  <MessageCircle size={14} />
-                                  {openingConversation ? "Opening..." : "Message"}
-                                </button>
+                                ) : null}
                               </div>
                             </div>
-                          );
-                        })}
+                            {ride.status !== "ACTIVE" ? (
+                              <p className="mt-2 text-xs font-medium text-amber-700">
+                                {ride.status}
+                              </p>
+                            ) : null}
+                          </div>
+                          <div className="text-right sm:pl-4">
+                            <p className="text-2xl font-bold text-[#006837]">
+                              ${(ride.priceCents / 100).toFixed(0)}
+                            </p>
+                            <p className="text-xs text-zinc-500">per seat</p>
+                            <div className="mt-1 flex items-center justify-end gap-0.5">
+                              {Array.from({ length: ride.seatsTotal }).map(
+                                (_, i) => (
+                                  <User
+                                    key={i}
+                                    className={`h-3.5 w-3.5 ${
+                                      i < ride.seatsAvailable
+                                        ? "text-[#006837]"
+                                        : "text-zinc-200"
+                                    }`}
+                                    strokeWidth={2}
+                                    aria-hidden
+                                  />
+                                ),
+                              )}
+                            </div>
+                            <p className="mt-0.5 text-xs text-zinc-500">
+                              {ride.seatsAvailable}/{ride.seatsTotal} seats
+                            </p>
+                          </div>
+                        </div>
+                        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                          <div className="flex flex-wrap gap-2">
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs text-zinc-600">
+                              <ClockIcon />
+                              {formatTimeRange(
+                                ride.earliestDepartAt,
+                                ride.latestDepartAt,
+                              )}
+                            </span>
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs text-zinc-600">
+                              <MapPin
+                                className="h-3.5 w-3.5 shrink-0 text-zinc-500"
+                                strokeWidth={2}
+                                aria-hidden
+                              />
+                              {distanceCategoryLabel(ride.distanceCategory)} ·{" "}
+                              {formatDistanceMilesLabel(ride.distanceCategory)}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const el = document.activeElement;
+                              lastFocusedElementRef.current =
+                                el instanceof HTMLElement ? el : null;
+                              setSelectedRide(ride);
+                            }}
+                            className="inline-flex items-center justify-center self-end rounded-xl bg-[#006837] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#0d3d2e] sm:self-auto"
+                          >
+                            Manage Ride
+                          </button>
+                        </div>
+                        <ConfirmedBookingsList
+                          bookings={ride.confirmedBookings}
+                          openingConversationBookingId={openingConversationBookingId}
+                          onMessage={(id) => void openBookingMessages(id)}
+                          formatTimeRange={formatTimeRange}
+                        />
+                      </div>
+                    </article>
+                  );
+                }
+                const filledSeats = Math.max(
+                  0,
+                  ride.seatsTotal - ride.seatsAvailable,
+                );
+                return (
+                  <article
+                    key={ride.id}
+                    className="relative w-full overflow-hidden rounded-2xl border border-zinc-200 bg-white pl-1 text-left shadow-sm transition-all hover:border-[#006837]/50 hover:shadow-md"
+                  >
+                    <div
+                      className="absolute bottom-0 left-0 top-0 w-1 bg-[#006837]"
+                      aria-hidden
+                    />
+                    <div className="p-4 pl-5 sm:p-5 sm:pl-6">
+                      <div className="absolute right-4 top-4 flex flex-col items-end gap-1 sm:right-5 sm:top-5">
+                        <span className="rounded-full border border-amber-200 bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-800 shadow-sm">
+                          {toTitleCase(ride.distanceCategory)}
+                        </span>
+                        <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-zinc-600">
+                          {ride.status}
+                        </span>
+                      </div>
+
+                      <div className="pr-4 sm:pr-24">
+                        <div className="flex items-start gap-3">
+                          <div className="mt-0.5">
+                            <MapPinIcon />
+                          </div>
+                          <div className="min-w-0">
+                            <h3 className="text-lg font-bold leading-tight text-zinc-900">
+                              {ride.destinationText}
+                            </h3>
+                            <p className="mt-0.5 text-sm text-zinc-500">
+                              from {ride.originText}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm font-medium text-zinc-600">
+                            <div className="flex items-center gap-1.5">
+                              <ClockIcon />
+                              {formatTimeRange(ride.earliestDepartAt, ride.latestDepartAt)}
+                            </div>
+                            <div className="flex items-center gap-1.5 rounded-md bg-zinc-100 px-2 py-0.5">
+                              <UsersIcon />
+                              {filledSeats}/{ride.seatsTotal} seats filled
+                            </div>
+                          </div>
+                          <div className="text-left sm:text-right">
+                            <p className="text-2xl font-bold text-[#006837]">
+                              ${(ride.priceCents / 100).toFixed(0)}
+                            </p>
+                            <p className="text-xs text-zinc-500">per seat</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 flex flex-wrap justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const activeElement = document.activeElement;
+                            lastFocusedElementRef.current =
+                              activeElement instanceof HTMLElement
+                                ? activeElement
+                                : null;
+                            setSelectedRide(ride);
+                          }}
+                          className="rounded-xl bg-[#006837] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#0d3d2e]"
+                        >
+                          Manage Ride
+                        </button>
                       </div>
                     </div>
-                  ) : null}
-                </article>
-              ))}
+
+                    <ConfirmedBookingsList
+                      bookings={ride.confirmedBookings}
+                      openingConversationBookingId={openingConversationBookingId}
+                      onMessage={(id) => void openBookingMessages(id)}
+                      formatTimeRange={formatTimeRange}
+                    />
+                  </article>
+                );
+              })}
             </div>
           )}
         </div>
