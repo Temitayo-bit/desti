@@ -124,9 +124,9 @@ function fakeOffer(id: string, overrides: Record<string, unknown> = {}) {
 
 /**
  * Sets up default mock return values for all Prisma calls.
- * The dashboard issues 11 parallel queries in this order:
+ * The dashboard issues 10 parallel queries in this order:
  *   ride.count, ride.findMany,
- *   booking.count (×3), booking.findMany (×2),
+ *   booking.count (×2), booking.findMany (×2),
  *   offer.count (×2), offer.findMany (×2)
  */
 function setupDefaults({
@@ -136,7 +136,6 @@ function setupDefaults({
     rideBookings = [] as unknown[],
     tripRequestBookingCount = 0,
     tripRequestBookings = [] as unknown[],
-    passengerBookingsCount = 0,
     offerSentCount = 0,
     offersSent = [] as unknown[],
     offerReceivedCount = 0,
@@ -146,8 +145,7 @@ function setupDefaults({
     mockPrisma.ride.findMany.mockResolvedValue(rides);
     mockPrisma.booking.count
         .mockResolvedValueOnce(rideBookingCount)
-        .mockResolvedValueOnce(tripRequestBookingCount)
-        .mockResolvedValueOnce(passengerBookingsCount);
+        .mockResolvedValueOnce(tripRequestBookingCount);
     mockPrisma.booking.findMany
         .mockResolvedValueOnce(rideBookings)
         .mockResolvedValueOnce(tripRequestBookings);
@@ -221,7 +219,6 @@ describe("GET /api/dashboard", () => {
         const json = await res.json();
         expect(json.summary.activeRidesDrivingCount).toBe(1);
         expect(json.summary.confirmedBookingsCount).toBe(2);
-        expect(json.summary.passengerBookingsCount).toBe(0);
         expect(json.summary.pendingOffersSentCount).toBe(1);
         expect(json.summary.pendingOffersReceivedCount).toBe(1);
 
@@ -245,7 +242,6 @@ describe("GET /api/dashboard", () => {
 
         expect(json.summary.activeRidesDrivingCount).toBe(0);
         expect(json.summary.confirmedBookingsCount).toBe(0);
-        expect(json.summary.passengerBookingsCount).toBe(0);
         expect(json.summary.pendingOffersSentCount).toBe(0);
         expect(json.summary.pendingOffersReceivedCount).toBe(0);
 
@@ -258,22 +254,22 @@ describe("GET /api/dashboard", () => {
     // ── 3. Stale items are excluded via DB filters ───────────────────────
     //    (verified by checking filter arguments passed to Prisma)
 
-    it("passes latestDepartAt > now filter to ride queries", async () => {
+    it("passes latestDepartAt > now filter to upcoming ride queries", async () => {
         setupDefaults();
         await GET();
 
         // ride.count call
         const countWhere = mockPrisma.ride.count.mock.calls[0][0].where;
-        expect(countWhere.latestDepartAt.gt).toBeInstanceOf(Date);
         expect(countWhere.status).toBe("ACTIVE");
         expect(countWhere.driverUserId).toBe(USER_ID);
+        expect(countWhere.latestDepartAt.gt).toBeInstanceOf(Date);
 
         // ride.findMany call
         const findWhere = mockPrisma.ride.findMany.mock.calls[0][0].where;
         expect(findWhere.latestDepartAt.gt).toBeInstanceOf(Date);
     });
 
-    it("passes upcoming filters to booking queries", async () => {
+    it("passes upcoming filters to ride and trip-request booking counts", async () => {
         setupDefaults();
         await GET();
 
@@ -295,18 +291,6 @@ describe("GET /api/dashboard", () => {
         expect(trBookingWhere.OR).toEqual([
             { riderUserId: USER_ID },
             { driverUserId: USER_ID },
-        ]);
-
-        // Passenger-only booking count (third booking.count call)
-        const passengerWhere = mockPrisma.booking.count.mock.calls[2][0].where;
-        expect(passengerWhere.status).toBe("CONFIRMED");
-        expect(passengerWhere.riderUserId).toBe(USER_ID);
-        expect(passengerWhere.OR).toEqual([
-            { rideId: { not: null }, ride: { latestDepartAt: { gt: expect.any(Date) } } },
-            {
-                tripRequestId: { not: null },
-                tripRequest: { latestDesiredAt: { gt: expect.any(Date) } },
-            },
         ]);
     });
 
@@ -423,7 +407,6 @@ describe("GET /api/dashboard", () => {
         // Summary shape
         expect(json.summary).toHaveProperty("activeRidesDrivingCount");
         expect(json.summary).toHaveProperty("confirmedBookingsCount");
-        expect(json.summary).toHaveProperty("passengerBookingsCount");
         expect(json.summary).toHaveProperty("pendingOffersSentCount");
         expect(json.summary).toHaveProperty("pendingOffersReceivedCount");
 

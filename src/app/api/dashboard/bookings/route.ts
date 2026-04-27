@@ -41,9 +41,9 @@ const tripRequestSummarySelect = {
 /**
  * GET /api/dashboard/bookings
  *
- * Returns every upcoming confirmed trip the caller participates in, either as
- * a rider or driver. This matches the dashboard "Your Upcoming Trips" section,
- * but without the 5-item cap.
+ * Returns upcoming confirmed trips the caller participates in as rider or driver
+ * (ride-linked rows require latestDepartAt in the future; trip-request rows use
+ * latestDesiredAt). No 5-item cap.
  */
 export async function GET(request?: NextRequest) {
     try {
@@ -146,7 +146,7 @@ export async function GET(request?: NextRequest) {
         return NextResponse.json(
             {
                 error: "Internal Server Error",
-                message: "An unexpected error occurred while fetching upcoming bookings.",
+                message: "An unexpected error occurred while fetching dashboard bookings.",
             },
             { status: 500 }
         );

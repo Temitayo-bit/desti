@@ -156,7 +156,7 @@ describe("GET /api/rides/mine", () => {
     );
   });
 
-  it("attaches upcoming confirmed bookings grouped by ride", async () => {
+  it("attaches confirmed bookings grouped by ride", async () => {
     const rideA = fakeRide({
       id: "aaaa1111-1111-4111-8111-111111111111",
       earliestDepartAt: new Date("2030-01-02T10:00:00.000Z"),
@@ -220,9 +220,7 @@ describe("GET /api/rides/mine", () => {
     expect(bookingFindManyArg.where.rideId).toEqual({
       in: [rideA.id, rideB.id],
     });
-    expect(bookingFindManyArg.where.ride).toEqual({
-      latestDepartAt: { gt: expect.any(Date) },
-    });
+    expect(bookingFindManyArg.where.ride).toBeUndefined();
     expect(bookingFindManyArg.orderBy).toEqual([
       { createdAt: "asc" },
       { id: "asc" },

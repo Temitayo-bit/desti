@@ -697,7 +697,8 @@ export default function BrowseRidesPage() {
     <ProtectedShell
       activeNav="browse"
       layout="topnav"
-      topNavActive="browse"
+      topNavActive="rides"
+      topNavPrimaryAction={{ label: "Create Ride", href: "/post-ride" }}
     >
         <div className="overflow-hidden rounded-3xl bg-[#006837] shadow-sm">
           <div className="px-5 py-7 md:px-8 md:py-9">

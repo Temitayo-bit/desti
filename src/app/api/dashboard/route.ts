@@ -81,7 +81,8 @@ const offerSummarySelect = {
  *
  * Returns a unified "what's coming up" dashboard for the authenticated user:
  * - Active rides they are driving
- * - Confirmed bookings (ride-based and triprequest-based, upcoming only)
+ * - Upcoming confirmed bookings (ride-based and trip-request-based; ride window and
+ *   trip-request latest desired time must still be in the future)
  * - Pending offers sent
  * - Pending offers received
  *
@@ -105,7 +106,6 @@ export async function GET(request?: NextRequest) {
       rideBookings,
       tripRequestBookingsCount,
       tripRequestBookings,
-      passengerBookingsCount,
       pendingOffersSentCount,
       offersSent,
       pendingOffersReceivedCount,
@@ -188,23 +188,6 @@ export async function GET(request?: NextRequest) {
         },
         orderBy: [{ tripRequest: { earliestDesiredAt: "asc" } }, { id: "asc" }],
         take: 5,
-      }),
-
-      prisma.booking.count({
-        where: {
-          status: "CONFIRMED",
-          riderUserId: userId,
-          OR: [
-            {
-              rideId: { not: null },
-              ride: { latestDepartAt: { gt: now } },
-            },
-            {
-              tripRequestId: { not: null },
-              tripRequest: { latestDesiredAt: { gt: now } },
-            },
-          ],
-        },
       }),
 
       prisma.offer.count({
@@ -365,7 +348,6 @@ export async function GET(request?: NextRequest) {
       summary: {
         activeRidesDrivingCount,
         confirmedBookingsCount,
-        passengerBookingsCount,
         pendingOffersSentCount,
         pendingOffersReceivedCount,
       },

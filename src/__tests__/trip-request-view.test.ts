@@ -15,10 +15,17 @@ describe("trip request hub view helpers", () => {
         expect(normalizeTripRequestsView("my")).toBe("my");
     });
 
+    it("recognizes the offers view query", () => {
+        expect(normalizeTripRequestsView("offers")).toBe("offers");
+    });
+
     it("builds stable hub hrefs", () => {
         expect(getTripRequestsViewHref("browse")).toBe("/browse-trip-requests");
         expect(getTripRequestsViewHref("my")).toBe(
             "/browse-trip-requests?view=my"
+        );
+        expect(getTripRequestsViewHref("offers")).toBe(
+            "/browse-trip-requests?view=offers"
         );
     });
 });

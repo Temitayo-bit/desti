@@ -36,6 +36,10 @@ vi.mock("@/app/(protected)/my-trip-requests/MyTripRequestsView", () => ({
     MyTripRequestsView: () => <div data-testid="my-trip-requests-view" />,
 }));
 
+vi.mock("@/app/(protected)/browse-trip-requests/TripRequestOffersView", () => ({
+    TripRequestOffersView: () => <div data-testid="trip-request-offers-view" />,
+}));
+
 describe("browse trip requests hub page", () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -48,12 +52,11 @@ describe("browse trip requests hub page", () => {
         const Page = (await import("@/app/(protected)/browse-trip-requests/page")).default;
         const markup = renderToStaticMarkup(<Page />);
 
-        expect(markup).toContain("Trip Requests");
-        expect(markup).toContain("Browse");
+        expect(markup).toContain("Browse Trip Requests");
         expect(markup).toContain("My Trip Requests");
-        expect(markup).toContain("Post Trip Request");
-        expect(markup).toContain('href="/post-trip-request"');
+        expect(markup).toContain("Offers");
         expect(markup).not.toContain("data-testid=\"my-trip-requests-view\"");
+        expect(markup).not.toContain("data-testid=\"trip-request-offers-view\"");
     });
 
     it("renders the my trip requests view when view=my", async () => {
@@ -64,5 +67,15 @@ describe("browse trip requests hub page", () => {
         const markup = renderToStaticMarkup(<Page />);
 
         expect(markup).toContain("data-testid=\"my-trip-requests-view\"");
+    });
+
+    it("renders the offers view when view=offers", async () => {
+        mockUseSearchParams.mockReturnValue(new URLSearchParams("view=offers"));
+
+        vi.resetModules();
+        const Page = (await import("@/app/(protected)/browse-trip-requests/page")).default;
+        const markup = renderToStaticMarkup(<Page />);
+
+        expect(markup).toContain("data-testid=\"trip-request-offers-view\"");
     });
 });

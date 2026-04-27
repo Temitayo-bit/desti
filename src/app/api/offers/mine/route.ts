@@ -21,11 +21,21 @@ const offerMineSelect = {
     message: true,
     status: true,
     createdAt: true,
+    driver: {
+        select: {
+            name: true,
+            profilePictureUrl: true,
+        },
+    },
     tripRequest: {
         select: {
             id: true,
             originText: true,
             destinationText: true,
+            originLatitude: true,
+            originLongitude: true,
+            destinationLatitude: true,
+            destinationLongitude: true,
             earliestDesiredAt: true,
             latestDesiredAt: true,
             preferredDepartAt: true,

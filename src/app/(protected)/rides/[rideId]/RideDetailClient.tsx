@@ -277,7 +277,12 @@ export function RideDetailClient({ ride, currentUserClerkId }: RideDetailClientP
   };
 
   return (
-    <ProtectedShell activeNav="browse" layout="topnav" topNavActive="browse">
+    <ProtectedShell
+      activeNav="browse"
+      layout="topnav"
+      topNavActive="rides"
+      topNavPrimaryAction={{ label: "Create Ride", href: "/post-ride" }}
+    >
       <div className="max-w-5xl mx-auto px-4 py-8 md:px-8">
         <div className="mb-6 flex items-center justify-between">
           <button onClick={() => router.back()} className="text-sm font-semibold text-[#006837] hover:underline">

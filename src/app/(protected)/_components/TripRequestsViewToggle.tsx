@@ -19,13 +19,18 @@ export function TripRequestsViewToggle({
       options={[
         {
           value: "browse",
-          label: "Browse",
+          label: "Browse Trip Requests",
           href: getTripRequestsViewHref("browse"),
         },
         {
           value: "my",
           label: "My Trip Requests",
           href: getTripRequestsViewHref("my"),
+        },
+        {
+          value: "offers",
+          label: "Offers",
+          href: getTripRequestsViewHref("offers"),
         },
       ]}
     />
