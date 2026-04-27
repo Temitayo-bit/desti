@@ -5,17 +5,15 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import { format, isToday, isTomorrow } from "date-fns";
-import { Bell, MessageCircle, Search, X } from "lucide-react";
+import { Bell, MessageCircle, Search } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ProtectedShell } from "../_components/ProtectedShell";
 import {
   type DashboardRideSummary,
-  type NormalizedDashboardBooking,
   type DashboardResponse,
   formatRelativeTime,
   getSeatDisplayText,
@@ -348,14 +346,11 @@ export default function DashboardPage() {
   const [viewerUserId, setViewerUserId] = useState<string | null>(null);
   const [meLoaded, setMeLoaded] = useState(false);
   const [userFirstName, setUserFirstName] = useState<string | null>(null);
-  const [selectedTrip, setSelectedTrip] = useState<NormalizedDashboardBooking | null>(null);
   const [actionNotice, setActionNotice] = useState<ActionNotice>(null);
   const [pendingActions, setPendingActions] = useState<Record<string, string>>({});
   const [openingConversationBookingId, setOpeningConversationBookingId] = useState<string | null>(
     null
   );
-  const tripDialogRef = useRef<HTMLDivElement | null>(null);
-  const closeTripButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const refreshDashboard = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent ?? false;
@@ -428,14 +423,6 @@ export default function DashboardPage() {
     void fetchMe();
     return () => controller.abort();
   }, []);
-
-  useEffect(() => {
-    if (!selectedTrip) return;
-    closeTripButtonRef.current?.focus();
-    if (!closeTripButtonRef.current) {
-      tripDialogRef.current?.focus();
-    }
-  }, [selectedTrip]);
 
   async function runOfferAction(
     offerId: string,
@@ -753,82 +740,71 @@ export default function DashboardPage() {
                         return (
                           <div
                             key={booking.id}
-                            className={`${PAGE_CARD} group/card overflow-hidden shadow-md shadow-zinc-900/5 transition-shadow duration-300 hover:shadow-lg hover:shadow-zinc-900/8`}
+                            className={`${PAGE_CARD} group/card relative overflow-hidden shadow-md shadow-zinc-900/5 transition-shadow duration-300 hover:shadow-lg hover:shadow-zinc-900/8`}
                           >
-                            <div className="h-1.5 w-full bg-gradient-to-r from-[#0d3d2e]/0 via-[#0d3d2e]/20 to-sky-500/25" />
-                            <div
-                              className="cursor-pointer p-4 transition hover:bg-sky-50/25"
-                              onClick={() => setSelectedTrip(booking)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter" || e.key === " ") {
-                                  e.preventDefault();
-                                  setSelectedTrip(booking);
-                                }
-                              }}
-                              role="button"
-                              tabIndex={0}
-                            >
-                              <div className="mb-1 flex items-start justify-between gap-2">
-                                <p className="text-[0.7rem] font-bold uppercase tracking-wide text-zinc-400">
-                                  {roleLabel}
-                                </p>
-                                <span className={rolePill}>Confirmed</span>
-                              </div>
-                              <h3 className="text-balance text-lg font-bold leading-snug tracking-tight text-zinc-900 line-clamp-2">
-                                {booking.originText}{" "}
-                                <span className="whitespace-nowrap text-[#0d3d2e]/90">→</span>{" "}
-                                {booking.destinationText}
-                              </h3>
-                              <div className="mt-2 space-y-1.5 text-sm text-zinc-600">
-                                <p className="inline-flex items-center gap-1.5">
-                                  <CalendarIcon />
-                                  {date}
-                                  {time ? ` · ${time}` : ""}
-                                </p>
-                                {viewerIsDriver ? (
-                                  <p className="inline-flex items-center gap-1.5">
-                                    <UsersIcon />
-                                    {getSeatDisplayText(booking, viewerUserId)}
+                            <Link
+                              href={`/confirmed/${booking.id}`}
+                              className="absolute inset-0 z-[1] rounded-2xl"
+                              aria-label={`View trip: ${booking.originText} to ${booking.destinationText}`}
+                            />
+                            <div className="pointer-events-none relative z-[2] h-1.5 w-full bg-gradient-to-r from-[#0d3d2e]/0 via-[#0d3d2e]/20 to-sky-500/25" />
+                            <div className="pointer-events-none relative z-[2] p-4 transition group-hover/card:bg-sky-50/25">
+                              <div>
+                                <div className="mb-1 flex items-start justify-between gap-2">
+                                  <p className="text-[0.7rem] font-bold uppercase tracking-wide text-zinc-400">
+                                    {roleLabel}
                                   </p>
-                                ) : (
+                                  <span className={rolePill}>Confirmed</span>
+                                </div>
+                                <h3 className="text-balance text-lg font-bold leading-snug tracking-tight text-zinc-900 line-clamp-2">
+                                  {booking.originText}{" "}
+                                  <span className="whitespace-nowrap text-[#0d3d2e]/90">→</span>{" "}
+                                  {booking.destinationText}
+                                </h3>
+                                <div className="mt-2 space-y-1.5 text-sm text-zinc-600">
                                   <p className="inline-flex items-center gap-1.5">
-                                    <MapPinIcon /> Pickup: {booking.originText}
+                                    <CalendarIcon />
+                                    {date}
+                                    {time ? ` · ${time}` : ""}
                                   </p>
-                                )}
+                                  {viewerIsDriver ? (
+                                    <p className="inline-flex items-center gap-1.5">
+                                      <UsersIcon />
+                                      {getSeatDisplayText(booking, viewerUserId)}
+                                    </p>
+                                  ) : (
+                                    <p className="inline-flex items-center gap-1.5">
+                                      <MapPinIcon /> Pickup: {booking.originText}
+                                    </p>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                            <div
-                              className="border-t border-zinc-100 bg-zinc-50/80 px-4 py-3"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {viewerIsDriver ? (
-                                <p className="text-sm text-zinc-600">
-                                  Manage pickups and messages from your ride detail page.
-                                </p>
-                              ) : viewerIsRider ? (
-                                <p className="text-sm text-zinc-800">
-                                  <span className="text-zinc-500">Driver </span>
-                                  {booking.driverName ?? "—"}
-                                  {vLabel ? (
-                                    <>
-                                      <span className="text-zinc-400"> &middot; </span>
-                                      {vLabel}
-                                    </>
-                                  ) : null}
-                                </p>
-                              ) : null}
-                              <div className="mt-2 flex items-center justify-between">
-                                <Link
-                                  href="/bookings"
-                                  className="text-xs font-semibold text-[#0d3d2e] hover:underline"
-                                >
-                                  Trip details
-                                </Link>
+                            <div className="pointer-events-none relative z-[2] border-t border-zinc-100 bg-zinc-50/80 px-4 py-3">
+                              <div>
+                                {viewerIsDriver ? (
+                                  <p className="text-sm text-zinc-600">
+                                    Manage pickups and messages from your trip page.
+                                  </p>
+                                ) : viewerIsRider ? (
+                                  <p className="text-sm text-zinc-800">
+                                    <span className="text-zinc-500">Driver </span>
+                                    {booking.driverName ?? "—"}
+                                    {vLabel ? (
+                                      <>
+                                        <span className="text-zinc-400"> &middot; </span>
+                                        {vLabel}
+                                      </>
+                                    ) : null}
+                                  </p>
+                                ) : null}
+                              </div>
+                              <div className="mt-2 flex items-center justify-end">
                                 <button
                                   type="button"
                                   onClick={() => void openBookingMessages(booking.id)}
                                   disabled={openingConversation}
-                                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-zinc-200 bg-white text-[#0d3d2e] hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                  className="pointer-events-auto relative z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-zinc-200 bg-white text-[#0d3d2e] hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
                                   aria-label="Message"
                                 >
                                   {openingConversation ? "…" : <MessageCircle size={16} />}
@@ -1024,142 +1000,6 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {selectedTrip ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/40 p-4 backdrop-blur-sm"
-          onClick={() => setSelectedTrip(null)}
-        >
-          <div
-            className="relative flex max-h-[90vh] w-full max-w-2xl flex-col overflow-y-auto rounded-2xl bg-white shadow-xl"
-            onClick={(event) => event.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="trip-details-title"
-            tabIndex={-1}
-            ref={tripDialogRef}
-          >
-            <div className="flex-1 p-6 md:p-8">
-              <button
-                onClick={() => setSelectedTrip(null)}
-                aria-label="Close trip details"
-                className="absolute right-6 top-6 z-10 rounded-full p-2 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-600"
-                ref={closeTripButtonRef}
-                type="button"
-              >
-                <X size={20} />
-              </button>
-
-              <div className="mb-8 flex items-center justify-between gap-3 pr-12">
-                <h2 id="trip-details-title" className="text-2xl font-bold text-zinc-900">
-                  Trip Details
-                </h2>
-                <span className="inline-flex items-center rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-sky-800">
-                  Confirmed
-                </span>
-              </div>
-
-              <div className="space-y-6">
-                <div className="space-y-4">
-                  <div>
-                    <div className="mb-2 flex items-center gap-2 text-sm font-semibold" style={{ color: MOSS }}>
-                      <MapPinIcon /> Origin
-                    </div>
-                    <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-zinc-700">
-                      {selectedTrip.originText}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="mb-2 flex items-center gap-2 text-sm font-semibold" style={{ color: MOSS }}>
-                      <MapPinIcon /> Destination
-                    </div>
-                    <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-zinc-700">
-                      {selectedTrip.destinationText}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-5 md:p-6">
-                  <div className="mb-4 flex items-center gap-2 text-lg font-bold" style={{ color: MOSS }}>
-                    <ClockIcon /> Trip window
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="mb-1 block text-sm font-medium text-zinc-600">
-                        Earliest
-                      </label>
-                      <div className="rounded-xl border border-zinc-200 bg-white p-3 text-zinc-800 shadow-sm">
-                        {format(new Date(selectedTrip.startsAt), "MMM d, h:mm a")}
-                      </div>
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-sm font-medium text-zinc-600">
-                        Latest
-                      </label>
-                      <div className="rounded-xl border border-zinc-200 bg-white p-3 text-zinc-800 shadow-sm">
-                        {format(new Date(selectedTrip.endsAt), "MMM d, h:mm a")}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-6">
-                  <div>
-                    <div className="mb-2 flex items-center gap-2 font-semibold" style={{ color: MOSS }}>
-                      <UsersIcon /> Seats
-                    </div>
-                    <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-lg font-medium text-zinc-800">
-                      {getSeatDisplayText(selectedTrip, viewerUserId)}
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="mb-2 flex items-center gap-2 font-semibold" style={{ color: MOSS }}>
-                      <span className="text-lg font-bold leading-none">$</span>
-                      Price
-                    </div>
-                    <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-lg font-medium text-zinc-800">
-                      {formatPrice(selectedTrip.priceCents) ?? "TBD"}
-                    </div>
-                  </div>
-                </div>
-
-                {selectedTrip.driverName ? (
-                  <div className="pt-2">
-                    <div className="rounded-xl border border-sky-100 bg-sky-50/50 p-4 text-sm text-sky-900">
-                      <p>
-                        <span className="font-semibold">Driver:</span> {selectedTrip.driverName}
-                        {formatVehicleType(selectedTrip.vehicleType) ? (
-                          <span> · {formatVehicleType(selectedTrip.vehicleType)}</span>
-                        ) : null}
-                      </p>
-                    </div>
-                  </div>
-                ) : null}
-
-                <div className="mt-8 flex items-center justify-end gap-3 border-t border-zinc-100 pt-6">
-                  <button
-                    type="button"
-                    onClick={() => void openBookingMessages(selectedTrip.id)}
-                    disabled={openingConversationBookingId === selectedTrip.id}
-                    className="inline-flex items-center gap-2 rounded-xl border border-zinc-300 px-5 py-2.5 text-sm font-medium text-zinc-900 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    <MessageCircle size={16} />
-                    {openingConversationBookingId === selectedTrip.id ? "Opening…" : "Message"}
-                  </button>
-                  <button
-                    onClick={() => setSelectedTrip(null)}
-                    className="rounded-xl bg-[#0d3d2e] px-8 py-2.5 text-lg font-medium text-white shadow-sm transition-colors hover:bg-[#0a2f24]"
-                    type="button"
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </ProtectedShell>
   );
 }
