@@ -155,23 +155,6 @@ export function ConfirmedTripClient() {
     void loadDetail();
   }, [loadDetail]);
 
-  /** When the driver completes the trip, the location API flips to inactive before GET booking is refetched—refresh booking detail for both sides. */
-  const refetchedAfterLocationInactive = useRef(false);
-  useEffect(() => {
-    if (detail?.booking.status !== "CONFIRMED") {
-      refetchedAfterLocationInactive.current = false;
-      return;
-    }
-    if (!locationTracking.isTripActive) {
-      if (!refetchedAfterLocationInactive.current) {
-        refetchedAfterLocationInactive.current = true;
-        void loadDetail({ silent: true });
-      }
-    } else {
-      refetchedAfterLocationInactive.current = false;
-    }
-  }, [detail?.booking.status, locationTracking.isTripActive, loadDetail]);
-
   /** Poll booking detail while the trip is still confirmed so driver completion syncs to the rider (and vice versa) without a manual refresh. */
   useEffect(() => {
     if (!bookingId || detail?.booking.status !== "CONFIRMED") {
@@ -195,6 +178,23 @@ export function ConfirmedTripClient() {
     enabled: trackingEnabled,
     pollIntervalMs: 8_000,
   });
+
+  /** When the driver completes the trip, the location API flips to inactive before GET booking is refetched—refresh booking detail for both sides. */
+  const refetchedAfterLocationInactive = useRef(false);
+  useEffect(() => {
+    if (detail?.booking.status !== "CONFIRMED") {
+      refetchedAfterLocationInactive.current = false;
+      return;
+    }
+    if (!locationTracking.isTripActive) {
+      if (!refetchedAfterLocationInactive.current) {
+        refetchedAfterLocationInactive.current = true;
+        void loadDetail({ silent: true });
+      }
+    } else {
+      refetchedAfterLocationInactive.current = false;
+    }
+  }, [detail?.booking.status, locationTracking.isTripActive, loadDetail]);
 
   const displayLat =
     locationTracking.location?.latitude ?? detail?.booking.currentLatitude ?? null;
