@@ -930,18 +930,9 @@ export function MyTripRequestsView() {
                     key={tripRequest.id}
                     className="w-full text-left bg-white border border-zinc-200 rounded-2xl p-5 transition-all overflow-hidden hover:border-emerald-500/50 hover:shadow-md"
                   >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const activeElement = document.activeElement;
-                        lastFocusedElementRef.current =
-                          activeElement instanceof HTMLElement ? activeElement : null;
-                        setSelectedTripRequest(tripRequest);
-                        setEditSubmitError(null);
-                        setEditFieldErrors({});
-                        setActionNotice(null);
-                      }}
-                      className="group w-full text-left relative cursor-pointer"
+                    <Link
+                      href={`/trip-requests/${tripRequest.id}`}
+                      className="group w-full text-left relative cursor-pointer block"
                     >
                       <div className="absolute top-0 right-0 flex items-center gap-2">
                         <span
@@ -1001,7 +992,7 @@ export function MyTripRequestsView() {
                           <ArrowRightIcon />
                         </div>
                       </div>
-                    </button>
+                    </Link>
 
                     {tripRequest.confirmedBookings.length > 0 ? (
                       <div className="mt-4 border-t border-zinc-200 pt-4">

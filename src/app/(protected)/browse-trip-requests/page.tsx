@@ -601,11 +601,10 @@ export default function BrowseTripRequestsPage() {
           ) : (
             <div className="flex flex-col gap-4">
               {filteredTripRequests.map((tripRequest) => (
-                <button
-                  type="button"
+                <Link
+                  href={`/trip-requests/${tripRequest.id}`}
                   key={tripRequest.id}
-                  onClick={() => openTripRequestModal(tripRequest)}
-                  className="group w-full text-left bg-white border border-zinc-200 rounded-2xl p-5 hover:border-emerald-500/50 hover:shadow-md transition-all relative overflow-hidden cursor-pointer"
+                  className="group w-full text-left bg-white border border-zinc-200 rounded-2xl p-5 hover:border-emerald-500/50 hover:shadow-md transition-all relative overflow-hidden cursor-pointer block"
                 >
                   <div className="absolute top-5 right-5 bg-amber-100 text-amber-800 text-xs font-bold px-2.5 py-1 rounded-full border border-amber-200 shadow-sm">
                     {toTitleCase(tripRequest.distanceCategory)}
@@ -658,7 +657,7 @@ export default function BrowseTripRequestsPage() {
                       )}
                     </div>
                   </div>
-                </button>
+                </Link>
               ))}
             </div>
           )}

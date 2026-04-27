@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { endOfDay, format, startOfDay } from "date-fns";
 import type {
   DistanceCategory,
@@ -965,21 +966,12 @@ export default function BrowseRidesPage() {
                               {distanceCategoryLabel(ride.distanceCategory)} · {formatDistanceMilesLabel(ride.distanceCategory)}
                             </span>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const el = document.activeElement;
-                              lastFocusedElementRef.current =
-                                el instanceof HTMLElement ? el : null;
-                              setSelectedRide(ride);
-                              setSelectedSeats(
-                                ride.seatsAvailable > 0 ? 1 : 0,
-                              );
-                            }}
+                          <Link
+                            href={`/rides/${ride.id}`}
                             className="inline-flex items-center justify-center self-end rounded-xl bg-[#006837] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#0d3d2e] sm:self-auto"
                           >
                             View Ride
-                          </button>
+                          </Link>
                         </div>
                       </div>
                     </div>
