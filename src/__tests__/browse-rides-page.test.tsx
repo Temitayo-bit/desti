@@ -48,24 +48,22 @@ describe("browse rides hub page", () => {
         const Page = (await import("@/app/(protected)/browse/page")).default;
         const markup = renderToStaticMarkup(<Page />);
 
-        expect(markup).toContain("Rides");
-        expect(markup).toContain("Browse");
+        expect(markup).toContain("Find your next journey");
+        expect(markup).toContain("Browse Rides");
         expect(markup).toContain("My Rides");
-        expect(markup).toContain("Post a Ride");
-        expect(markup).toContain('href="/post-ride"');
+        expect(markup).toContain("Where to?");
         expect(markup).not.toContain("data-testid=\"my-rides-view\"");
     });
 
-    it("renders the Advanced Filters button as enabled", async () => {
+    it("renders distance filter controls", async () => {
         mockUseSearchParams.mockReturnValue(new URLSearchParams());
 
         vi.resetModules();
         const Page = (await import("@/app/(protected)/browse/page")).default;
         const markup = renderToStaticMarkup(<Page />);
 
-        expect(markup).toContain("Advanced Filters");
-        expect(markup).not.toContain("aria-disabled=\"true\"");
-        expect(markup).not.toContain("cursor-not-allowed");
+        expect(markup).toContain("Distance");
+        expect(markup).toContain("Time window");
     });
 
     it("renders the my rides view when view=my", async () => {

@@ -82,24 +82,15 @@ const UsersIcon = () => (
   </svg>
 );
 
-const ArrowRightIcon = () => (
-  <svg
-    width="14"
-    height="14"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    className="text-zinc-400 group-hover:text-emerald-600 transition-colors"
-  >
-    <line x1="5" y1="12" x2="19" y2="12"></line>
-    <polyline points="12 5 19 12 12 19"></polyline>
-  </svg>
-);
+interface MyRidesViewProps {
+  /**
+   * When true, the view is shown inside the browse hub (shared hero/toggle in parent).
+   * Omits the page title, post CTA row, and Browse/My toggle.
+   */
+  embedded?: boolean;
+}
 
-export function MyRidesView() {
+export function MyRidesView({ embedded = false }: MyRidesViewProps) {
   const router = useRouter();
   const [rides, setRides] = useState<ManagedRideSummary[]>([]);
   const [selectedRide, setSelectedRide] = useState<ManagedRideSummary | null>(
@@ -466,84 +457,96 @@ export function MyRidesView() {
 
   return (
     <>
-      <div className="bg-white rounded-2xl p-6 md:p-8 shadow-sm border border-zinc-100">
-        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6 md:mb-8">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold tracking-tight mb-2">My Rides</h1>
-            <p className="text-zinc-500">Manage rides you have posted</p>
-          </div>
-          <Link
-            href="/post-ride"
-            className="bg-emerald-800 hover:bg-emerald-900 text-white px-5 py-2.5 rounded-xl font-medium flex items-center justify-center gap-2 transition-colors whitespace-nowrap shadow-sm"
-          >
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+      {embedded ? null : (
+        <div className="mb-4 rounded-2xl border border-zinc-100 bg-white p-6 shadow-sm md:p-8">
+          <div className="mb-6 flex flex-col justify-between gap-4 sm:mb-8 sm:flex-row sm:items-start">
+            <div>
+              <h1 className="mb-2 text-2xl font-bold tracking-tight md:text-3xl">My Rides</h1>
+              <p className="text-zinc-500">Manage rides you have posted</p>
+            </div>
+            <Link
+              href="/post-ride"
+              className="flex items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-emerald-800 px-5 py-2.5 font-medium text-white shadow-sm transition-colors hover:bg-emerald-900"
             >
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-            Post a Ride
-          </Link>
-        </div>
-
-        <RidesViewToggle activeView="my" />
-
-        <div className="relative">
-          <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-zinc-400">
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <circle cx="11" cy="11" r="8"></circle>
-              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-            </svg>
-          </div>
-          <input
-            type="text"
-            aria-label="Search destinations"
-            placeholder="Search destinations..."
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-            className="w-full bg-zinc-50 border border-zinc-200 rounded-xl py-3.5 pl-11 pr-4 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all font-medium placeholder:font-normal"
-          />
-        </div>
-
-        <div className="mt-5 -mx-1 px-1 overflow-x-auto">
-          <div className="flex min-w-max gap-2 pb-1">
-            {quickFilters.map((filterOpt) => (
-              <button
-                key={filterOpt}
-                onClick={() => setActiveFilter(filterOpt)}
-                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all whitespace-nowrap ${
-                  activeFilter === filterOpt
-                    ? "bg-emerald-800 text-white shadow-sm"
-                    : "bg-zinc-50 text-zinc-600 hover:bg-zinc-100 border border-zinc-200"
-                }`}
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
               >
-                {filterOpt}
-              </button>
-            ))}
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+              Post a Ride
+            </Link>
           </div>
-        </div>
-      </div>
 
-      <div className="w-full max-w-5xl mx-auto">
-        <div className="w-full min-w-0 bg-white rounded-2xl p-4 md:p-6 lg:p-8 shadow-sm border border-zinc-100">
-          <p className="text-sm font-medium text-zinc-500 mb-4 md:mb-6 text-center">
-            {filteredRides.length} {filteredRides.length === 1 ? "ride" : "rides"} posted
+          <RidesViewToggle activeView="my" />
+        </div>
+      )}
+
+      <div className={`w-full min-w-0 ${embedded ? "" : "max-w-5xl mx-auto"}`}>
+        <div
+          className={
+            embedded
+              ? "w-full min-w-0"
+              : "w-full min-w-0 rounded-2xl border border-zinc-100 bg-white p-4 shadow-sm md:p-6 lg:p-8"
+          }
+        >
+          <div className="mb-4">
+            <div className="relative">
+              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-zinc-400">
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+              </div>
+              <input
+                type="text"
+                aria-label="Search destinations"
+                placeholder="Search destinations..."
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                className="w-full rounded-xl border border-zinc-200 bg-zinc-50 py-3.5 pl-11 pr-4 font-medium placeholder:font-normal transition-all focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+              />
+            </div>
+            <div className="mt-4 -mx-1 overflow-x-auto px-1">
+              <div className="flex min-w-max gap-2 pb-1">
+                {quickFilters.map((filterOpt) => (
+                  <button
+                    key={filterOpt}
+                    type="button"
+                    onClick={() => setActiveFilter(filterOpt)}
+                    className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-medium transition-all ${
+                      activeFilter === filterOpt
+                        ? "bg-emerald-800 text-white shadow-sm"
+                        : "border border-zinc-200 bg-zinc-50 text-zinc-600 hover:bg-zinc-100"
+                    }`}
+                  >
+                    {filterOpt}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <p
+            className={`text-sm font-medium text-zinc-500 ${embedded ? "mb-3 text-left" : "mb-4 md:mb-6 text-center"}`}
+          >
+            {filteredRides.length}{" "}
+            {filteredRides.length === 1 ? "ride" : "rides"} posted
           </p>
           {actionNotice ? (
             <div
@@ -633,59 +636,78 @@ export function MyRidesView() {
             </div>
           ) : (
             <div className="flex flex-col gap-4">
-              {filteredRides.map((ride) => (
+              {filteredRides.map((ride) => {
+                const filledSeats = Math.max(
+                  0,
+                  ride.seatsTotal - ride.seatsAvailable,
+                );
+                return (
                 <article
                   key={ride.id}
-                  className="w-full text-left bg-white border border-zinc-200 rounded-2xl p-5 transition-all relative overflow-hidden hover:border-emerald-500/50 hover:shadow-md"
+                  className="relative w-full overflow-hidden rounded-2xl border border-zinc-200 bg-white pl-1 text-left shadow-sm transition-all hover:border-[#006837]/50 hover:shadow-md"
                 >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const activeElement = document.activeElement;
-                      lastFocusedElementRef.current =
-                        activeElement instanceof HTMLElement ? activeElement : null;
-                      setSelectedRide(ride);
-                    }}
-                    className="group w-full text-left cursor-pointer"
-                  >
-                    <div className="absolute top-5 right-5 bg-amber-100 text-amber-800 text-xs font-bold px-2.5 py-1 rounded-full border border-amber-200 shadow-sm">
-                      {toTitleCase(ride.distanceCategory)}
+                  <div
+                    className="absolute bottom-0 left-0 top-0 w-1 bg-[#006837]"
+                    aria-hidden
+                  />
+                  <div className="p-4 pl-5 sm:p-5 sm:pl-6">
+                    <div className="absolute top-4 right-4 flex flex-col items-end gap-1 sm:top-5 sm:right-5">
+                      <span className="rounded-full border border-amber-200 bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-800 shadow-sm">
+                        {toTitleCase(ride.distanceCategory)}
+                      </span>
+                      <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-zinc-600">
+                        {ride.status}
+                      </span>
                     </div>
 
-                    <div className="pr-20">
-                      <div className="flex items-start gap-3 mb-1">
-                        <div className="mt-1">
+                    <div className="pr-4 sm:pr-24">
+                      <div className="flex items-start gap-3">
+                        <div className="mt-0.5">
                           <MapPinIcon />
                         </div>
-                        <div>
-                          <h3 className="font-bold text-lg leading-tight text-zinc-900 group-hover:text-emerald-800 transition-colors">
+                        <div className="min-w-0">
+                          <h3 className="text-lg font-bold leading-tight text-zinc-900">
                             {ride.destinationText}
                           </h3>
-                          <p className="text-sm text-zinc-500 mt-0.5">
-                            from {ride.originText}
+                          <p className="mt-0.5 text-sm text-zinc-500">from {ride.originText}</p>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm font-medium text-zinc-600">
+                          <div className="flex items-center gap-1.5">
+                            <ClockIcon />
+                            {formatTimeRange(ride.earliestDepartAt, ride.latestDepartAt)}
+                          </div>
+                          <div className="flex items-center gap-1.5 rounded-md bg-zinc-100 px-2 py-0.5">
+                            <UsersIcon />
+                            {filledSeats}/{ride.seatsTotal} seats filled
+                          </div>
+                        </div>
+                        <div className="text-left sm:text-right">
+                          <p className="text-2xl font-bold text-[#006837]">
+                            ${(ride.priceCents / 100).toFixed(0)}
                           </p>
+                          <p className="text-xs text-zinc-500">per seat</p>
                         </div>
                       </div>
                     </div>
 
-                    <div className="mt-5 flex items-end justify-between">
-                      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-zinc-600 font-medium">
-                        <div className="flex items-center gap-1.5">
-                          <ClockIcon />
-                          {formatTimeRange(ride.earliestDepartAt, ride.latestDepartAt)}
-                        </div>
-                        <div className="flex items-center gap-1.5 bg-zinc-100 px-2 py-0.5 rounded-md">
-                          <UsersIcon />
-                          {ride.seatsAvailable}{" "}
-                          {ride.seatsAvailable === 1 ? "seat" : "seats"} available
-                        </div>
-                      </div>
-                      <div className="flex items-baseline gap-1 text-emerald-800">
-                        <span className="font-bold text-xl">${(ride.priceCents / 100).toFixed(2)}</span>
-                        <ArrowRightIcon />
-                      </div>
+                    <div className="mt-4 flex flex-wrap justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const activeElement = document.activeElement;
+                          lastFocusedElementRef.current =
+                            activeElement instanceof HTMLElement ? activeElement : null;
+                          setSelectedRide(ride);
+                        }}
+                        className="rounded-xl bg-[#006837] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#0d3d2e]"
+                      >
+                        Manage Ride
+                      </button>
                     </div>
-                  </button>
+                  </div>
 
                   {ride.confirmedBookings.length > 0 ? (
                     <div className="mt-4 border-t border-zinc-200 pt-4">
@@ -731,7 +753,8 @@ export function MyRidesView() {
                     </div>
                   ) : null}
                 </article>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
