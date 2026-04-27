@@ -25,6 +25,7 @@ model User {
   yearAtStetson      YearAtStetson? @map("year_at_stetson")
   gender             Gender?
   age                Int?
+  bio                String?        @map("bio")
   profilePictureUrl  String?        @map("profile_picture_url")
   onboardingComplete Boolean        @default(false) @map("onboarding_complete")
 
