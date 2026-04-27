@@ -55,6 +55,7 @@ export function RideDetailClient({ ride, currentUserClerkId }: RideDetailClientP
   const [offerActionPending, setOfferActionPending] = useState<Record<string, boolean>>({});
   const [offerActionNotice, setOfferActionNotice] = useState<string | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
+  const [bookingNotice, setBookingNotice] = useState<string | null>(null);
 
   // Edit Modal State
   const [editFormData, setEditFormData] = useState({
@@ -80,6 +81,7 @@ export function RideDetailClient({ ride, currentUserClerkId }: RideDetailClientP
     if (bookingInProgress || ride.seatsAvailable <= 0 || isOwner) return;
 
     setBookingInProgress(true);
+    setBookingNotice(null);
     const idempotencyKey = crypto.randomUUID();
 
     try {
@@ -96,22 +98,26 @@ export function RideDetailClient({ ride, currentUserClerkId }: RideDetailClientP
       });
 
       if (res.ok) {
-        alert("Booking successful!");
+        setBookingNotice("Booking successful!");
         router.refresh();
       } else {
-        const data = await res.json();
-        alert(`Failed to book: ${data.message || data.error}`);
+        const text = await res.text();
+        let message = "Failed to book ride.";
+        try { message = (JSON.parse(text) as any).message || (JSON.parse(text) as any).error || message; } catch { message = text || message; }
+        setBookingNotice(message);
       }
     } catch (err) {
-      alert("Error booking ride.");
+      console.error("[handleBookRide]", err);
+      setBookingNotice("Network error. Please try again.");
     } finally {
       setBookingInProgress(false);
     }
   };
 
   const handleSendOffer = async () => {
-    if (!offerPrice || isNaN(Number(offerPrice))) {
-      alert("Please enter a valid price.");
+    const cents = Math.round(Number(offerPrice) * 100);
+    if (!offerPrice || isNaN(cents) || cents < 1) {
+      alert("Please enter a valid price (minimum $0.01).");
       return;
     }
     try {
@@ -119,17 +125,17 @@ export function RideDetailClient({ ride, currentUserClerkId }: RideDetailClientP
       const res = await fetch(`/api/rides/${ride.id}/offers`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          offeredPriceCents: Math.round(Number(offerPrice) * 100),
-        }),
+        body: JSON.stringify({ offeredPriceCents: cents }),
       });
       if (res.ok) {
         alert("Offer sent!");
         setIsOfferModalOpen(false);
         router.refresh();
       } else {
-        const data = await res.json();
-        alert(data.message || "Failed to send offer");
+        const text = await res.text();
+        let message = "Failed to send offer";
+        try { message = (JSON.parse(text) as any).message || message; } catch { message = text || message; }
+        alert(message);
       }
     } catch (e) {
       alert("Error sending offer.");
@@ -375,6 +381,9 @@ export function RideDetailClient({ ride, currentUserClerkId }: RideDetailClientP
 
               {!isOwner && !isCancelled && ride.seatsAvailable > 0 && (
                 <div className="space-y-3">
+                  {bookingNotice && (
+                    <p className="text-sm font-medium text-white/90 bg-white/10 rounded-xl px-3 py-2">{bookingNotice}</p>
+                  )}
                   <button
                     onClick={handleBookRide}
                     disabled={bookingInProgress}
@@ -426,66 +435,73 @@ export function RideDetailClient({ ride, currentUserClerkId }: RideDetailClientP
               <div className="space-y-6">
                 <div className="bg-white rounded-3xl p-6 shadow-sm border border-zinc-100">
                   <h3 className="font-bold text-zinc-900 mb-4">Pending Offers</h3>
+                  {bookingNotice && (
+                    <p className="mb-3 text-xs font-medium text-emerald-700">{bookingNotice}</p>
+                  )}
                   {offerActionNotice && (
                     <p className="mb-3 text-xs text-emerald-700 font-medium">{offerActionNotice}</p>
                   )}
-                  {ride.rideOffers?.filter((o: any) => o.state === "PENDING").length > 0 ? (
-                    <div className="space-y-4">
-                      {ride.rideOffers.filter((o: any) => o.state === "PENDING").map((offer: any) => {
-                        const busy = !!offerActionPending[offer.id];
-                        return (
-                          <div key={offer.id} className="border border-zinc-100 rounded-xl p-4 bg-zinc-50">
-                            <p className="font-medium text-sm text-zinc-900 mb-1">
-                              {offer.rider.name} offered ${(offer.offeredPriceCents / 100).toFixed(2)}
-                            </p>
-                            <div className="flex gap-2 mt-3">
-                              <button
-                                disabled={busy}
-                                onClick={async () => {
-                                  setOfferActionPending(p => ({ ...p, [offer.id]: true }));
-                                  setOfferActionNotice(null);
-                                  try {
-                                    const res = await fetch(`/api/ride-offers/${offer.id}/accept`, { method: "POST" });
-                                    if (res.ok) { setOfferActionNotice("Offer accepted!"); router.refresh(); }
-                                    else { const d = await res.json(); setOfferActionNotice(d.message || "Failed to accept."); }
-                                  } catch { setOfferActionNotice("Network error."); }
-                                  finally { setOfferActionPending(p => { const n = {...p}; delete n[offer.id]; return n; }); }
-                                }}
-                                className="flex-1 bg-[#006837] text-white text-xs font-bold py-2 rounded-lg disabled:opacity-50"
-                              >
-                                {busy ? "..." : "Accept"}
-                              </button>
-                              <button
-                                disabled={busy}
-                                onClick={async () => {
-                                  setOfferActionPending(p => ({ ...p, [offer.id]: true }));
-                                  setOfferActionNotice(null);
-                                  try {
-                                    const res = await fetch(`/api/ride-offers/${offer.id}/reject`, { method: "POST" });
-                                    if (res.ok) { setOfferActionNotice("Offer declined."); router.refresh(); }
-                                    else { const d = await res.json(); setOfferActionNotice(d.message || "Failed to decline."); }
-                                  } catch { setOfferActionNotice("Network error."); }
-                                  finally { setOfferActionPending(p => { const n = {...p}; delete n[offer.id]; return n; }); }
-                                }}
-                                className="flex-1 bg-zinc-200 text-zinc-700 text-xs font-bold py-2 rounded-lg disabled:opacity-50"
-                              >
-                                {busy ? "..." : "Decline"}
-                              </button>
+                  {(() => {
+                    const pendingOffers = ride.rideOffers?.filter((o: any) => o.state === "PENDING") ?? [];
+                    return pendingOffers.length > 0 ? (
+                      <div className="space-y-4">
+                        {pendingOffers.map((offer: any) => {
+                          const busy = !!offerActionPending[offer.id];
+                          return (
+                            <div key={offer.id} className="border border-zinc-100 rounded-xl p-4 bg-zinc-50">
+                              <p className="font-medium text-sm text-zinc-900 mb-1">
+                                {offer.rider.name} offered ${(offer.offeredPriceCents / 100).toFixed(2)}
+                              </p>
+                              <div className="flex gap-2 mt-3">
+                                <button
+                                  disabled={busy}
+                                  onClick={async () => {
+                                    setOfferActionPending(p => ({ ...p, [offer.id]: true }));
+                                    setOfferActionNotice(null);
+                                    try {
+                                      const res = await fetch(`/api/ride-offers/${offer.id}/accept`, { method: "POST" });
+                                      if (res.ok) { setOfferActionNotice("Offer accepted!"); router.refresh(); }
+                                      else { const d = await res.json(); setOfferActionNotice(d.message || "Failed to accept."); }
+                                    } catch { setOfferActionNotice("Network error."); }
+                                    finally { setOfferActionPending(p => { const n = {...p}; delete n[offer.id]; return n; }); }
+                                  }}
+                                  className="flex-1 bg-[#006837] text-white text-xs font-bold py-2 rounded-lg disabled:opacity-50"
+                                >
+                                  {busy ? "..." : "Accept"}
+                                </button>
+                                <button
+                                  disabled={busy}
+                                  onClick={async () => {
+                                    setOfferActionPending(p => ({ ...p, [offer.id]: true }));
+                                    setOfferActionNotice(null);
+                                    try {
+                                      const res = await fetch(`/api/ride-offers/${offer.id}/reject`, { method: "POST" });
+                                      if (res.ok) { setOfferActionNotice("Offer declined."); router.refresh(); }
+                                      else { const d = await res.json(); setOfferActionNotice(d.message || "Failed to decline."); }
+                                    } catch { setOfferActionNotice("Network error."); }
+                                    finally { setOfferActionPending(p => { const n = {...p}; delete n[offer.id]; return n; }); }
+                                  }}
+                                  className="flex-1 bg-zinc-200 text-zinc-700 text-xs font-bold py-2 rounded-lg disabled:opacity-50"
+                                >
+                                  {busy ? "..." : "Decline"}
+                                </button>
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-zinc-500">No pending offers.</p>
-                  )}
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-zinc-500">No pending offers.</p>
+                    );
+                  })()}
                 </div>
-
                 <div className="bg-white rounded-3xl p-6 shadow-sm border border-zinc-100">
                   <h3 className="font-bold text-zinc-900 mb-4">Stop Requests</h3>
-                  {ride.stopRequests?.filter((s: any) => s.state === "PENDING").length > 0 ? (
-                    <div className="space-y-4">
-                      {ride.stopRequests.filter((s: any) => s.state === "PENDING").map((req: any) => (
+                  {(() => {
+                    const pendingStopRequests = ride.stopRequests?.filter((s: any) => s.state === "PENDING") ?? [];
+                    return pendingStopRequests.length > 0 ? (
+                      <div className="space-y-4">
+                        {pendingStopRequests.map((req: any) => (
                         <div key={req.id} className="border border-zinc-100 rounded-xl p-4 bg-zinc-50">
                           <p className="font-medium text-sm text-zinc-900 mb-1">{req.rider.name} requested a stop</p>
                           <p className="text-xs text-zinc-500">Pickup: {req.requestedPickupText}</p>
@@ -561,10 +577,11 @@ export function RideDetailClient({ ride, currentUserClerkId }: RideDetailClientP
                           )}
                         </div>
                       ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-zinc-500">No pending stop requests.</p>
-                  )}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-zinc-500">No pending stop requests.</p>
+                    );
+                  })()}
                 </div>
 
                 <div className="bg-white rounded-3xl p-6 shadow-sm border border-zinc-100">

@@ -29,6 +29,7 @@ export default async function TripRequestDetailPage({ params }: PageProps) {
         },
       },
       offers: {
+        where: { status: "PENDING" },
         include: {
           driver: { select: { name: true, profilePictureUrl: true } },
         },
@@ -42,7 +43,9 @@ export default async function TripRequestDetailPage({ params }: PageProps) {
         },
         orderBy: { scoreSnapshot: "desc" },
       },
-      bookings: true
+      bookings: {
+        where: { status: { in: ["CONFIRMED", "COMPLETED"] } },
+      }
     },
   });
 

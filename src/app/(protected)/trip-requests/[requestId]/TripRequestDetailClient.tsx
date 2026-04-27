@@ -36,16 +36,15 @@ export function TripRequestDetailClient({ tripRequest, currentUserClerkId }: Tri
   const [offerError, setOfferError] = useState<string | null>(null);
   const [offerSuccess, setOfferSuccess] = useState(false);
 
-  // Edit Modal State
+  // Edit Modal State — only the fields exposed in the UI
   const [editFormData, setEditFormData] = useState({
-    originText: tripRequest.originText,
-    destinationText: tripRequest.destinationText,
-    earliestDesiredAt: format(new Date(tripRequest.earliestDesiredAt), "yyyy-MM-dd'T'HH:mm"),
-    latestDesiredAt: format(new Date(tripRequest.latestDesiredAt), "yyyy-MM-dd'T'HH:mm"),
     seatsNeeded: tripRequest.seatsNeeded,
     pickupInstructions: tripRequest.pickupInstructions ?? "",
     dropoffInstructions: tripRequest.dropoffInstructions ?? "",
   });
+  const [editError, setEditError] = useState<string | null>(null);
+  const [offerActionLoading, setOfferActionLoading] = useState<Record<string, boolean>>({});
+  const [offerActionNotice, setOfferActionNotice] = useState<string | null>(null);
 
   const hasConfirmedBooking =
     tripRequest.bookings &&
@@ -98,34 +97,58 @@ export function TripRequestDetailClient({ tripRequest, currentUserClerkId }: Tri
   };
 
   const handleEditSubmit = async () => {
+    const seats = Number(editFormData.seatsNeeded);
+    if (!editFormData.seatsNeeded || isNaN(seats) || !Number.isInteger(seats) || seats < 1 || seats > 8) {
+      setEditError("Seats needed must be a whole number between 1 and 8.");
+      return;
+    }
+    setEditError(null);
     try {
       setSubmitting(true);
       const res = await fetch(`/api/trip-requests/${tripRequest.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          originText: editFormData.originText,
-          destinationText: editFormData.destinationText,
-          earliestDesiredAt: new Date(editFormData.earliestDesiredAt).toISOString(),
-          latestDesiredAt: new Date(editFormData.latestDesiredAt).toISOString(),
-          seatsNeeded: editFormData.seatsNeeded,
+          seatsNeeded: seats,
           pickupInstructions: editFormData.pickupInstructions || null,
           dropoffInstructions: editFormData.dropoffInstructions || null,
         })
       });
 
       if (res.ok) {
-        alert("Trip Request updated!");
         setIsEditing(false);
         router.refresh();
       } else {
-        const data = await res.json();
-        alert(data.message || "Failed to update request");
+        const text = await res.text();
+        let message = "Failed to update request";
+        try { message = (JSON.parse(text) as any).message || message; } catch { message = text || message; }
+        setEditError(message);
       }
-    } catch (err) {
-      alert("Error updating request.");
+    } catch {
+      setEditError("Network error. Please try again.");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const runOfferAction = async (offerId: string, kind: "accept" | "cancel") => {
+    setOfferActionLoading(p => ({ ...p, [offerId]: true }));
+    setOfferActionNotice(null);
+    try {
+      const res = await fetch(`/api/offers/${offerId}/${kind}`, { method: "POST" });
+      if (res.ok) {
+        setOfferActionNotice(kind === "accept" ? "Offer accepted!" : "Offer declined.");
+        router.refresh();
+      } else {
+        const text = await res.text();
+        let message = kind === "accept" ? "Failed to accept." : "Failed to decline.";
+        try { message = (JSON.parse(text) as any).message || message; } catch { message = text || message; }
+        setOfferActionNotice(message);
+      }
+    } catch {
+      setOfferActionNotice("Network error. Please try again.");
+    } finally {
+      setOfferActionLoading(p => { const n = { ...p }; delete n[offerId]; return n; });
     }
   };
 
@@ -295,45 +318,44 @@ export function TripRequestDetailClient({ tripRequest, currentUserClerkId }: Tri
               <div className="space-y-6">
                 <div className="bg-white rounded-3xl p-6 shadow-sm border border-zinc-100">
                   <h3 className="font-bold text-zinc-900 mb-4">Offers Received</h3>
-                  {tripRequest.offers?.filter((o: any) => o.status === "PENDING").length > 0 ? (
-                    <div className="space-y-4">
-                      {tripRequest.offers.filter((o: any) => o.status === "PENDING").map((offer: any) => (
-                        <div key={offer.id} className="border border-zinc-100 rounded-xl p-4 bg-zinc-50">
-                          <p className="font-medium text-sm text-zinc-900 mb-1">
-                            {offer.driver?.name} offered a ride for ${(offer.priceCents / 100).toFixed(2)}
-                          </p>
-                          <div className="flex gap-2 mt-3">
-                            <button
-                              onClick={async () => {
-                                try {
-                                  const res = await fetch(`/api/offers/${offer.id}/accept`, { method: "POST" });
-                                  if (res.ok) router.refresh();
-                                  else { const d = await res.json(); alert(d.message || "Failed to accept."); }
-                                } catch { alert("Network error."); }
-                              }}
-                              className="flex-1 bg-amber-600 text-white text-xs font-bold py-2 rounded-lg"
-                            >
-                              Accept
-                            </button>
-                            <button
-                              onClick={async () => {
-                                try {
-                                  const res = await fetch(`/api/offers/${offer.id}/cancel`, { method: "POST" });
-                                  if (res.ok) router.refresh();
-                                  else { const d = await res.json(); alert(d.message || "Failed to decline."); }
-                                } catch { alert("Network error."); }
-                              }}
-                              className="flex-1 bg-zinc-200 text-zinc-700 text-xs font-bold py-2 rounded-lg"
-                            >
-                              Decline
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-zinc-500">No pending offers.</p>
+                  {offerActionNotice && (
+                    <p className="mb-3 text-xs font-medium text-emerald-700">{offerActionNotice}</p>
                   )}
+                  {(() => {
+                    const pendingOffers = tripRequest.offers?.filter((o: any) => o.status === "PENDING") ?? [];
+                    return pendingOffers.length > 0 ? (
+                      <div className="space-y-4">
+                        {pendingOffers.map((offer: any) => {
+                          const busy = !!offerActionLoading[offer.id];
+                          return (
+                            <div key={offer.id} className="border border-zinc-100 rounded-xl p-4 bg-zinc-50">
+                              <p className="font-medium text-sm text-zinc-900 mb-1">
+                                {offer.driver?.name} offered a ride for ${(offer.priceCents / 100).toFixed(2)}
+                              </p>
+                              <div className="flex gap-2 mt-3">
+                                <button
+                                  disabled={busy}
+                                  onClick={() => runOfferAction(offer.id, "accept")}
+                                  className="flex-1 bg-amber-600 text-white text-xs font-bold py-2 rounded-lg disabled:opacity-50"
+                                >
+                                  {busy ? "..." : "Accept"}
+                                </button>
+                                <button
+                                  disabled={busy}
+                                  onClick={() => runOfferAction(offer.id, "cancel")}
+                                  className="flex-1 bg-zinc-200 text-zinc-700 text-xs font-bold py-2 rounded-lg disabled:opacity-50"
+                                >
+                                  {busy ? "..." : "Decline"}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-zinc-500">No pending offers.</p>
+                    );
+                  })()}
                 </div>
 
                 <div className="bg-white rounded-3xl p-6 shadow-sm border border-zinc-100">
@@ -380,7 +402,12 @@ export function TripRequestDetailClient({ tripRequest, currentUserClerkId }: Tri
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-semibold mb-1">Seats Needed</label>
-                    <input type="number" value={editFormData.seatsNeeded} onChange={e => setEditFormData({...editFormData, seatsNeeded: Number(e.target.value)})} className="w-full border rounded-xl p-3" />
+                    <input
+                      type="number" min="1" max="8" step="1"
+                      value={editFormData.seatsNeeded}
+                      onChange={e => setEditFormData({...editFormData, seatsNeeded: Number(e.target.value)})}
+                      className="w-full border rounded-xl p-3"
+                    />
                   </div>
                 </div>
                 <div>
@@ -391,6 +418,7 @@ export function TripRequestDetailClient({ tripRequest, currentUserClerkId }: Tri
                   <label className="block text-sm font-semibold mb-1">Dropoff Instructions</label>
                   <textarea value={editFormData.dropoffInstructions} onChange={e => setEditFormData({...editFormData, dropoffInstructions: e.target.value})} className="w-full border rounded-xl p-3" />
                 </div>
+                {editError && <p className="text-sm text-red-600">{editError}</p>}
                 <button onClick={handleEditSubmit} disabled={submitting} className="w-full bg-amber-600 text-white font-bold py-3 rounded-xl mt-4">
                   {submitting ? "Saving..." : "Save Changes"}
                 </button>

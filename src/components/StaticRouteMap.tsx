@@ -301,6 +301,8 @@ export function StaticRouteMap({
       return;
     }
 
+    // Reset status so the marker-sync effect re-runs when a new map is created.
+    setMapStatus("loading");
     let disposed = false;
     hasInitialFitRef.current = false;
     const originMarkerState = originMarkerRef.current;
