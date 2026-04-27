@@ -56,12 +56,12 @@ export function LandingPage() {
                                 Get Started
                                 <ArrowRight className="h-4 w-4" strokeWidth={2} />
                             </Link>
-                            <a
-                                href="#features"
+                            <Link
+                                href="/browse"
                                 className="inline-flex items-center justify-center rounded-xl border border-zinc-300 bg-white px-6 py-3.5 text-sm font-semibold text-zinc-800 transition hover:border-zinc-400 md:text-base"
                             >
                                 View Routes
-                            </a>
+                            </Link>
                         </div>
 
                         <div className="mt-8 flex items-center gap-3 md:mt-10">

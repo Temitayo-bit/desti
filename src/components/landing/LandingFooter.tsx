@@ -19,19 +19,19 @@ export function LandingFooter() {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-                    <a href="#help" className={footerLinkClass}>
+                    <a href="mailto:support@desti.app" className={footerLinkClass}>
                         Help
                     </a>
                     <a href="#safety" className={footerLinkClass}>
                         Safety
                     </a>
-                    <a href="#terms" className={footerLinkClass}>
-                        Terms
+                    <a href="/?home" className={footerLinkClass}>
+                        Home
                     </a>
                     <a href="#privacy" className={footerLinkClass}>
                         Privacy
                     </a>
-                    <a href="#contact" className={footerLinkClass}>
+                    <a href="mailto:support@desti.app" className={footerLinkClass}>
                         Contact
                     </a>
                     <span className="ml-0 flex items-center gap-2 border-l border-zinc-300 pl-4 md:ml-2">
