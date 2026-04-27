@@ -1,0 +1,4170 @@
+# Code Explanation
+
+## 2026-04-23 — Ride-Level Optional Attributes + Strict Browse Filtering
+
+### Scope
+
+Implemented a backend-first enhancement for **optional ride-level attributes** on `Ride` and strict browse filtering for those attributes.
+
+Added support for:
+- `musicPreference`
+- `hasAc`
+- `hasTrunkSpace`
+- `vehicleType`
+
+These attributes were intentionally implemented on the **Ride** entity (create/edit/browse) and **not** onboarding/profile.
+
+### Files Changed
+
+- `prisma/schema.prisma` (MODIFIED)
+- `prisma/migrations/20260423100000_add_ride_optional_attributes/migration.sql` (NEW)
+- `src/app/api/rides/route.ts` (MODIFIED)
+- `src/app/api/rides/[rideId]/route.ts` (MODIFIED)
+- `src/app/api/rides/mine/route.ts` (MODIFIED)
+- `src/lib/post-ride-form.ts` (MODIFIED)
+- `src/app/(protected)/post-ride/page.tsx` (MODIFIED)
+- `src/app/(protected)/browse/page.tsx` (MODIFIED)
+- `src/app/(protected)/my-rides/MyRidesView.tsx` (MODIFIED)
+- `src/types/ride.ts` (MODIFIED)
+- `src/__tests__/ride-create.test.ts` (MODIFIED)
+- `src/__tests__/ride-edit.test.ts` (MODIFIED)
+- `src/__tests__/rides-browse.test.ts` (MODIFIED)
+- `src/__tests__/rides-mine.test.ts` (MODIFIED)
+- `src/__tests__/post-ride-form.test.ts` (MODIFIED)
+
+### Ride Schema Changes
+
+In `prisma/schema.prisma`, `Ride` now includes nullable ride-level fields:
+- `musicPreference MusicPreference? @map("music_preference")`
+- `hasAc Boolean? @map("has_ac")`
+- `hasTrunkSpace Boolean? @map("has_trunk_space")`
+- `vehicleType VehicleType? @map("vehicle_type")`
+
+New enums:
+- `MusicPreference`:
+  - `MUSIC_ALLOWED`
+  - `NO_MUSIC`
+- `VehicleType`:
+  - `SEDAN`
+  - `SUV`
+  - `TRUCK`
+  - `VAN`
+  - `COUPE`
+  - `OTHER`
+
+Migration (`20260423100000_add_ride_optional_attributes`) is additive/backward-compatible:
+- creates enum types
+- adds nullable columns to `rides`
+- does not rewrite existing rows
+
+### Enum Choices
+
+Enum values were intentionally kept small and practical:
+- Music: `MUSIC_ALLOWED`, `NO_MUSIC`
+- Vehicle type: `SEDAN`, `SUV`, `TRUCK`, `VAN`, `COUPE`, `OTHER`
+
+No extra enum complexity was introduced.
+
+### Null / Unspecified Semantics
+
+Semantics preserved end-to-end:
+- `null` = unspecified by driver
+- `true` = explicitly available/yes
+- `false` = explicitly unavailable/no
+
+Implementation details:
+- Create flow: omitted fields remain `null`.
+- Update flow: fields accept `true`/`false` or `null` to clear.
+- UI includes explicit `Unspecified` options.
+- Form payload generation does not coerce `Unspecified` to `false`.
+
+### Create / Update API Changes
+
+#### POST `/api/rides` (`src/app/api/rides/route.ts`)
+
+- Request validation now accepts optional:
+  - `musicPreference` (enum or null/omitted)
+  - `hasAc` (boolean or null/omitted)
+  - `hasTrunkSpace` (boolean or null/omitted)
+  - `vehicleType` (enum or null/omitted)
+- Invalid enum values/types are rejected with field-level validation errors.
+- Ride creation still succeeds when none of these are provided.
+- Existing booking/seat/idempotency invariants remain unchanged.
+
+#### PATCH `/api/rides/:rideId` (`src/app/api/rides/[rideId]/route.ts`)
+
+- Added the new fields to `ALLOWED_UPDATE_FIELDS`.
+- Validation supports setting enum values/booleans and clearing to null.
+- Kept existing edit-lock rules intact:
+  - ownership required
+  - blocked when confirmed bookings exist
+  - no expansion of editability constraints beyond current behavior
+
+### Browse / Filtering Changes (Strict)
+
+#### Backend filtering (`src/app/api/rides/route.ts`)
+
+GET `/api/rides` now accepts optional query params:
+- `musicPreference`
+- `hasAc`
+- `hasTrunkSpace`
+- `vehicleType`
+
+Strict filtering behavior:
+- `hasAc=true` => only `hasAc = true`
+- `hasTrunkSpace=true` => only `hasTrunkSpace = true`
+- enum filters => exact enum matches only
+- `null`/unspecified does **not** match filtered values
+
+Invalid query values return `400` via strict query validation.
+
+### Response / Serialization Changes
+
+Ride list/select payloads now expose these fields where ride summaries are returned:
+- `GET /api/rides`
+- `GET /api/rides/mine`
+- `POST /api/rides` and `PATCH /api/rides/:rideId` naturally return updated ride objects including new fields
+
+### Frontend Ride Form Changes
+
+#### Post Ride form (`src/lib/post-ride-form.ts`, `src/app/(protected)/post-ride/page.tsx`)
+
+Added optional inputs:
+- music preference
+- AC availability
+- trunk space availability
+- vehicle type
+
+Behavior:
+- all optional
+- explicit `Unspecified` choice remains available
+- payload builder includes these only when selected
+- unspecified values are not converted to `false`
+
+### Browse UI Filter Changes
+
+`src/app/(protected)/browse/page.tsx` advanced filters now include:
+- music preference
+- AC availability
+- trunk space availability
+- vehicle type
+
+These are sent as API query params and enforced server-side with strict matching.
+
+Also added ride-attribute display in ride details modals and made these attributes editable in existing ride edit modals on:
+- browse rides view (`src/app/(protected)/browse/page.tsx`)
+- my rides view (`src/app/(protected)/my-rides/MyRidesView.tsx`)
+
+No edit-lock rule changes were made.
+
+### Tests Added / Updated
+
+#### `src/__tests__/ride-create.test.ts`
+- create with no optional attributes (ensures nullable defaults)
+- create with all optional attributes set
+- invalid enum validation for `musicPreference` and `vehicleType`
+
+#### `src/__tests__/rides-browse.test.ts`
+- strict filter for `hasAc=true`
+- strict filter for `hasTrunkSpace=true`
+- exact-match filter for `musicPreference`
+- exact-match filter for `vehicleType`
+- assertion that strict filters do not include null/unspecified logic branches
+- invalid filter enum values return `400`
+
+#### `src/__tests__/post-ride-form.test.ts`
+- payload omits new optionals when unspecified
+- payload includes converted booleans/enums when selected
+
+#### Compatibility updates
+- `src/__tests__/ride-edit.test.ts`
+- `src/__tests__/rides-mine.test.ts`
+
+Updated mocks/fixtures to include new ride fields.
+
+### Validation / Safety Notes
+
+- Invalid enum values are rejected on create/update/filter query paths.
+- Nullable booleans remain nullable; they are not collapsed into false.
+- Filtering logic stays strict and null-safe.
+- Existing ride creation remains backward-compatible when new fields are omitted.
+- Migration is additive and preserves existing rides.
+
+### Test Execution
+
+Executed focused test suite successfully with bundled Node runtime:
+
+- `src/__tests__/ride-create.test.ts`
+- `src/__tests__/ride-edit.test.ts`
+- `src/__tests__/rides-browse.test.ts`
+- `src/__tests__/rides-mine.test.ts`
+- `src/__tests__/post-ride-form.test.ts`
+
+Result: all passing.
+
+Executed ESLint on all touched files: clean.
+
+### Explicit Scope Confirmation
+
+Confirmed intentionally **not** implemented in this change:
+- onboarding/profile schema changes for these fields
+- gender filtering or gender schema changes
+- rider preference profiles
+- vehicle profile tables / multi-vehicle management
+- matching algorithm rewrite
+- pricing logic, notifications, tracking/map redesign
+- broad search redesign
+
+This implementation is strictly ride-level create/storage/exposure/filtering for the four requested attributes.
+
+## 2026-04-22 — Live Map + Trip Pins Visualization (Frontend Enhancement)
+
+### Scope
+
+Implemented a frontend-only trip visualization layer for confirmed/active booking details using Mapbox rendering:
+- static origin pin
+- static destination pin
+- dynamic live driver pin (when live location exists)
+
+The feature is integrated into the existing trip details modal in:
+- `src/app/(protected)/bookings/page.tsx`
+
+No tracking architecture rewrite, no new tracking storage, and no route/ETA/path generation logic were added.
+
+### Files Changed
+
+- `src/app/(protected)/bookings/page.tsx` (MODIFIED)
+- `src/components/TripVisualizationMap.tsx` (NEW)
+- `src/lib/trip-map.ts` (NEW)
+- `src/lib/use-booking-location-tracking.ts` (MODIFIED)
+- `src/lib/dashboard.ts` (MODIFIED)
+- `src/app/api/dashboard/bookings/route.ts` (MODIFIED)
+- `src/__tests__/trip-map.test.ts` (NEW)
+- `src/__tests__/trip-visualization-map.test.tsx` (NEW)
+- `src/__tests__/use-booking-location-tracking.test.ts` (MODIFIED)
+- `src/__tests__/dashboard-bookings.test.ts` (MODIFIED)
+
+### Where the Map UI Was Added
+
+The map is rendered inside the existing **Trip Location Sharing** card in the booking details modal on:
+- `src/app/(protected)/bookings/page.tsx`
+
+This is the existing confirmed booking surface where live tracking was already shown as latitude/longitude polling data, so no new product flow was created.
+
+### How Origin/Destination Pins Are Derived
+
+1. Booking payload now includes stored coordinate fields for both ride-based and trip-request-based bookings via existing endpoint:
+   - `GET /api/dashboard/bookings`
+   - implemented by expanding Prisma selects in `src/app/api/dashboard/bookings/route.ts`
+
+2. Dashboard booking normalization now carries coordinates into `NormalizedDashboardBooking`:
+   - `src/lib/dashboard.ts`
+
+3. Marker derivation and coordinate validation are centralized in:
+   - `src/lib/trip-map.ts`
+   - `deriveStaticTripMapMarkers(...)` validates ranges and returns safe marker objects or `null`
+
+### How the Live Driver Marker Updates
+
+- `useBookingLocationTracking` remains the source of live location polling.
+- `bookings/page.tsx` converts live `location.latitude`/`location.longitude` into a driver marker with:
+  - `deriveDriverTripMapMarker(...)`
+- `TripVisualizationMap` updates only the driver marker position on polling updates without recreating the map instance.
+
+### Polling Lifecycle Management
+
+Polling lifecycle behavior is handled in `src/lib/use-booking-location-tracking.ts`:
+
+- Polling still starts only when the bookings detail view is active (`bookingId` selected + enabled).
+- Polling still cleans up intervals on unmount/booking change.
+- Added `isTripActive` state:
+  - when backend returns `BOOKING_NOT_ACTIVE`, hook marks trip inactive
+  - subsequent rider/driver polling effects stop automatically
+- Existing stale-response protections remain in place for read requests.
+
+This ensures polling does not continue indefinitely after inactive/completed/cancelled conditions are reported.
+
+### Map States and UX Handling
+
+`src/components/TripVisualizationMap.tsx` handles:
+
+1. Map loading overlay (`Loading map...`)
+2. Map load failure overlay (`Failed to load...`)
+3. Valid static coordinates (renders map container + static pins)
+4. Missing coordinates fallback (clear message instead of blank box)
+5. Driver live marker when live coordinate available
+6. Live location unavailable fallback while static pins still render
+7. Inactive-trip live status (polling stopped message)
+
+Additional UX:
+- simple marker legend for Origin / Destination / Driver
+- initial viewport fit includes origin + destination and driver (if present)
+- avoids aggressive recentering on every poll by fitting once on initial load
+
+### Validation and Safety
+
+- Marker rendering uses strict coordinate range validation.
+- Null/invalid coordinates never attempt marker creation.
+- Driver marker is only shown when valid live coordinates are present.
+- Polling intervals are cleaned up on unmount and inactive state.
+- Pin rendering uses explicit custom HTML dot markers (instead of relying on Mapbox default marker visuals), which makes origin/destination/driver pins visible even when default marker CSS behavior is inconsistent.
+
+### Follow-up Fix (Pin Visibility)
+
+After manual UI verification, the map loaded but pins could appear invisible on some runs.
+
+Applied a frontend-only visibility hardening in:
+- `src/components/TripVisualizationMap.tsx`
+
+Changes:
+- `ensureMapboxScript()` now always ensures the Mapbox stylesheet is present, even when `window.mapboxgl` is already loaded.
+- Markers now use custom styled HTML elements (`createDotMarkerElement`) with explicit size, border, and shadow.
+- Marker colors are still role-based:
+  - origin: green
+  - destination: blue
+  - driver: red
+
+Result:
+- Pins are consistently visible on top of the map across reloads and load ordering differences.
+
+### Test Coverage Added/Updated
+
+Added focused tests:
+
+- `src/__tests__/trip-map.test.ts`
+  - static marker derivation from valid coordinates
+  - invalid/null coordinate safety
+  - driver marker derivation safety
+
+- `src/__tests__/dashboard-bookings.test.ts`
+  - verifies dashboard bookings query selects coordinate fields required for map pins
+
+- `src/__tests__/use-booking-location-tracking.test.ts`
+  - verifies rider polling stops after `BOOKING_NOT_ACTIVE`
+
+- `src/__tests__/trip-visualization-map.test.tsx`
+  - verifies map container renders when valid static coordinates exist
+  - verifies missing-coordinate fallback state
+
+### Test Execution Notes / Boundaries
+
+Executed successfully:
+- `npm run lint -- <changed files>`
+- `npm run test -- src/__tests__/trip-map.test.ts src/__tests__/dashboard-bookings.test.ts`
+
+Environment limitation encountered for jsdom-heavy tests in this workspace:
+- `use-booking-location-tracking.test.ts`
+- `trip-visualization-map.test.tsx`
+
+Vitest worker startup timed out in this environment (pool worker boot issue), so those tests were updated but could not be executed end-to-end here.
+
+### Explicit Scope Confirmation
+
+Confirmed not implemented:
+- backend tracking rewrite
+- websocket transport
+- directions/route generation
+- ETA calculations
+- path snapping
+- trip playback/history
+- location history persistence changes
+- new tables
+- matching/booking lifecycle rewrites
+
+This delivery is strictly the requested map visualization layer on top of existing trip and polling architecture.
+
+## 2026-04-22 — Dummy Frontend Harness for Ride Offer Testing
+
+### Scope
+
+Added a protected dummy frontend page to manually exercise the new ride-offer negotiation endpoints end-to-end.
+
+This is a test harness only; it does not change production booking/offer backend behavior.
+
+### Files Changed
+
+- `src/app/(protected)/ride-offers-mvp2-test/page.tsx` (NEW)
+- `src/app/(protected)/ride-offers-mvp2-test/RideOffersMvp2TestClient.tsx` (NEW)
+
+### What the Test Page Supports
+
+The page provides manual controls for:
+- creating a seed ride (`POST /api/rides`)
+- creating a ride offer (`POST /api/rides/:rideId/offers`)
+- listing incoming offers for a ride (`GET /api/rides/:rideId/offers`)
+- listing outgoing offers for current rider (`GET /api/me/ride-offers/outgoing`)
+- accepting an offer (`POST /api/ride-offers/:offerId/accept`)
+- rejecting an offer (`POST /api/ride-offers/:offerId/reject`)
+
+### Route and Access
+
+- Route path: `/ride-offers-mvp2-test` (inside protected app segment)
+- Requires normal auth/onboarding because it uses protected layout
+- Hidden in production unless `ENABLE_RIDE_OFFERS_MVP2_TEST=true`
+
+## 2026-04-22 — MVP 2 Ride Negotiation Core (Rider -> Driver Ride Offers)
+
+### Scope
+
+Backend-only, REST-only implementation of ride negotiation offers on existing `Ride` records.
+
+Added a mirrored offer flow for rides while preserving existing direct booking and trip-request offer flows:
+- rider sends offer on a ride
+- driver lists incoming offers
+- rider lists outgoing offers
+- driver accepts/rejects pending offer
+- acceptance creates booking atomically with fresh ride validity and seat checks
+
+No frontend files were changed for this slice.
+
+### Files Changed
+
+- `prisma/schema.prisma` (MODIFIED)
+- `prisma/migrations/20260422001000_add_ride_offer_model/migration.sql` (NEW)
+- `src/services/ride-offer-service.ts` (NEW)
+- `src/app/api/rides/[rideId]/offers/route.ts` (NEW)
+- `src/app/api/me/ride-offers/outgoing/route.ts` (NEW)
+- `src/app/api/ride-offers/[offerId]/accept/route.ts` (NEW)
+- `src/app/api/ride-offers/[offerId]/reject/route.ts` (NEW)
+- `src/__tests__/ride-offer-service.test.ts` (NEW)
+- `src/__tests__/ride-offer-routes.test.ts` (NEW)
+- `.gitignore` (MODIFIED; agent guidance files ignored)
+- `AGENTS.md` (UNTRACKED from Git to honor ignore policy)
+
+### RideOffer Schema
+
+#### Prisma Additions
+
+Added enum:
+- `RideOfferState`
+  - `PENDING`
+  - `ACCEPTED`
+  - `REJECTED`
+
+Added model:
+- `RideOffer` mapped to `ride_offers`, fields:
+  - `id`
+  - `rideId`
+  - `riderUserId`
+  - `driverUserId`
+  - `offeredPriceCents`
+  - `state`
+  - `createdAt`
+  - `updatedAt`
+  - `acceptedAt`
+  - `rejectedAt`
+
+Relations:
+- `RideOffer -> Ride`
+- `RideOffer -> User (rider)`
+- `RideOffer -> User (driver)`
+- Back-relations added on `Ride` and `User`.
+
+#### Migration Details
+
+`prisma/migrations/20260422001000_add_ride_offer_model/migration.sql`:
+- creates `RideOfferState` enum
+- creates `ride_offers` table
+- adds read/query support indexes
+- adds partial unique index:
+  - `ride_offer_active_per_rider_ride`
+  - unique on (`ride_id`, `rider_user_id`) where `state = 'PENDING'`
+- adds FKs to `rides(id)` and `users(clerk_user_id)`
+
+Schema changes are additive and do not modify existing TripRequest offers or direct booking tables.
+
+### One-Active-Offer Enforcement
+
+Enforced in two layers:
+
+1) Service-level guard in `createRideOffer`:
+- checks for existing `PENDING` offer for same `(rideId, riderUserId)`
+- returns `409 Conflict` before attempting create
+
+2) DB-level race safety:
+- partial unique index `ride_offer_active_per_rider_ride`
+- concurrent duplicate create attempts are blocked at DB level
+- service maps known conflicts into stable API errors
+
+### Service Layer (New)
+
+`src/services/ride-offer-service.ts` provides:
+- `createRideOffer(rideId, riderUserId, offeredPriceCents)`
+- `listRideOffersForDriver(rideId, driverUserId)`
+- `listRideOffersForRider(riderUserId)`
+- `acceptRideOffer(offerId, driverUserId)`
+- `rejectRideOffer(offerId, driverUserId)`
+- `RideOfferError` for structured route error mapping
+
+Key guards:
+- valid positive offer price
+- no self-offer
+- ride exists
+- ride is active
+- ride departure window not passed
+- ride has seat availability
+- driver-only visibility and driver-only accept/reject authorization
+- only `PENDING` offers may transition
+
+### REST Endpoints (New)
+
+- `POST /api/rides/:rideId/offers`
+  - rider creates one pending offer
+  - validates body and business rules
+
+- `GET /api/rides/:rideId/offers`
+  - driver-only incoming offers for owned ride
+
+- `GET /api/me/ride-offers/outgoing`
+  - rider-only outgoing offers
+
+- `POST /api/ride-offers/:offerId/accept`
+  - driver accepts pending offer
+  - returns `{ offer, booking }`
+
+- `POST /api/ride-offers/:offerId/reject`
+  - driver rejects pending offer
+  - returns `{ item }`
+
+### Accept / Reject Lifecycle
+
+Accepted:
+- requires `PENDING`
+- in one DB transaction:
+  - re-checks ride validity and inventory with conditional seat decrement
+  - creates confirmed booking (`seatsBooked = 1`, `priceCents = offeredPriceCents`)
+  - transitions offer `PENDING -> ACCEPTED` and sets `acceptedAt`
+- if any step fails, transaction aborts with no partial persisted outcome
+
+Rejected:
+- requires `PENDING`
+- transitions `PENDING -> REJECTED` and sets `rejectedAt`
+- already rejected/accepted offers return conflict and do not reopen
+
+### Atomic Acceptance and Booking Integration
+
+Atomic acceptance uses the same seat-competition approach as direct booking:
+- conditional seat decrement via `ride.updateMany(... seatsAvailable >= 1 ...)`
+- hard conflict when row update count is `0`
+- booking create occurs in the same transaction
+- offer state transition occurs in the same transaction
+
+This keeps ride-offer acceptance and direct booking competing against the same seat inventory with no oversell.
+
+### Coexistence with Direct Booking
+
+Direct booking path (`POST /api/bookings`) was not removed or rewritten.
+
+Coexistence behavior:
+- riders can still book directly
+- riders can also submit ride offers
+- both flows compete for the same `Ride.seatsAvailable`
+- if seats are consumed before acceptance (for example by direct booking), accepting the offer fails safely with conflict
+
+### Tests Added
+
+#### `src/__tests__/ride-offer-service.test.ts`
+
+Covers:
+- creation success
+- self-offer blocked
+- duplicate active offer blocked
+- cancelled/full/past ride blocked
+- invalid price blocked
+- driver incoming visibility
+- rider outgoing visibility
+- unauthorized incoming visibility blocked
+- accept success with booking creation
+- accept fails when seat unavailable
+- offer not transitioned to accepted when booking create fails
+- accept blocked for non-pending or non-driver
+- reject success
+- reject blocked for non-pending or non-driver
+
+#### `src/__tests__/ride-offer-routes.test.ts`
+
+Covers route wiring + response mapping for:
+- create
+- incoming list
+- outgoing list
+- accept
+- reject
+- domain error to HTTP mapping
+
+### Validation / Commands Executed
+
+- `npx prisma generate` (success)
+- `npm run test -- src/__tests__/ride-offer-service.test.ts src/__tests__/ride-offer-routes.test.ts` (success)
+- `npm run test -- src/__tests__/booking-create.test.ts` (success; direct booking still passing)
+- `npm run lint -- <changed ride-offer files>` (success)
+
+### Scope / Invariant Confirmation
+
+Confirmed for this slice:
+- backend only
+- REST only
+- no frontend changes
+- no counteroffers/chat/multi-round negotiation
+- no TripRequest offer refactor
+- no direct booking removal
+- no oversell logic regression (atomic seat guarding retained)
+- no self-offer
+- one active ride offer per rider per ride
+- accept/reject lifecycle constrained to pending offers
+
+## 2026-04-21 — MVP 2 Match Core Phase 2 (Persisted Match Lifecycle + Suppression + Lazy Expiration)
+
+### Scope
+
+Backend-only implementation of persisted TripRequest->Ride match lifecycle state for MVP 2:
+- Added match persistence
+- Added lifecycle transitions (`SUGGESTED`, `ACCEPTED`, `REJECTED`, `EXPIRED`)
+- Added suppression rules to prevent repeated re-suggestions
+- Added lazy expiration in read/write flows (no background jobs)
+- Added REST endpoints for accept/reject transitions
+- Added tests for persistence, suppression, expiration, transitions, and auth boundaries
+
+No frontend files were modified for this slice.
+
+### Files Changed
+
+- `prisma/schema.prisma` (MODIFIED)
+- `prisma/migrations/20260421190000_add_match_lifecycle/migration.sql` (NEW)
+- `src/services/trip-request-match-lifecycle-service.ts` (NEW)
+- `src/app/api/trip-requests/[tripRequestId]/matches/route.ts` (MODIFIED)
+- `src/app/api/matches/[matchId]/accept/route.ts` (NEW)
+- `src/app/api/matches/[matchId]/reject/route.ts` (NEW)
+- `src/__tests__/trip-request-match-lifecycle-service.test.ts` (NEW)
+- `src/__tests__/trip-request-matches-route.test.ts` (MODIFIED)
+- `src/__tests__/match-accept-route.test.ts` (NEW)
+- `src/__tests__/match-reject-route.test.ts` (NEW)
+- `AGENTS.md` (MODIFIED; Continuous Learning rules only)
+
+### Prisma Schema and Migration
+
+#### `prisma/schema.prisma`
+
+Added enum:
+- `MatchState`
+  - `SUGGESTED`
+  - `ACCEPTED`
+  - `REJECTED`
+  - `EXPIRED`
+
+Added model:
+- `Match` with:
+  - identity + relationships:
+    - `id`
+    - `tripRequestId` -> `TripRequest`
+    - `rideId` -> `Ride`
+  - lifecycle:
+    - `state`
+    - `acceptedAt`
+    - `rejectedAt`
+    - `expiredAt`
+    - optional `expirationReason`
+  - snapshots:
+    - `scoreSnapshot`
+    - `originDistanceSnapshot`
+    - `destinationDistanceSnapshot`
+    - `timeDifferenceSnapshot`
+  - timestamps:
+    - `createdAt`
+    - `updatedAt`
+
+Added constraints/indexes:
+- `@@unique([tripRequestId, rideId])` (no duplicate match pair records)
+- `@@index([tripRequestId, state, createdAt, id])`
+- `@@index([rideId])`
+
+Added relations:
+- `TripRequest.matches`
+- `Ride.matches`
+
+#### `prisma/migrations/20260421190000_add_match_lifecycle/migration.sql`
+
+Safe additive migration:
+- Creates `MatchState` enum type
+- Creates `matches` table
+- Adds unique and supporting indexes
+- Adds foreign keys to `trip_requests` and `rides`
+
+No destructive change or backfill.
+
+### New Lifecycle Service
+
+#### `src/services/trip-request-match-lifecycle-service.ts`
+
+Added shared backend service with:
+- `persistMatchesForTripRequest(tripRequestId)`
+- `getActiveMatchesForTripRequest(tripRequestId, actorUserId)`
+- `expireInvalidMatchesForTripRequest(tripRequestId)`
+- `rejectMatch(matchId, actorUserId)`
+- `acceptMatch(matchId, actorUserId)`
+- `MatchLifecycleError` for structured HTTP mapping
+
+Key behavior:
+
+1. **Persistence**
+- Uses existing refined matcher (`findCandidateRidesForTripRequest`) to compute high-quality candidates.
+- Persists candidate snapshots into `Match` in `SUGGESTED`.
+- Prevents duplicates with composite uniqueness and `createMany(..., skipDuplicates: true)`.
+
+2. **Suppression**
+- Existing pair records are never recreated as `SUGGESTED`.
+- This suppresses:
+  - `REJECTED` pairs
+  - `ACCEPTED` pairs
+  - `EXPIRED` pairs
+- `EXPIRED` revival is intentionally **disabled** for demo simplicity.
+
+3. **Lazy expiration**
+- Runs during:
+  - suggestion reads
+  - suggestion persistence
+  - accept transition
+  - reject transition
+- Expiration checks:
+  - trip request no longer active -> expire all non-expired
+  - trip request reference departure time passed -> expire all non-expired
+  - ride no longer candidate-valid under existing matching/business constraints -> expire affected pairs
+- Expired matches are written with `state = EXPIRED`, `expiredAt`, and `expirationReason`.
+
+4. **Authorization**
+- Trip request owner gate enforced in read flow.
+- Match management (`accept`/`reject`) requires owning rider of parent trip request.
+
+5. **Transition guards**
+- Only `SUGGESTED` can transition to:
+  - `REJECTED` (`POST /reject`)
+  - `ACCEPTED` (`POST /accept`)
+- Non-`SUGGESTED` transition attempts return `409 MATCH_NOT_SUGGESTED`.
+
+6. **No scope creep**
+- `ACCEPTED` is lifecycle state only in this phase.
+- No booking/offer/negotiation side effects were added.
+
+### Endpoint Changes
+
+#### `src/app/api/trip-requests/[tripRequestId]/matches/route.ts` (MODIFIED)
+
+Now lifecycle-aware:
+- Auth + onboarding via existing guard
+- Delegates to `getActiveMatchesForTripRequest(tripRequestId, actorUserId)`
+- Returns only active `SUGGESTED` items
+- Maps both lifecycle errors and matcher errors to clean API responses
+
+Returned item shape now includes:
+- `matchId`
+- `rideId`
+- `state`
+- `scoreSnapshot`
+- `originDistanceSnapshot`
+- `destinationDistanceSnapshot`
+- `timeDifferenceSnapshot`
+- ride summary fields (`originText`, `destinationText`, `departureTime`, `availableSeats`)
+
+#### `src/app/api/matches/[matchId]/reject/route.ts` (NEW)
+
+- `POST /api/matches/:matchId/reject`
+- Auth + onboarding guard
+- Calls `rejectMatch(matchId, actorUserId)`
+- Transitions only `SUGGESTED -> REJECTED`
+
+#### `src/app/api/matches/[matchId]/accept/route.ts` (NEW)
+
+- `POST /api/matches/:matchId/accept`
+- Auth + onboarding guard
+- Calls `acceptMatch(matchId, actorUserId)`
+- Transitions only `SUGGESTED -> ACCEPTED`
+- No negotiation/booking/stop side effects added
+
+### Tests Added/Updated
+
+#### `src/__tests__/trip-request-match-lifecycle-service.test.ts` (NEW)
+
+Covers:
+- persistence of generated `SUGGESTED` matches
+- duplicate suppression
+- suppression of `REJECTED`/`ACCEPTED`/`EXPIRED` pairs
+- read returns only active `SUGGESTED`
+- invalid parent expiration behavior
+- expiration when ride is no longer eligible
+- reject/accept transition success + invalid-state conflicts
+- unauthorized access guard
+
+#### `src/__tests__/trip-request-matches-route.test.ts` (MODIFIED)
+
+Updated for lifecycle service flow:
+- auth pass-through
+- owner/visibility failure mapping
+- not found mapping
+- coordinate error pass-through
+- success payload with lifecycle/snapshot fields
+
+#### `src/__tests__/match-reject-route.test.ts` (NEW)
+
+Covers:
+- auth pass-through
+- successful reject
+- `MATCH_NOT_SUGGESTED` conflict
+- forbidden actor handling
+
+#### `src/__tests__/match-accept-route.test.ts` (NEW)
+
+Covers:
+- auth pass-through
+- successful accept
+- `MATCH_NOT_SUGGESTED` conflict
+- forbidden actor handling
+
+### Validation / Commands Executed
+
+- `npx prisma generate` (success)
+- `npm run test -- src/__tests__/trip-request-match-lifecycle-service.test.ts src/__tests__/trip-request-matches-route.test.ts src/__tests__/match-reject-route.test.ts src/__tests__/match-accept-route.test.ts` (success)
+- `npx eslint ...` on changed backend files/tests (no new errors in changed files)
+- `coderabbit --plain` attempted but failed due missing authentication in environment
+
+### Behavior Summary
+
+- Strong candidates are now persisted as `SUGGESTED`.
+- Repeated reads do not recreate duplicate pairs.
+- `REJECTED`, `ACCEPTED`, and `EXPIRED` pairs remain suppressed from normal suggestions.
+- Invalid/stale matches are lazily expired and not returned as active suggestions.
+- `GET /api/trip-requests/:id/matches` now returns only active lifecycle-aware suggestions.
+- `POST /api/matches/:id/reject` and `POST /api/matches/:id/accept` are implemented with owner-only authorization and strict state guards.
+
+## 2026-04-21 — Matches Test UI Network Error Handling Hardening
+
+### Overview
+
+Verified and fixed missing network-error handling in the dummy frontend test page handlers.
+
+### File Changed
+
+#### `src/app/(protected)/matches-mvp2-test/MatchesMvp2TestClient.tsx` (MODIFIED)
+
+- Added `getErrorMessage(error: unknown)` helper to safely extract `error.message` with fallback to `"Network error"`.
+- Updated `handleCreateRide`:
+  - Added `catch` to surface rejected fetch/parsing errors using:
+    - `setRideCreateResult({ status: 0, body: { message } })`
+  - Kept `setIsRideCreating(false)` in existing `finally`.
+- Updated `handleCreateTripRequest`:
+  - Added `catch` to surface rejected fetch/parsing errors using:
+    - `setTripCreateResult({ status: 0, body: { message } })`
+  - Kept `setIsTripCreating(false)` in existing `finally`.
+- Updated `handleSubmit`:
+  - Added `catch` for fetch/json failures using:
+    - `setResponseStatus(0)`
+    - `setRawBody({ message })`
+    - `setErrorMessage(\`Network error: \${message}\`)`
+  - Kept `setIsLoading(false)` in existing `finally`.
+
+## 2026-04-21 — MVP 2 Core Phase 1: Read-Only Ride Candidates for Trip Requests
+
+### Overview
+
+Implements a read-only matching slice that returns candidate rides for a given trip request:
+- New matching service: `findCandidateRidesForTripRequest(tripRequestId: string)`
+- New endpoint: `GET /api/trip-requests/:tripRequestId/matches`
+- New dummy protected test UI page: `/matches-mvp2-test`
+- No schema changes, no new tables, no lifecycle state machine, and no DB writes for matching
+- Candidate filtering by validity + origin/destination proximity + time proximity
+- Deterministic ranking by a weighted score (lower is better)
+
+### Files Changed
+
+#### `src/services/trip-request-ride-matching-service.ts` (NEW)
+
+Added a dedicated, testable service that owns all matching logic.
+
+- Exported constants for demo-safe matching thresholds:
+  - `ORIGIN_THRESHOLD_KM = 15`
+  - `DESTINATION_THRESHOLD_KM = 15`
+  - `TIME_WINDOW_MINUTES = 90`
+- Added bounded candidate-fetch controls:
+  - `MAX_RIDE_CANDIDATES = 250`
+  - DB prefilter for ride status/availability/ownership/time overlap/coordinate presence
+- Added backend Haversine distance utility:
+  - `haversineDistanceKm(latitudeA, longitudeA, latitudeB, longitudeB)`
+  - No external API usage
+- Added service error type:
+  - `TripRequestRideMatchingError`
+  - Carries HTTP-ready metadata (`statusCode`, `error`, `code`)
+- Added `findCandidateRidesForTripRequest(tripRequestId)`:
+  1. Fetches trip request by ID
+  2. Returns `404` if missing
+  3. Validates trip request coordinates exist (`400` if not)
+  4. Builds a rough DB time window around the trip reference time to avoid unbounded scans
+  5. Fetches bounded rides (`take: 250`) with baseline DB filters:
+     - `status: ACTIVE`
+     - `seatsAvailable > 0`
+     - `driverUserId != tripRequest.riderUserId`
+     - non-null origin/destination coordinates
+     - temporal overlap with `[tripTime - TIME_WINDOW, tripTime + TIME_WINDOW]`
+  6. Applies strict application-level filters:
+     - active ride
+     - non-full ride
+     - non-self ride
+     - `originDistance <= ORIGIN_THRESHOLD_KM`
+     - `destinationDistance <= DESTINATION_THRESHOLD_KM`
+     - `timeDifference <= TIME_WINDOW_MINUTES`
+  7. Computes score and sorts ascending by score, then timeDifference, then rideId for deterministic order
+- Added response candidate shape:
+  - `rideId`
+  - `originText`
+  - `destinationText`
+  - `departureTime` (preferred depart time when present, otherwise earliest depart time)
+  - `availableSeats`
+  - `originDistance`
+  - `destinationDistance`
+  - `timeDifference` (minutes)
+  - `score`
+- Matching score formula:
+  - `score = originDistanceKm * 0.4 + destinationDistanceKm * 0.4 + timeDifferenceMinutes * 0.2`
+  - Lower score means better match
+
+#### `src/app/api/trip-requests/[tripRequestId]/matches/route.ts` (NEW)
+
+Added a read-only REST endpoint for trip-request ride candidates.
+
+- Route: `GET /api/trip-requests/:tripRequestId/matches`
+- Applies existing auth/onboarding gate via:
+  - `requireStetsonAuth(request)`
+- Delegates all matching work to the shared service:
+  - `findCandidateRidesForTripRequest(tripRequestId)`
+- Response behavior:
+  - Success: `200` with `{ items: RideMatchCandidate[] }`
+  - Trip request missing: `404`
+  - Trip request missing coordinates: `400`
+  - No matches: `200` with `{ items: [] }`
+- No writes in handler (strictly read-only)
+
+#### `src/__tests__/trip-request-ride-matching-service.test.ts` (NEW)
+
+Added service-level tests with mocked Prisma reads:
+
+- verifies valid matches are returned
+- excludes rides outside distance threshold
+- excludes rides outside time window
+- excludes self rides
+- excludes full rides
+- verifies sorting puts best match first
+- verifies empty result returns `[]`
+- verifies `404` for missing trip request
+- verifies `400` for missing trip request coordinates
+- verifies DB prefilter uses configured time window bounds
+
+#### `src/__tests__/trip-request-matches-route.test.ts` (NEW)
+
+Added route-level tests:
+
+- auth/onboarding guard errors are returned directly
+- `404` behavior from matching service is mapped correctly
+- no matches returns `{ items: [] }`
+- successful response returns candidate ride payload fields
+
+#### `src/app/(protected)/matches-mvp2-test/page.tsx` (NEW)
+
+Added a dev-safe wrapper page for the dummy test UI.
+
+- Renders `MatchesMvp2TestClient`
+- Uses the same production-guard pattern as other internal test pages:
+  - page is hidden in production unless `ENABLE_MATCHES_MVP2_TEST=true`
+
+#### `src/app/(protected)/matches-mvp2-test/MatchesMvp2TestClient.tsx` (NEW)
+
+Added a minimal testing frontend for manual verification of the new endpoint.
+
+- Includes seed-data forms to create:
+  - a Ride (`POST /api/rides`)
+  - a Trip Request (`POST /api/trip-requests`)
+- Auto-fills the matches query input with newly created `tripRequestId`
+- Input form for `tripRequestId`
+- Calls `GET /api/trip-requests/:tripRequestId/matches`
+- Shows:
+  - request status
+  - summary/error message
+  - candidate table (`rideId`, texts, departure, seats, distances, time difference, score)
+  - raw JSON response body for debugging
+- Uses existing `ProtectedShell` to stay inside authenticated/onboarded protected UX
+
+### Scope Guard / Non-Changes
+
+- No existing product frontend flows modified (only a new isolated dummy test page added)
+- No Prisma schema changes
+- No migrations added
+- No write paths added to matching flow
+- No offer/booking/cancellation/editing logic changed
+- No lifecycle state machine, duplicate/rejection suppression, route-overlap, map APIs, background jobs, or persistence introduced
+
+## First-time Onboarding Gate — POST onboarding + Guard (Chat D)
+
+### Overview
+
+Implements backend onboarding enforcement and onboarding submission:
+- New endpoint: `POST /api/user/onboarding`
+- Centralized guard gating in `requireStetsonAuth`
+- Explicit exemptions while onboarding is incomplete:
+  - `GET /api/me`
+  - `POST /api/user/onboarding`
+
+### Files Changed
+
+#### `src/lib/auth.ts` (MODIFIED)
+
+- **Line 3**: Added `prisma` import to load local user onboarding state during auth.
+- **Lines 24–33**: Added `AuthRequestContext` and `RouteMethodPath` types to pass request method/path context into the guard.
+- **Lines 35–38**: Added centralized `ONBOARDING_EXEMPT_ROUTES` list with only:
+  - `GET /api/me`
+  - `POST /api/user/onboarding`
+- **Lines 40–45**: Added `normalizePathname()` to handle trailing slashes so route exemption matching is stable.
+- **Lines 47–71**: Added `resolveMethodAndPath()` to derive method/path from either:
+  - a real `Request`, or
+  - direct `{ method, pathname }` context.
+- **Lines 73–79**: Added `isOnboardingExempt()` to check the centralized exemption list.
+- **Lines 97–99**: Updated `requireStetsonAuth` signature to accept optional request/context:
+  - `context?: Request | AuthRequestContext`
+- **Lines 134–137**: Resolved request method/path and computed exemption in one place.
+- **Lines 138–157**: Optimized onboarding gate check to only query Prisma when the route is not exempt:
+  - `prisma.user.findUnique({ select: { onboardingComplete: true } })` now runs only inside `if (!onboardingExempt)`.
+  - avoids unnecessary DB reads for `GET /api/me` and `POST /api/user/onboarding`.
+- **Lines 144–156**: Enforced onboarding gate for non-exempt protected endpoints:
+  - returns `403`
+  - with `code: "ONBOARDING_REQUIRED"`
+  - with a clear message
+- **Lines 100–132 and 158–164**: Existing Clerk session + verified `@stetson.edu` checks and success payload remain unchanged.
+
+#### `src/app/api/user/onboarding/route.ts` (NEW)
+
+- **Lines 5–9**: Added locked enum value sets for validation:
+  - `YEAR_VALUES`: `FRESHMAN | SOPHOMORE | JUNIOR | SENIOR`
+  - `GENDER_VALUES`: `MALE | FEMALE | OTHER | PREFER_NOT_TO_SAY`
+- **Lines 11–21**: Added local interfaces for field-level validation output and parsed payload shape.
+- **Lines 23–117**: Added strict request body validator:
+  - body must be a JSON object
+  - unknown keys are rejected via whitelist check against `name`, `age`, `yearAtStetson`, `gender`
+  - `name` trimmed length `2..80`
+  - `age` integer `16..100`
+  - `yearAtStetson` enum check
+  - `gender` enum check
+  - returns field-level `issues[]`
+- **Lines 124–239**: Wrapped the full handler flow in `try/catch` to provide a top-level error boundary.
+  - catches unexpected errors from auth, Prisma, and other runtime throws
+  - logs original error with `console.error`
+  - returns stable `500` response payload
+- **Lines 126–127**: Auth guard usage with request context:
+  - `const auth = await requireStetsonAuth(request);`
+  - route is exempt from onboarding gate by centralized guard config.
+- **Lines 129–140**: JSON parse guard for malformed body -> `400`.
+- **Lines 142–152**: Validation failure path -> `400` with:
+  - `error: "Bad Request"`
+  - `message: "Validation failed."`
+  - `fieldErrors` array.
+- **Lines 156–169**: User bootstrap/upsert behavior:
+  - ensures local user row exists for `clerkUserId`
+  - syncs email to verified Stetson email.
+- **Lines 171–180**: Write-once enforcement pre-check:
+  - if already onboarded -> `409`
+  - code `ONBOARDING_ALREADY_COMPLETED`
+  - no overwrite.
+- **Lines 182–195**: Atomic write-once update using `updateMany` with guard:
+  - `where: { clerkUserId, onboardingComplete: false }`
+  - updates `name`, `age`, `yearAtStetson`, `gender`
+  - sets `onboardingComplete: true`.
+- **Lines 197–206**: Secondary write-once race check:
+  - if update count is `0`, return `409` (already onboarded).
+- **Lines 208–222**: Fetches updated user profile fields after successful onboarding.
+- **Lines 224–238**: Returns profile payload on success, and `500` payload on unexpected errors.
+
+#### `src/app/api/me/route.ts` (MODIFIED)
+
+- **Line 1**: Added `NextRequest` import.
+- **Line 13**: Changed handler signature to `GET(request?: NextRequest)` for both route-runtime use and test compatibility.
+- **Lines 15–17**: Auth call now passes request context with explicit fallback:
+  - actual request when present
+  - otherwise `{ method: "GET", pathname: "/api/me" }`
+  - keeps `/api/me` explicitly exempt under centralized gate.
+- Remaining user upsert and response shape are unchanged.
+
+#### `src/app/api/dashboard/route.ts` (MODIFIED)
+
+- **Line 1**: Added `NextRequest` import.
+- **Line 73**: Changed handler signature to `GET(request?: NextRequest)` to preserve current tests.
+- **Lines 75–77**: Auth call now passes request context with fallback:
+  - actual request when present
+  - otherwise `{ method: "GET", pathname: "/api/dashboard" }`
+  - ensures dashboard remains a protected endpoint gated by onboarding.
+- All dashboard query and response logic remains unchanged.
+
+#### Request-context wiring updates (MODIFIED)
+
+- Updated all protected route call sites to pass `request` into `requireStetsonAuth(request)` so centralized exemption/gating can evaluate the current method/path correctly.
+- Updated files and lines:
+  - `src/routes/conversations.ts` lines 48, 66, 89, 124, 145
+  - `src/app/api/bookings/route.ts` line 21
+  - `src/app/api/bookings/mine/route.ts` line 48
+  - `src/app/api/bookings/[bookingId]/cancel/route.ts` line 29
+  - `src/app/api/offers/mine/route.ts` line 50
+  - `src/app/api/offers/[offerId]/accept/route.ts` line 15
+  - `src/app/api/offers/[offerId]/cancel/route.ts` line 15
+  - `src/app/api/rides/route.ts` lines 53, 348
+  - `src/app/api/rides/[rideId]/route.ts` line 35
+  - `src/app/api/trip-requests/route.ts` lines 52, 337
+  - `src/app/api/trip-requests/[tripRequestId]/route.ts` line 46
+  - `src/app/api/trip-requests/[tripRequestId]/offers/route.ts` line 72
+
+## First-time Onboarding Gate — Schema + /me (Chat C)
+
+### Overview
+
+Adds the data model and `/me` endpoint changes needed for first-time user onboarding. Users are created with `onboardingComplete=false` and null profile fields. The onboarding POST endpoint and gating middleware are owned by Chat D.
+
+### Files Changed
+
+#### `prisma/schema.prisma` (MODIFIED)
+
+- Added `YearAtStetson` enum (lines 44–49): `FRESHMAN`, `SOPHOMORE`, `JUNIOR`, `SENIOR`.
+- Added `Gender` enum (lines 52–57): `MALE`, `FEMALE`, `OTHER`, `PREFER_NOT_TO_SAY`.
+- Extended `User` model (lines 23–28) with onboarding profile fields:
+  - `name` — nullable `String?`, maps to `name` column. Stores user's display name.
+  - `yearAtStetson` — nullable `YearAtStetson?`, maps to `year_at_stetson`. Academic year classification.
+  - `gender` — nullable `Gender?`. Gender identity selection.
+  - `age` — nullable `Int?`. User's age.
+  - `onboardingComplete` — non-nullable `Boolean`, defaults to `false` at DB level, maps to `onboarding_complete`. Gates access to protected features (enforced by Chat D's middleware).
+
+#### `prisma/migrations/20260305020400_add_onboarding_fields/migration.sql` (NEW)
+
+- Creates `YearAtStetson` PostgreSQL enum with 4 values.
+- Creates `Gender` PostgreSQL enum with 4 values.
+- Alters `users` table to add 5 columns:
+  - `name TEXT` (nullable)
+  - `year_at_stetson "YearAtStetson"` (nullable)
+  - `gender "Gender"` (nullable)
+  - `age INTEGER` (nullable)
+  - `onboarding_complete BOOLEAN NOT NULL DEFAULT false`
+- Non-destructive: all nullable columns + boolean default ensure existing rows are unaffected.
+
+#### `src/app/api/me/route.ts` (MODIFIED)
+
+- Updated response payload in `localUser` object (lines 49–53) to include 5 new fields:
+  - `name: localUser.name` — returns `null` until onboarding completes.
+  - `yearAtStetson: localUser.yearAtStetson` — returns `null` until onboarding completes.
+  - `gender: localUser.gender` — returns `null` until onboarding completes.
+  - `age: localUser.age` — returns `null` until onboarding completes.
+  - `onboardingComplete: localUser.onboardingComplete` — returns `false` for new/non-onboarded users.
+- No changes to auth guard, upsert logic, or bootstrap behavior. The existing upsert creates the user row with DB defaults (null profile fields, `onboardingComplete=false`).
+- Endpoint remains accessible regardless of `onboardingComplete` status (no gating here).
+
+---
+
+## 2026-03-04 — Minimal Messaging System (MVP 1.5) — Service Layer
+
+### Overview
+
+Adds the database layer and shared service layer for a minimal messaging system. Messaging is allowed only between users who share a relationship through a Booking or Offer. The REST endpoints (SWE II scope) are NOT included here.
+
+### Files Changed
+
+#### `prisma/schema.prisma` (MODIFIED)
+
+- Added `ConversationType` enum: `BOOKING`, `OFFER`.
+- Added `Conversation` model:
+  - `id` — UUID primary key.
+  - `type` — `ConversationType` discriminator.
+  - `bookingId` — Nullable, `@unique`. At most one conversation per booking.
+  - `offerId` — Nullable, `@unique`. At most one conversation per offer.
+  - `riderUserId` / `driverUserId` — Clerk user IDs of the two participants.
+  - `createdAt` / `updatedAt` — Timestamps.
+  - Relations: `booking` (optional FK to `bookings`), `offer` (optional FK to `offers`), `messages` (one-to-many).
+  - Indexes: `[riderUserId, updatedAt]` and `[driverUserId, updatedAt]` for efficient listing.
+  - Maps to `conversations` table.
+- Added `Message` model:
+  - `id` — UUID primary key.
+  - `conversationId` — FK to `conversations`.
+  - `senderUserId` — Clerk user ID of the sender.
+  - `body` — Message text content.
+  - `createdAt` — Timestamp.
+  - Index: `[conversationId, createdAt]` for paginated message retrieval.
+  - Maps to `messages` table.
+- Added reverse relation `conversation Conversation?` to `Booking` model.
+- Added reverse relation `conversation Conversation?` to `Offer` model.
+
+#### `prisma/migrations/20260304172800_add_messaging_models/migration.sql` (NEW)
+
+- Creates `ConversationType` PostgreSQL enum.
+- Creates `conversations` table with primary key, columns, and foreign keys to `bookings` and `offers`.
+- Creates `messages` table with primary key, columns, and foreign key to `conversations`.
+- Creates unique indexes on `conversations.booking_id` and `conversations.offer_id`.
+- Creates composite indexes: `conversations(rider_user_id, updated_at)`, `conversations(driver_user_id, updated_at)`, `messages(conversation_id, created_at)`.
+
+#### `src/services/conversationService.ts` (NEW)
+
+- **`ConversationServiceError` class (lines 28–39)**:
+  - Custom error with `code` (machine-readable string), `statusCode` (HTTP status), and `message`.
+  - Allows the REST layer to map service errors directly to HTTP responses without coupling.
+- **`getOrCreateBookingConversation(bookingId)` (lines 49–119)**:
+  - Fast path: returns existing conversation via `findUnique({ where: { bookingId } })`.
+  - Validates booking exists (404 if not).
+  - Validates `booking.status === "CONFIRMED"` (409 if not).
+  - Resolves the driver: uses `booking.driverUserId` directly, or looks up via `ride.driverUserId` for ride-based bookings.
+  - Creates conversation with `type: "BOOKING"`.
+  - Handles race conditions: catches P2002 unique constraint violation and returns the existing conversation.
+- **`getOrCreateOfferConversation(offerId)` (lines 123–174)**:
+  - Same pattern as booking variant.
+  - Validates offer exists (404) and `offer.status` is `PENDING` or `ACCEPTED` (409 if cancelled).
+  - Creates conversation with `type: "OFFER"`.
+  - Same P2002 race-condition handling.
+- **`listUserConversations(userId)` (lines 178–188)**:
+  - Returns all conversations where user is `riderUserId` or `driverUserId`.
+  - Ordered by `updatedAt DESC` so most recently active conversations appear first.
+- **`getConversationById(conversationId)` (lines 192–198)**:
+  - Simple `findUnique` lookup. Returns `null` if not found.
+- **`verifyConversationParticipant(conversationId, userId)` (lines 202–218)**:
+  - Returns conversation if user is rider or driver participant.
+  - Returns `null` otherwise (route layer maps to 404).
+- **`createMessage(conversationId, senderUserId, body)` (lines 224–283)**:
+  - Fetches conversation with `include: { booking: { select: { status } }, offer: { select: { status } } }`.
+  - Returns 404 if conversation not found or sender is not a participant.
+  - **Send-blocking**: returns 409 if `booking.status === "CANCELLED"` or `offer.status === "CANCELLED"`. Reading is still allowed.
+  - Creates message via `$transaction`: inserts `Message` row and touches `conversation.updatedAt` to reflect recent activity.
+- **`getMessages(conversationId, cursor?, limit?)` (lines 287–314)**:
+  - Cursor-based pagination, newest-first (`createdAt DESC, id DESC`).
+  - Uses `take: limit + 1` sentinel pattern to detect next page.
+  - Clamps limit to `1..50`.
+  - Returns `{ messages, nextCursor }`.
+- **`countRecentMessages(userId, conversationId, minutes)` (lines 318–332)**:
+  - Counts messages by `userId` in conversation within last N minutes.
+  - Used by SWE II to enforce rate limits.
+- **`createMessageWithRateLimit(conversationId, senderUserId, body, options?)` (added)**:
+  - Enforces rate limit and message insert in a **single transaction**.
+  - Uses `SELECT ... FOR UPDATE` on the conversation row to serialize competing sends.
+  - Recomputes in-window count inside the same transaction and throws:
+    - `ConversationServiceError("Rate limit exceeded...", "RATE_LIMIT_EXCEEDED", 429)` when limit is reached.
+  - Performs the message insert + `conversation.updatedAt` touch only when under limit.
+- **`isPrismaUniqueConstraintError(err)` (lines 336–343)**:
+  - Utility type guard checking for Prisma P2002 error code.
+
+#### `src/helpers/conversationAuth.ts` (NEW)
+
+- **`assertConversationParticipant(conversationId, userId)` (lines 22–42)**:
+  - Fetches conversation by ID.
+  - If conversation does not exist OR user is not `riderUserId`/`driverUserId`, throws `ConversationServiceError` with `statusCode: 404` and `code: "CONVERSATION_NOT_FOUND"`.
+  - **Security**: never returns 403 — non-participants see "not found" to prevent information leakage.
+  - Returns the conversation on success.
+
+#### `src/helpers/messageValidation.ts` (NEW)
+
+- **`validateMessageBody(body)` (lines 24–40)**:
+  - Validates that `body` is a string (rejects non-strings).
+  - Trims leading/trailing whitespace.
+  - Rejects empty strings after trimming.
+  - Rejects messages exceeding 1000 characters after trimming.
+  - Returns discriminated union: `{ valid: true, trimmed }` or `{ valid: false, error }`.
+
+---
+
+## 2026-02-25 — Milestone 1: Local Chat Gateway (Ollama)
+
+### Overview
+
+Adds a local-only Q&A chatbot gateway backed by Ollama. Two endpoints, no auth, no DB, no actions — pure read-only question-answering over a knowledge pack file.
+
+### Files Changed
+
+#### `chat/knowledge.md` (NEW)
+
+- Markdown knowledge pack loaded at runtime by the chat service.
+- Sections: App Overview, How to Create a Ride, Trip Requests, Bookings, Offers, Editing, Cancellation, Dashboard, FAQ.
+- Product Lead can replace placeholder sections with real policy text.
+
+#### `src/app/api/chat/route.ts` (NEW)
+
+- **Constants (lines 7–10)**: `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `OLLAMA_TIMEOUT_MS` (30s), `MAX_HISTORY` (10).
+- **System prompt (lines 12–22)**: Hardcoded verbatim. Instructs the model to be Q&A only, never claim actions, never invent features, never mention implementation details.
+- **`loadKnowledgePack()` (lines 36–46)**: Reads `chat/knowledge.md` from disk using `fs/promises.readFile`. Caches in memory after first load. Throws if file is missing.
+- **`validateRequest()` (lines 50–82)**: Validates `message` (non-empty string after trim) and optional `history` (array of `{role, content}` pairs). Returns parsed data or error string.
+- **`POST()` handler (lines 92–184)**:
+  1. Parses JSON body; returns 400 on invalid JSON.
+  2. Validates via `validateRequest()`; returns 400 on failure.
+  3. Loads knowledge pack; returns 500 if missing.
+  4. Truncates history to last 10 messages via `history.slice(-MAX_HISTORY)`.
+  5. Assembles messages array: system prompt → knowledge pack (as system message) → truncated history → user message.
+  6. Calls `POST http://127.0.0.1:11434/api/chat` with `stream: false`, `AbortController` timeout at 30s.
+  7. On success: returns `{ answer }` from Ollama's `message.content`.
+  8. On Ollama non-OK status: returns 502.
+  9. On `AbortError` (timeout): returns 504 with clear message.
+  10. On `ECONNREFUSED` / `fetch failed`: returns 503 with `"Model unavailable. Ensure Ollama is running."`.
+  11. On other errors: returns 500.
+
+#### `src/app/api/chat/health/route.ts` (NEW)
+
+- **`GET()` handler**: Returns `{ status: "ok", model: "qwen2.5:7b-instruct" }`. No Ollama dependency check. Lightweight and fast.
+
+#### `src/__tests__/chat.test.ts` (NEW)
+
+- 7 test cases:
+  1. `returns a string answer when Ollama responds successfully`: Mocks fetch, verifies 200 + `answer` field.
+  2. `injects system prompt, knowledge pack, history, and user message into Ollama call`: Inspects the messages array sent to Ollama — checks system prompt text, knowledge pack presence, history entries, and final user message.
+  3. `truncates history to last 10 messages`: Sends 15 history entries, asserts only last 10 appear (total 13 messages = 2 system + 10 history + 1 user).
+  4. `returns 503 when Ollama is unreachable`: Mocks fetch rejection with `TypeError("fetch failed")`, asserts 503 + exact error message.
+  5. `returns 400 when message is missing or empty`: Tests empty string, whitespace-only, and missing `message` field.
+  6. `returns 400 when history is malformed`: Tests history entry with numeric `role`.
+  7. `GET /api/chat/health returns 200 with status ok and model name`: Verifies health endpoint response shape.
+- Uses `vi.resetModules()` between tests to clear the cached knowledge pack.
+- Mocks `fs/promises.readFile` and `globalThis.fetch` independently.
+
+## 2026-02-25 — GET /api/dashboard — Unified Upcoming Dashboard
+
+### Overview
+
+This change adds one backend read endpoint:
+
+- `GET /api/dashboard`
+
+Scope is intentionally limited to read-only aggregation. No create/update/cancel logic was modified.
+
+### Files Changed
+
+#### `src/app/api/dashboard/route.ts`
+
+- Added new endpoint implementation for `GET /api/dashboard`.
+- Significant blocks and responsibilities:
+  - **Select shapes (lines 8–56)**:
+    - `rideSummarySelect`: 11 fields for ride list items.
+    - `rideInBookingSelect`: 9 fields for ride summary nested inside bookings.
+    - `tripRequestSummarySelect`: 9 fields shared by bookings and offers (single source of truth).
+    - `offerSummarySelect`: 10 fields including nested `tripRequest`.
+  - **Auth guard block**:
+    - Uses required guard exactly:
+      - `const auth = await requireStetsonAuth();`
+      - `if (auth.error) return auth.error;`
+  - **Parallel query block (Promise.all, 10 queries)**:
+    - `ride.count`: Counts active rides where `driverUserId == userId`, `status == ACTIVE`, `latestDepartAt > now`.
+    - `ride.findMany`: Same filter, `orderBy: [earliestDepartAt ASC, id ASC]`, `take: 5`.
+    - `booking.count` (ride-based): Counts where `riderUserId == userId`, `status == CONFIRMED`, `rideId != null`, `ride.latestDepartAt > now`.
+    - `booking.findMany` (ride-based): Same filter, `orderBy: [ride.earliestDepartAt ASC, id ASC]`, `take: 5`. Includes nested `ride` summary.
+    - `booking.count` (triprequest-based): Counts where `riderUserId == userId`, `status == CONFIRMED`, `tripRequestId != null`, `tripRequest.latestDesiredAt > now`.
+    - `booking.findMany` (triprequest-based): Same filter, `orderBy: [tripRequest.earliestDesiredAt ASC, id ASC]`, `take: 5`. Includes nested `tripRequest` summary.
+    - `offer.count` (sent): Counts where `driverUserId == userId`, `status == PENDING`, `tripRequest.latestDesiredAt > now`.
+    - `offer.findMany` (sent): Same filter, `orderBy: [createdAt DESC, id DESC]`, `take: 5`. Includes nested `tripRequest`.
+    - `offer.count` (received): Counts where `riderUserId == userId`, `status == PENDING`, `tripRequest.latestDesiredAt > now`.
+    - `offer.findMany` (received): Same filter, `orderBy: [createdAt DESC, id DESC]`, `take: 5`. Includes nested `tripRequest`.
+  - **Booking merge block**:
+    - Combines ride-based and triprequest-based booking results (up to 5 each).
+    - Sorts by associated event's earliest timestamp ASC, then `id` ASC tie-break.
+    - Uses `getBookingEarliest()` helper to extract `ride.earliestDepartAt` or `tripRequest.earliestDesiredAt`.
+    - Slices merged list to 5.
+  - **Count merge**:
+    - `confirmedBookingsCount = rideBookingsCount + tripRequestBookingsCount`.
+  - **Response shape**:
+    - Returns `{ now, summary, upcoming }` matching the locked contract.
+  - **Error handling**:
+    - Returns `500` with stable message for unexpected failures.
+
+#### `src/__tests__/dashboard.test.ts`
+
+- Added focused test suite for `GET /api/dashboard`.
+- Significant tests (10 total):
+  - `returns correct counts and lists when user has items in all categories`: Verifies all 4 count fields and all list populations.
+  - `returns zeros and empty arrays when user has nothing`: Verifies empty state.
+  - `passes latestDepartAt > now filter to ride queries`: Verifies stale exclusion by inspecting Prisma call arguments.
+  - `passes upcoming filters to booking queries`: Verifies both ride-based and triprequest-based stale filters.
+  - `caps merged booking list at 5 even when more exist`: Verifies 10 bookings merge to 5 items.
+  - `passes take: 5 to all list queries`: Verifies all 5 findMany calls use `take: 5`.
+  - `sorts rides by earliestDepartAt ASC, id ASC`: Verifies orderBy argument.
+  - `sorts offers sent by createdAt DESC, id DESC`: Verifies orderBy argument.
+  - `sorts merged bookings by earliest* ASC, id ASC`: Verifies cross-type merge sorting.
+  - `response shape matches the locked contract`: Verifies all top-level and nested keys exist.
+
+## 2026-02-25 — PATCH /api/trip-requests/:tripRequestId — Edit Lock Before Confirmation
+
+### Overview
+
+This change adds one backend endpoint:
+
+- `PATCH /api/trip-requests/:tripRequestId`
+
+The endpoint allows trip request editing only when:
+
+- caller is the owner (`riderUserId` matches auth user)
+- no `CONFIRMED` booking exists for the trip request
+- trip request is `ACTIVE`
+
+No offer mutation, booking mutation, or frontend changes were added.
+
+### Files Changed
+
+#### `src/app/api/trip-requests/[tripRequestId]/route.ts`
+
+- Added new PATCH handler for trip request editing.
+- Significant blocks and responsibilities:
+  - **Constants and allowed fields**
+    - Defines strict allowed patch keys via `ALLOWED_UPDATE_FIELDS`.
+    - Defines validation limits:
+      - 48-hour max window
+      - 10-minute clock-skew grace
+    - Defines stable conflict codes/messages:
+      - `TRIP_REQUEST_EDIT_LOCKED_CONFIRMED`
+      - `TRIP_REQUEST_CLOSED`
+  - **Auth guard**
+    - Uses the required reusable guard exactly:
+      - `const auth = await requireStetsonAuth();`
+      - `if (auth.error) return auth.error;`
+  - **Initial fetch + lock checks**
+    - Loads trip request by id and includes one confirmed booking.
+    - Returns `404` when missing.
+    - Returns `403` when non-owner.
+    - Returns `409 TRIP_REQUEST_CLOSED` when status is not `ACTIVE` (for example `CLOSED` or `CANCELLED`).
+    - Returns `409 TRIP_REQUEST_EDIT_LOCKED_CONFIRMED` when any confirmed booking exists.
+  - **Body parsing and unknown-field rejection**
+    - Accepts only JSON object payload.
+    - Rejects unknown keys with `400`.
+  - **Per-field parse and trim validation**
+    - `originText`, `destinationText`: string, trimmed length `3..200`.
+    - `earliestDesiredAt`, `latestDesiredAt`: ISO datetime parsing.
+    - `preferredDepartAt`: ISO datetime or `null`.
+    - `distanceCategory`: enum `SHORT | MEDIUM | LONG`.
+    - `seatsNeeded`: integer `1..8`.
+    - `pickupInstructions`, `dropoffInstructions`: when provided, accepts `null` (clear) or string; string values are trimmed, must be non-empty, and max `500`.
+  - **Merged-state validation**
+    - Validates final merged state (existing + patch):
+      - `latestDesiredAt > earliestDesiredAt`
+      - window <= 48 hours
+      - `earliestDesiredAt >= now - 10 minutes`
+      - `preferredDepartAt` must be inside window if present
+  - **400 response for validation errors**
+    - Returns existing envelope pattern:
+      - `error: "Validation Error"`
+      - `message`
+      - `details[]` field-level errors
+  - **Transactional guarded update**
+    - Uses `prisma.$transaction` with:
+      - `updateMany` guarded by owner, `status: "ACTIVE"`, prior `updatedAt` value, and no confirmed bookings
+      - Active-only allowlist prevents updates for terminal or non-active statuses.
+      - `updatedAt` optimistic concurrency check ensures stale read-merge-write attempts update 0 rows instead of overwriting newer edits.
+      - follow-up read to diagnose conflict reason deterministically
+    - On `count === 0`, remaps to:
+      - `404` (deleted)
+      - `403` (ownership mismatch)
+      - `409 TRIP_REQUEST_CLOSED` when latest status is no longer active
+      - `409 TRIP_REQUEST_EDIT_LOCKED_CONFIRMED`
+      - fallback `409` conflict
+  - **Success response**
+    - Returns updated trip request with `200`.
+    - Removes internal included `bookings` from response payload.
+  - **Catch block**
+    - Logs and returns stable `500` envelope.
+
+#### `src/__tests__/trip-request-edit.test.ts`
+
+- Added test suite for PATCH trip request edit-lock behavior.
+- Significant test coverage:
+  - `Owner can edit when no CONFIRMED booking exists` -> `200`.
+  - `Owner cannot edit after CONFIRMED booking exists` -> `409` with `TRIP_REQUEST_EDIT_LOCKED_CONFIRMED`.
+  - `Non-owner cannot edit` -> `403`.
+  - `Invalid window ordering rejected` -> `400`.
+  - `preferredDepartAt outside window rejected` -> `400`.
+  - `CLOSED and CANCELLED trip requests cannot be edited` -> `409` with `TRIP_REQUEST_CLOSED`.
+  - `pickupInstructions`/`dropoffInstructions` can be cleared with `null`.
+  - Stale concurrent PATCH attempts return `409 Conflict` via the optimistic-concurrency guard path.
+  - `Unknown fields rejected` -> `400`.
+
+## 2026-02-24 — PATCH /api/rides/:rideId — Edit Lock Before Confirmation
+
+### Overview
+
+This change adds one backend update endpoint:
+
+- `PATCH /api/rides/:rideId`
+
+Scope is intentionally limited to the ride owner editing a ride, provided it has zero `CONFIRMED` bookings.
+
+### Files Changed
+
+#### `src/app/api/rides/[rideId]/route.ts`
+
+- Added new endpoint implementation for `PATCH /api/rides/:rideId`.
+- Significant blocks and responsibilities:
+  - Auth guard block:
+    - Uses required shared guard exactly:
+      - `const auth = await requireStetsonAuth();`
+      - `if (auth.error) return auth.error;`
+  - Ride fetch and Edit-lock check:
+    - Fetches the ride and includes up to 1 `CONFIRMED` booking.
+    - Returns `404` if the ride doesn't exist.
+    - Returns `403` if `ride.driverUserId !== auth.user.clerkUserId`.
+    - Returns `409 Conflict` if any `CONFIRMED` booking exists, with specific code `RIDE_EDIT_LOCKED_CONFIRMED`.
+  - Body parsing and unknown fields check:
+    - Rejects non-object bodies.
+    - Identifies and rejects any keys not in the `ALLOWED_UPDATE_FIELDS` set.
+  - Granular final-state validation:
+    - Evaluates the "merged" state for cross-field checks (e.g., if only `latestDepartAt` changes, it is validated against the existing `earliestDepartAt`).
+    - Validates strings, trims, and enforces length limits (3-200 for origin/destination, 1-500 for instructions).
+    - Checks `MAX_DEPARTURE_WINDOW_MS` (48 hours) and `CLOCK_SKEW_GRACE_MS` (10 minutes) for departure windows.
+    - Validates `preferredDepartAt` falls within the departure window.
+  - Seat invariant enforcement:
+    - `seatsAvailable` is reset to the new `seatsTotal` if `seatsTotal` changes. This is safe because execution guarantees zero confirmed bookings.
+  - Database update & Error handling:
+    - Updates fields and returns `200`.
+
+#### `src/__tests__/ride-edit.test.ts`
+
+- Added tests for `PATCH /api/rides/:rideId`.
+- Significant coverage:
+  - `Owner can edit when no CONFIRMED booking exists` -> `200` success.
+  - `Owner cannot edit after CONFIRMED booking exists (409)` -> verifies the edit-lock policy.
+  - `Non-owner cannot edit (403)` -> verifies authorization.
+  - `Invalid window ordering rejected (400)` -> verifies departure window logic.
+  - `Window > 48h rejected (400)`.
+  - `seatsTotal update resets seatsAvailable when no bookings` -> verifies the core seat invariant.
+
+## 2026-02-23 — GET /api/offers/mine
+
+### Overview
+
+This change adds one backend read endpoint:
+
+- `GET /api/offers/mine`
+
+Scope is intentionally limited to listing logic only (no offer create/accept/cancel changes, no booking changes, no schema changes).
+
+### Files Changed
+
+#### `src/lib/offer-query.ts`
+
+- Added a new query parsing/validation module dedicated to `GET /api/offers/mine`.
+- Significant blocks and responsibilities:
+  - `OfferRole` type:
+    - Restricts role values to `"rider"` or `"driver"` so route logic is explicit and type-safe.
+  - `OfferCursor` interface:
+    - Defines decoded cursor shape as `{ id, createdAt }`.
+  - `OfferQueryValidationError`:
+    - Provides structured validation errors with both `field` and `message` for consistent `400` responses.
+  - `parseOfferRole(value)`:
+    - Enforces that `role` is required.
+    - Accepts only `"rider"` or `"driver"`.
+    - Throws `OfferQueryValidationError("role", ...)` for missing/invalid role.
+  - `parseOfferStatus(value)`:
+    - Supports optional `status`.
+    - Accepts only `PENDING | ACCEPTED | CANCELLED`.
+    - Throws `OfferQueryValidationError("status", ...)` on invalid values.
+  - `parseOfferLimit(value)`:
+    - Defaults to `20` when omitted.
+    - Validates numeric integer input and bounds `1..50`.
+    - Throws `OfferQueryValidationError("limit", ...)` when invalid.
+  - `decodeOfferCursor(value)`:
+    - Decodes Base64 JSON cursor.
+    - Validates `id` as UUID and `createdAt` as valid ISO datetime.
+    - Returns parsed cursor object or throws `OfferQueryValidationError("cursor", ...)`.
+  - `encodeOfferCursor(id, createdAt)`:
+    - Generates response cursor using the same base64 JSON shape for pagination continuity.
+
+#### `src/app/api/offers/mine/route.ts`
+
+- Added new endpoint implementation for `GET /api/offers/mine`.
+- Significant blocks and responsibilities:
+  - `offerMineSelect`:
+    - Limits selected fields to required offer fields plus minimal `tripRequest` summary.
+    - Keeps payload small and avoids unrelated joins.
+  - Auth guard block:
+    - Uses required shared guard exactly:
+      - `const auth = await requireStetsonAuth();`
+      - `if (auth.error) return auth.error;`
+  - Query parsing block:
+    - Reads `role`, `status`, `limit`, and `cursor` from URL params.
+    - Uses `parseOfferRole`, `parseOfferStatus`, `parseOfferLimit`, `decodeOfferCursor`.
+  - Filtering block:
+    - Applies role-based identity filter:
+      - `role=rider` => `riderUserId = auth.user.clerkUserId`
+      - `role=driver` => `driverUserId = auth.user.clerkUserId`
+    - Applies optional `status` filter only when provided.
+  - Cursor predicate block (DESC ordering semantics):
+    - Adds:
+      - `(createdAt < cursor.createdAt) OR (createdAt = cursor.createdAt AND id < cursor.id)`
+    - Ensures stable keyset pagination for `createdAt DESC, id DESC`.
+  - Query execution block:
+    - Uses `take: limit + 1` to detect next page.
+    - Uses deterministic ordering:
+      - `createdAt: "desc"`
+      - `id: "desc"`
+    - Applies `offerMineSelect` projection.
+  - Response block:
+    - Returns `{ items, nextCursor }`.
+    - Computes `nextCursor` from last returned item when a sentinel row exists.
+  - Error handling block:
+    - Returns `400` with `{ error, field, message }` for query validation failures.
+    - Returns `500` with stable message for unexpected failures.
+
+#### `src/__tests__/offers-mine.test.ts`
+
+- Added a focused test suite for `GET /api/offers/mine`.
+- Significant tests and responsibilities:
+  - `returns rider offers when role=rider`:
+    - Verifies `riderUserId == auth.userId` filter is applied.
+  - `returns driver offers when role=driver`:
+    - Verifies `driverUserId == auth.userId` filter is applied.
+  - `applies status filter when provided`:
+    - Verifies optional status filter (`ACCEPTED` in test) is passed to query.
+  - `uses requested limit and enforces default paging shape`:
+    - Verifies `take = limit + 1` and deterministic DESC ordering.
+  - `returns 400 for missing or invalid role`:
+    - Verifies missing role and invalid role are rejected.
+  - `returns 400 for invalid status, limit, and cursor`:
+    - Verifies strict validation for malformed params.
+  - `paginates deterministically with no duplicates and correct nextCursor`:
+    - Verifies no duplicate records across pages.
+    - Verifies second-page cursor predicate matches DESC semantics.
+    - Verifies `nextCursor` transitions correctly.
+  - `includes minimal trip request summary fields`:
+    - Verifies response includes expected minimal nested `tripRequest` fields.
+
+## 2026-02-16 — Prevent Self-Booking (MVP 1)
+
+### Overview
+
+This change adds a single guard in `POST /api/bookings` to prevent riders from booking rides they own (self-booking).
+Scope is intentionally minimal:
+
+- no schema changes
+- no migration changes
+- no new endpoints
+- no changes to booking create/cancel contracts beyond this guard
+
+### Files Changed
+
+#### `src/app/api/bookings/route.ts`
+
+- Added two constants near the top of the file:
+  - `SELF_BOOKING_ERROR_CODE = "SELF_BOOKING_NOT_ALLOWED"`
+  - `SELF_BOOKING_ERROR_MESSAGE = "You can’t book your own ride."`
+  - Responsibility: keep the self-booking conflict response stable and reusable.
+
+- Added an early self-booking check after idempotency replay and before any write:
+  - `const rideForSelfBookingCheck = await prisma.ride.findUnique({ ... select: { driverUserId: true } })`
+  - `if (rideForSelfBookingCheck?.driverUserId === riderUserId) return 409 ...`
+  - Responsibility by line/block:
+    - fetches only `driverUserId` for the target ride (minimal data needed)
+    - compares authenticated rider ID to ride owner ID
+    - immediately returns `409 Conflict` with:
+      - `code: SELF_BOOKING_NOT_ALLOWED`
+      - `message: "You can’t book your own ride."`
+    - guarantees no booking row, no seat decrement, and no idempotency mapping write on blocked self-book attempts
+
+- Hardened transactional seat decrement predicate:
+  - Added `driverUserId: { not: riderUserId }` to `tx.ride.updateMany({ where: ... })`
+  - Responsibility: enforce non-self condition inside the same atomic seat-decrement query path to avoid edge-case race gaps.
+
+- Added self-booking branch in transaction failure diagnosis:
+  - inside `if (updateResult.count === 0)`, after fetching `ride`:
+    - `if (ride.driverUserId === riderUserId) throw new Error(SELF_BOOKING_ERROR_CODE);`
+  - Responsibility: preserve deterministic self-book conflict behavior if transaction path fails due owner/rider match.
+
+- Added error mapping for self-booking code in catch block:
+  - if `err.message === SELF_BOOKING_ERROR_CODE`, return `409` with stable `code` + `message`.
+  - Responsibility: unify response shape regardless of whether self-booking was blocked at the early guard or transaction diagnosis path.
+
+- Existing auth guard remains unchanged and exact:
+  - `const auth = await requireStetsonAuth();`
+  - `if (auth.error) return auth.error;`
+
+- Existing idempotency replay remains unchanged:
+  - if idempotency mapping already exists for this key, endpoint still returns existing booking `200` before self-book checks.
+  - Responsibility: keep replay semantics intact for prior successful non-self bookings.
+
+#### `src/__tests__/booking-create.test.ts`
+
+- Updated `beforeEach` default ride mock:
+  - `mockPrisma.ride.findUnique.mockResolvedValue({ id: "ride-1", driverUserId: "driver_other_user" })`
+  - Responsibility: provide a stable non-self default for tests that now pass through the new guard.
+
+- Updated idempotency replay test:
+  - added assertion `expect(mockPrisma.ride.findUnique).not.toHaveBeenCalled();`
+  - Responsibility: confirm replay path still short-circuits before ride lookup and seat mutation.
+
+- Added new test: `"returns 409 and blocks self-booking without mutating seats or booking rows"`
+  - sets `ride.findUnique` to same rider as driver
+  - expects `409`, `code: SELF_BOOKING_NOT_ALLOWED`, and exact message
+  - asserts all mutation calls are not invoked:
+    - `ride.updateMany` (no seat decrement)
+    - `booking.create` (no booking row)
+    - `idempotencyKey.create` (no idempotency write)
+    - `user.upsert` (no local user write in blocked path)
+  - Responsibility: enforce and lock the self-booking invariant with explicit non-mutation guarantees.
+
+---
+
+## PR: GET /api/bookings/mine (design/booking-flow-endpoint)
+
+### Overview
+
+This PR adds one backend endpoint:
+
+- `GET /api/bookings/mine`
+
+It returns the authenticated rider's bookings with:
+
+- default `CONFIRMED` filtering
+- optional `status` filter (`CONFIRMED` or `CANCELLED`)
+- cursor pagination (base64 JSON cursor)
+- deterministic ordering (`createdAt DESC`, `id DESC`)
+- strict `400` validation for invalid `cursor`, `limit`, or `status`
+
+No booking create/cancel behavior was changed.
+
+---
+
+### Files Changed
+
+#### `src/lib/booking-query.ts`
+
+- New booking-specific query parsing helpers.
+- **`BookingQueryValidationError`**
+  - Error type used to return structured `400` responses (`field` + message).
+- **`parseBookingLimit(value)`**
+  - Applies default `20`.
+  - Validates integer range `1..50`.
+- **`parseBookingStatus(value)`**
+  - Defaults to `CONFIRMED`.
+  - Accepts only `CONFIRMED` or `CANCELLED`.
+- **`decodeBookingCursor(value)`**
+  - Decodes base64 JSON cursor in required shape:
+    - `{ createdAt: ISO, id: bookingId }`
+  - Validates UUID `id` and ISO `createdAt`.
+- **`encodeBookingCursor(id, createdAt)`**
+  - Encodes response `nextCursor` in the same required base64 JSON shape.
+
+#### `src/app/api/bookings/mine/route.ts`
+
+- New endpoint implementation for `GET /api/bookings/mine`.
+- **Auth guard block**
+  - Uses required guard exactly:
+    - `const auth = await requireStetsonAuth();`
+    - `if (auth.error) return auth.error;`
+- **Query parse block**
+  - Parses `limit`, `status`, and `cursor` with strict validation.
+- **Filter block**
+  - Always filters by `riderUserId = auth.user.clerkUserId`.
+  - Applies status default of `CONFIRMED` unless `status` query is supplied.
+- **Cursor semantics block**
+  - Applies strict “after cursor” logic for DESC ordering:
+    - `(createdAt < cursor.createdAt) OR (createdAt = cursor.createdAt AND id < cursor.id)`
+- **Query block**
+  - Uses `take: limit + 1` for next-page detection.
+  - Uses deterministic sort:
+    - `createdAt DESC`
+    - `id DESC`
+  - Selects response fields exactly, including nested minimal `ride` summary.
+- **Response block**
+  - Returns:
+    - `{ items, nextCursor }`
+  - `nextCursor` is generated from last returned item when extra sentinel row exists.
+- **Error block**
+  - Returns `400` for parsing/validation errors.
+  - Returns `500` for unexpected runtime failures.
+
+#### `src/__tests__/bookings-mine.test.ts`
+
+- New tests for `GET /api/bookings/mine`.
+- Coverage includes:
+  - default `CONFIRMED` filter
+  - `status=CANCELLED` behavior
+  - invalid cursor returns `400`
+  - invalid limit/status returns `400`
+  - deterministic cursor pagination without duplicates
+  - nested minimal ride summary fields included in response
+
+---
+
+## PR: Browsing Endpoints (design/browsing-api-endpoint)
+
+### Overview
+
+This PR implements backend-only browsing endpoints for MVP 1:
+
+- `GET /api/rides`
+- `GET /api/trip-requests`
+
+Both endpoints:
+
+- enforce `requireStetsonAuth()` exactly
+- return only `ACTIVE` and not-stale records
+- use strict query validation with `400` on invalid parameters
+- use deterministic keyset (cursor) pagination
+- return `{ items, nextCursor }`
+
+---
+
+### Files Changed
+
+#### `src/lib/browse-query.ts`
+
+- Centralized parsing and cursor utilities shared by both GET endpoints.
+- **`QueryValidationError` class**
+  - Carries both `field` and human-readable message so handlers can return consistent `400` payloads.
+- **`parseLimit()`**
+  - Enforces integer limits in range `1..50`, defaults to `20`.
+- **`parseDistanceCategory()`**
+  - Validates enum strictly against `SHORT | MEDIUM | LONG`.
+- **`parseISODateParam()`**
+  - Validates ISO-like datetime parseability for `earliestAfter` / `latestBefore`.
+- **`parseBooleanParam()`**
+  - Strictly accepts only `"true"` or `"false"` for `includeFull`.
+- **`parseSeatsParam()`**
+  - Validates positive integers for `seatsMin` / `seatsMax`.
+- **`decodeCursor()`**
+  - Decodes Base64 JSON and validates `{ id, timestamp }`.
+  - Enforces valid UUID id and valid timestamp.
+  - Throws `QueryValidationError` for malformed cursor input.
+- **`encodeCursor()`**
+  - Generates Base64 JSON cursor from `{ id, timestamp: ISO }` for response `nextCursor`.
+
+#### `src/app/api/rides/route.ts`
+
+- Added `GET /api/rides` without changing existing `POST`.
+- **Auth block**
+  - Executes:
+    - `const auth = await requireStetsonAuth();`
+    - `if (auth.error) return auth.error;`
+- **Query parsing block**
+  - Parses and validates: `limit`, `cursor`, `distanceCategory`, `includeFull`, `earliestAfter`, `latestBefore`, `seatsMin`.
+  - Uses shared helpers from `src/lib/browse-query.ts`.
+- **Base filters block**
+  - Always applies:
+    - `status = ACTIVE`
+    - `latestDepartAt > now` (not stale)
+    - `earliestDepartAt >= earliestAfter` (defaults to `now` when missing)
+- **Capacity block**
+  - Default (`includeFull=false`) enforces `seatsAvailable >= 1`.
+  - `includeFull=true` removes default full-ride exclusion.
+  - `seatsMin` overrides threshold when provided.
+- **Cursor predicate block**
+  - Applies strict “after cursor” logic for deterministic order:
+    - `(earliestDepartAt > cursor.timestamp) OR (earliestDepartAt = cursor.timestamp AND id > cursor.id)`
+- **Fetch block**
+  - Uses `take: limit + 1`, `orderBy earliestDepartAt ASC, id ASC`, and stable select shape (`RideSummary`).
+- **Response block**
+  - Returns `{ items, nextCursor }`.
+  - `nextCursor` is generated from the last returned item when an extra sentinel row exists.
+- **Error handling block**
+  - Returns `400` for validation errors.
+  - Returns `500` for unexpected errors.
+
+#### `src/app/api/trip-requests/route.ts`
+
+- Added `GET /api/trip-requests` without changing existing `POST`.
+- **Auth block**
+  - Same required `requireStetsonAuth()` guard pattern.
+- **Query parsing block**
+  - Parses and validates: `limit`, `cursor`, `distanceCategory`, `earliestAfter`, `latestBefore`, `seatsMax`.
+- **Base filters block**
+  - Always applies:
+    - `status = ACTIVE`
+    - `latestDesiredAt > now` (not stale)
+- **Optional filter block**
+  - Applies `earliestDesiredAt >= earliestAfter`, `latestDesiredAt <= latestBefore`, distance category filter, and `seatsNeeded <= seatsMax`.
+- **Cursor predicate block**
+  - Applies strict keyset predicate:
+    - `(earliestDesiredAt > cursor.timestamp) OR (earliestDesiredAt = cursor.timestamp AND id > cursor.id)`
+- **Fetch block**
+  - Uses `take: limit + 1`, `orderBy earliestDesiredAt ASC, id ASC`, stable select shape (`TripRequestSummary`).
+- **Response block**
+  - Returns `{ items, nextCursor }` with Base64 cursor generation from the last returned row.
+- **Error handling block**
+  - Returns `400` for invalid params/cursor and `500` for unexpected issues.
+
+#### `src/__tests__/rides-browse.test.ts`
+
+- Added GET browse tests for rides.
+- Significant coverage:
+  - ACTIVE + not-stale baseline filtering.
+  - Default full-ride exclusion and `includeFull=true` override.
+  - `distanceCategory` + `seatsMin` filter application.
+  - `400` on invalid cursor.
+  - `400` on invalid enum/date/limit values.
+  - Deterministic pagination across pages with no duplicate IDs.
+
+#### `src/__tests__/trip-requests-browse.test.ts`
+
+- Added GET browse tests for trip requests.
+- Significant coverage:
+  - ACTIVE + not-stale baseline filtering.
+  - `distanceCategory`, `seatsMax`, `earliestAfter`, `latestBefore` filters.
+  - `400` on invalid cursor.
+  - `400` on invalid enum/date/limit values.
+  - Deterministic cursor pagination with no duplicate IDs.
+
+#### `prisma/schema.prisma`
+
+- Added minimal cursor-order indexes (blueprint-aligned):
+  - `Ride`: `@@index([earliestDepartAt, id])`
+  - `TripRequest`: `@@index([earliestDesiredAt, id])`
+- Purpose: support deterministic keyset pagination ordering efficiently.
+
+#### `prisma/migrations/20260214221500_add_browse_cursor_indexes/migration.sql`
+
+- Adds DB indexes matching schema updates:
+  - `rides(earliest_depart_at, id)`
+  - `trip_requests(earliest_desired_at, id)`
+- Keeps migration scope minimal and specific to browse endpoint pagination performance.
+
+---
+
+## Patch: Next.js Proxy-Only Middleware Fix (codex/frontend-auth-gating-mvp1)
+
+### Overview
+
+This patch resolves a Next.js build failure caused by having both `src/proxy.ts` and `src/middleware.ts`.
+In Next.js 16, this project must use `src/proxy.ts` only for middleware/proxy behavior.
+
+### Files Changed
+
+#### `src/middleware.ts` (removed)
+
+- Deleted the shim file to avoid dual-detection conflict:
+  - `Both middleware file ... and proxy file ... are detected. Please use ... proxy.ts only.`
+- `src/proxy.ts` remains the single source for Clerk middleware handler and matcher config.
+
+---
+
+## Patch: Clerk Middleware Coverage Fix (codex/frontend-auth-gating-mvp1)
+
+### Overview
+
+This patch fixes a production server error by ensuring Clerk middleware runs on frontend page requests (not only API routes).
+Without this, server-side calls like `auth()` and `currentUser()` on pages can fail at runtime in Vercel.
+
+### Files Changed
+
+#### `src/proxy.ts`
+
+- Updated `config.matcher` from API-only to page+API coverage.
+- New matcher behavior:
+  - Includes app/page routes.
+  - Includes `/api` and `/trpc` routes.
+  - Excludes `_next` internals and static assets.
+- This keeps Clerk session context available for frontend route gating and restricted-access pages.
+
+---
+
+## PR: Frontend Auth Flow & Route Protection (codex/frontend-auth-gating-mvp1)
+
+### Overview
+
+This PR adds frontend-only protection for app pages using Clerk in the Next.js App Router.
+It enforces that protected pages are accessible only to users who are:
+
+- signed in
+- using a verified email
+- using a verified `@stetson.edu` email
+
+If a signed-in user is blocked (unverified or non-stetson), they are redirected to a dedicated `Access Restricted` UX page with clear next actions.
+
+---
+
+### Files Changed
+
+#### `src/app/page.tsx` -> moved to `src/app/(protected)/page.tsx`
+
+- The root homepage is now placed inside a protected route group.
+- This preserves route URL (`/`) while making it subject to the protected layout guard.
+- The page content itself was not functionally changed; only route organization changed for gating.
+
+#### `src/app/(protected)/layout.tsx`
+
+- Adds centralized frontend route protection for everything in the `(protected)` group.
+- **`const user = await currentUser();`**
+  - Reads Clerk session on the server for the current request.
+- **`if (!user) redirect("/sign-in");`**
+  - Ensures signed-out users are redirected to Clerk sign-in before protected content renders.
+- **`const access = evaluateFrontendAccess(user);`**
+  - Runs frontend authorization logic (verified + stetson email check).
+- **`if (!access.allowed) redirect("/access-restricted?...")`**
+  - Redirects unauthorized signed-in users to the blocked-user UX with a reason code in query params.
+- **`return <>{children}</>;`**
+  - Renders protected content only when both auth and authorization pass.
+
+#### `src/lib/frontend-auth.ts`
+
+- New frontend authorization utility used by protected layouts/pages.
+- **`RestrictionReason`**
+  - Enumerates explicit blocked states: missing email, unverified email, non-stetson domain.
+- **`evaluateFrontendAccess(user)`**
+  - Core decision function:
+    1. Rejects missing user/email list.
+    2. Requires at least one verified email.
+    3. Requires at least one verified email ending with `@stetson.edu`.
+    4. Returns success with normalized verified stetson email.
+- **`getRestrictionCopy(reason)`**
+  - Maps block reasons to user-facing text for the restricted page.
+
+#### `src/app/access-restricted/page.tsx`
+
+- Implements the blocked-user UX page required for frontend authorization failures.
+- **Server `searchParams` parsing + reason validation**
+  - Reads reason code passed by protected layout via page `searchParams` and validates it to known values.
+- **Requirement message block**
+  - Explains that a verified `@stetson.edu` email is required.
+- **Action buttons**
+  - `Sign out` (Clerk `SignOutButton` with redirect to `/sign-in`)
+  - `Switch account` is conditional:
+    - Signed in: Clerk `UserButton` for account/session switching
+    - Signed out: link to `/sign-in`
+  - `Verify email` (link to `/user-profile`)
+- This page is intentionally minimal and consistent with existing app styling.
+
+#### `src/app/user-profile/[[...user-profile]]/page.tsx`
+
+- Adds a Clerk-hosted profile route so blocked users have a direct place to manage/verify email.
+- **`<SignedIn><UserProfile ... /></SignedIn>`**
+  - Shows profile only for authenticated users.
+- **`<SignedOut><RedirectToSignIn /></SignedOut>`**
+  - Prevents anonymous access and sends signed-out users to sign-in.
+
+---
+
+### Scope Confirmation
+
+- Implemented: frontend auth flow and route protection.
+- Implemented: Clerk-based gating for protected pages.
+- Implemented: blocked-user access UX with required actions.
+- Not implemented: backend guard changes, `/api/*` behavior changes, business logic/model changes.
+
+---
+
+## PR: Backend Authentication & Authorization (feat/backend-auth)
+
+### Overview
+
+This PR implements backend authentication and authorization enforcement for MVP 1.
+All protected API routes require a valid Clerk session AND a verified @stetson.edu email.
+
+---
+
+### Files Changed
+
+#### `.env.local` / `.env.example`
+
+- **`.env.local`**: Contains the actual environment variable values (gitignored).
+- **`.env.example`**: Committed reference showing all required environment variables.
+- Variables:
+  - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` — Clerk publishable key (used client-side)
+  - `CLERK_SECRET_KEY` — Clerk secret key (used server-side)
+  - `NEXT_PUBLIC_CLERK_SIGN_IN_URL` / `NEXT_PUBLIC_CLERK_SIGN_UP_URL` — Clerk redirect URLs
+  - `DATABASE_URL` — PostgreSQL connection string for Prisma
+
+#### `prisma/schema.prisma`
+
+- Defines the PostgreSQL datasource and Prisma client generator.
+- **`User` model**: Local user record linked to Clerk.
+  - `id` — UUID primary key (auto-generated).
+  - `clerkUserId` — Unique string mapped from Clerk's user ID (`clerk_user_id` column). Ensures one local record per Clerk user.
+  - `email` — The user's verified @stetson.edu email address.
+  - `createdAt` / `updatedAt` — Timestamps for record creation and last update.
+  - `@@map("users")` — Maps the model to a `users` table in PostgreSQL.
+
+#### `prisma.config.ts`
+
+- Auto-generated Prisma config. Loads `DATABASE_URL` from environment via `dotenv/config`.
+- Points to `prisma/schema.prisma` and `prisma/migrations` directory.
+
+#### `src/lib/prisma.ts`
+
+- **Singleton Prisma client**.
+- Uses `globalThis` caching to prevent multiple PrismaClient instances during Next.js dev hot-reloads.
+- `globalForPrisma.prisma` stores the client globally; in production, a fresh instance is created per cold start.
+
+#### `src/lib/auth.ts`
+
+- **`requireStetsonAuth()`** — The core auth guard function.
+- **Step 1**: Calls `currentUser()` from `@clerk/nextjs/server` to get the Clerk session user.
+  - If `null` → returns `NextResponse` with **401** and `"Authentication required."` message.
+- **Step 2**: Iterates `user.emailAddresses` looking for an email where:
+  - `verification.status === "verified"` — Email must be verified through Clerk.
+  - `emailAddress.toLowerCase().endsWith("@stetson.edu")` — Must be a Stetson University email (case-insensitive).
+  - If no matching email → returns `NextResponse` with **403** and `"Access restricted to verified @stetson.edu email addresses."` message.
+- **Step 3**: Returns `AuthedUser` object with `clerkUserId` and `primaryStetsonEmail`.
+- **Type `AuthResult`**: Discriminated union — either `{ user: AuthedUser }` or `{ error: NextResponse }`. Enables clean pattern matching in route handlers.
+
+#### `src/middleware.ts`
+
+- Exports `clerkMiddleware()` from `@clerk/nextjs/server`.
+- **Purpose**: Makes Clerk auth state (session, user) available to all matched routes. Without this, `currentUser()` would return `null` for every request.
+- **`config.matcher`**: Applies to all `/api/(.*)` routes and non-static pages. Skips Next.js internals (`_next`) and static assets (images, fonts, etc.).
+- **Note**: This middleware does NOT enforce authorization — it only provides session data. Authorization is enforced per-route by `requireStetsonAuth()`.
+
+#### `src/app/layout.tsx`
+
+- Wraps the entire app with `<ClerkProvider>` — required for Clerk to manage sessions.
+- Updates metadata title/description to "Desti".
+- **Note**: This is the only frontend file touched, and it's the minimal change needed for Clerk to function. No frontend route protection or UI logic is added.
+
+#### `src/app/api/me/route.ts`
+
+- **`GET /api/me`** — Returns the current user's profile.
+- **Line-by-line**:
+  1. Calls `requireStetsonAuth()` — if it returns an error, that error response is returned immediately (401 or 403).
+  2. Calls `prisma.user.findUnique({ where: { clerkUserId } })` to check if a local user already exists.
+  3. Calls `prisma.user.upsert()` with:
+     - `where: { clerkUserId }` — Matches on the unique Clerk ID.
+     - `create: { clerkUserId, email }` — Creates the user if missing.
+     - `update: { email }` — Keeps the email in sync if user already exists.
+  4. Sets `created = !existingUser` — `true` if this was the first call for this user.
+  5. Returns JSON with `clerkUserId`, `primaryVerifiedEmail`, `created`, and `localUser` (safe fields only: id, clerkUserId, email, createdAt, updatedAt).
+- **Idempotency**: `upsert` ensures no duplicate users are created even under concurrent requests.
+
+#### `src/app/api/health/route.ts`
+
+- **`GET /api/health`** — Public health-check endpoint. No authentication required.
+- Returns `{ status: "ok", timestamp: "..." }`.
+- Useful for uptime monitoring, load balancer health checks, and deployment verification.
+
+#### `.gitignore`
+
+- Updated to allow `.env.example` to be committed while still excluding `.env`, `.env.local`, and `*.local` env files.
+
+---
+
+### API Responses Summary
+
+| Endpoint | Auth Required | 401 When | 403 When | 200 Response |
+|-----------|--------------|----------|----------|-------------|
+| `GET /api/health` | No | — | — | `{ status, timestamp }` |
+| `GET /api/me` | Yes | No Clerk session | No verified @stetson.edu email | `{ clerkUserId, primaryVerifiedEmail, created, localUser }` |
+
+---
+
+## 2026-02-12 — Ride Creation (POST /api/rides)
+
+### Overview
+
+This PR implements the ride creation endpoint for MVP 1. Drivers with verified @stetson.edu emails can create rides. The endpoint enforces comprehensive validation, uses idempotency keys to prevent duplicate rides under retries/concurrency, and derives server-side fields (driverUserId, seatsAvailable, status) from auth context and business rules.
+
+---
+
+### Files Changed
+
+#### `prisma/schema.prisma`
+
+- **`DistanceCategory` enum** — Defines `SHORT`, `MEDIUM`, `LONG` values. Used by the `Ride` model to categorize trip distance.
+- **`RideStatus` enum** — Defines `ACTIVE` for MVP 1. Room to add `CANCELLED`, `COMPLETED` later.
+- **`Ride` model** — Mapped to `rides` table. Contains:
+  - `id` — UUID primary key (auto-generated).
+  - `driverUserId` — Clerk user ID of the driver. FK to `User.clerkUserId`.
+  - `originText` / `destinationText` — Trimmed text strings for origin and destination (3–200 chars).
+  - `earliestDepartAt` / `latestDepartAt` — Departure time window (validated: latest > earliest, window ≤ 48h, earliest ≥ now − 10min).
+  - `distanceCategory` — Enum value (`SHORT` | `MEDIUM` | `LONG`).
+  - `priceCents` — Integer price in cents (≥ 0).
+  - `seatsTotal` / `seatsAvailable` — Integer seats (1–8). `seatsAvailable` initialized to `seatsTotal` on create.
+  - `status` — Defaults to `ACTIVE`.
+  - `createdAt` / `updatedAt` — Auto-managed timestamps.
+  - `driver` relation — Links to User via `driverUserId` → `User.clerkUserId`.
+  - `idempotencyKeys` relation — Back-relation to `IdempotencyKey`.
+- **`IdempotencyKey` model** — Mapped to `idempotency_keys` table. Contains:
+  - `id` — UUID primary key.
+  - `driverUserId` — Clerk user ID.
+  - `idempotencyKey` — Client-provided idempotency key string.
+  - `rideId` — FK to the `Ride` created with this key.
+  - `createdAt` — Timestamp.
+  - `@@unique([driverUserId, idempotencyKey])` — Composite unique constraint. **This is the concurrency safety mechanism** — prevents two rides from being created for the same driver + key, even under concurrent requests.
+- **`User` model** — Added `rides Ride[] @relation("DriverRides")` back-relation.
+
+#### `prisma/migrations/20260212190911_add_ride_and_idempotency_models/migration.sql`
+
+- Auto-generated Prisma migration that:
+  - Creates `DistanceCategory` and `RideStatus` enums in PostgreSQL.
+  - Creates the `rides` table with all columns and FK to `users.clerk_user_id`.
+  - Creates the `idempotency_keys` table with FK to `rides.id`.
+  - Adds unique index on `(driver_user_id, idempotency_key)`.
+
+#### `src/app/api/rides/route.ts`
+
+- **`POST` handler** — The main endpoint implementation. Flow:
+  1. **Auth guard** (`requireStetsonAuth()`) — Rejects unauthenticated (401) or non-stetson (403) users. Derives `driverUserId` from `auth.user.clerkUserId`. Client-supplied `driverUserId` is explicitly deleted from the body.
+  2. **Idempotency-Key header** — Read from `request.headers.get("Idempotency-Key")`. If missing or empty after trim → 400.
+  3. **Body parsing** — `request.json()` wrapped in try/catch for invalid JSON → 400.
+  4. **`validateRideBody(body)`** — Returns `{ errors, parsed }`. If errors exist → 400 with `{ error, message, details }` where `details` is an array of `{ field, message }` objects.
+  5. **Idempotency check** — `prisma.idempotencyKey.findUnique()` with composite key `(driverUserId, idempotencyKey)`. If found → return the associated ride with **200** (replay).
+  6. **User upsert** — `prisma.user.upsert()` ensures a local User record exists before creating the ride. Required because `rides.driver_user_id` has a FK to `users.clerk_user_id`. Idempotent — creates on first call, syncs email on subsequent calls.
+  7. **Ride creation** — `prisma.ride.create()` with derived fields: `seatsAvailable = seatsTotal`, `status = "ACTIVE"`.
+  8. **Idempotency mapping creation** — `prisma.idempotencyKey.create()` inside try/catch. If P2002 unique constraint violation (race condition) → fetch existing mapping and return ride with **200**.
+  9. **201 response** — Return created ride JSON.
+  10. **500 catch-all** — Logs unexpected errors, returns generic error response.
+- **`validateRideBody(body)`** — Validation function. Returns field-level error array:
+  - `originText` / `destinationText` — Must be strings, trimmed, 3–200 chars.
+  - `earliestDepartAt` / `latestDepartAt` — Must parse as valid Date objects.
+  - Cross-field: `latestDepartAt > earliestDepartAt`, window ≤ 48h.
+  - `earliestDepartAt ≥ now − 10 minutes` (clock skew grace).
+  - `distanceCategory` — Must be in `DistanceCategory` enum set.
+  - `priceCents` — Integer ≥ 0.
+  - `seatsTotal` — Integer 1–8.
+- **`isPrismaUniqueConstraintError(err)`** — Type guard checking for Prisma error code `P2002`. Used in the idempotency conflict handler.
+
+#### `src/__tests__/ride-create.test.ts`
+
+- **Test file** — 7 unit tests using Vitest with mocked auth and Prisma:
+  1. `returns 201 with created ride on successful create` — Verifies status, ride ID, driverUserId, seatsAvailable, and status in response.
+  2. `returns 400 when Idempotency-Key header is missing` — Request has no Idempotency-Key header.
+  3. `returns 400 when earliestDepartAt is after latestDepartAt` — earliest 5h from now, latest 1h from now.
+  4. `returns 400 when departure window exceeds 48 hours` — 49h gap between earliest and latest.
+  5. `returns 400 when seatsTotal is outside 1-8 range` — seatsTotal = 10.
+  6. `returns 400 when priceCents is negative` — priceCents = -100.
+  7. `returns 200 with existing ride on idempotency replay` — Mock returns existing mapping, verifies same ride ID returned and no new ride created.
+- **Mock setup** — Uses `vi.hoisted()` to declare mock objects before `vi.mock()` factory functions (which are hoisted). Mocks: `requireStetsonAuth`, `prisma`, and `DistanceCategory` enum.
+- **Helpers** — `validBody()` builds a valid request body, `makeRequest()` builds a Request object, `successAuth()` returns mock auth, `fakeRide()` returns a mock Ride object.
+
+#### `vitest.config.ts`
+
+- Vitest configuration file. Sets test environment to `node` and configures `@/` path alias to resolve to `./src/` (matches `tsconfig.json` paths).
+
+#### `package.json`
+
+- Added `"test": "vitest run"` script.
+- Added `vitest` as a devDependency.
+
+## Patch: Trip Request Creation Endpoint (feature/trip-request-create-idempotency)
+
+### Overview
+
+Adds POST /api/trip-requests — a rider-authored trip request endpoint for MVP 1.
+Also generalizes the idempotency_keys table to support both rides and trip requests,
+avoiding a redundant parallel idempotency system.
+
+### Files Changed
+
+#### `prisma/schema.prisma`
+
+- **TripRequestStatus enum**: ACTIVE, CANCELLED (CANCELLED in schema only; no cancellation endpoint).
+- **IdempotencyEntityType enum**: RIDE, TRIP_REQUEST — discriminator for the shared idempotency table.
+- **TripRequest model**: riderUserId (FK → users.clerk_user_id), originText, destinationText,
+  earliestDesiredAt, latestDesiredAt, distanceCategory, seatsNeeded, status, timestamps.
+  Mapped to `trip_requests` table.
+- **IdempotencyKey model changes**:
+  - `driverUserId` → `userId` (column `user_id`) — now generic for any user.
+  - Added `entityType` — discriminates between RIDE and TRIP_REQUEST entries.
+  - `rideId` → optional (nullable) for trip request entries.
+  - Added optional `tripRequestId` (FK → trip_requests.id).
+  - Unique constraint changed from `(driverUserId, idempotencyKey)` to `(userId, idempotencyKey, entityType)`.
+- **User model**: Added `tripRequests` back-relation.
+
+#### `prisma/migrations/.../migration.sql`
+
+- Custom migration with data-migration steps:
+  1. Creates enums + trip_requests table.
+  2. Adds `user_id` and `entity_type` as nullable columns.
+  3. Migrates existing rows: copies `driver_user_id` → `user_id`, sets `entity_type` = 'RIDE'.
+  4. Sets new columns to NOT NULL.
+  5. Drops old `driver_user_id` column, makes `ride_id` nullable.
+  6. Creates new unique index and foreign keys.
+
+#### `src/app/api/rides/route.ts` (minimal required update)
+
+- All IdempotencyKey queries updated: `driverUserId` → `userId`, added `entityType: "RIDE"`.
+- Compound unique key references changed from `driverUserId_idempotencyKey` to `userId_idempotencyKey_entityType`.
+- No changes to ride business logic.
+
+#### `src/app/api/trip-requests/route.ts` (new file)
+
+Handler follows the same architecture as rides/route.ts:
+
+1. **Auth guard** — `requireStetsonAuth()`, derives `riderUserId = auth.user.clerkUserId`.
+2. **Idempotency-Key header** — required, trimmed, 400 if missing.
+3. **JSON body parsing** — type guard rejects non-object JSON (null/arrays/primitives).
+4. **Client riderUserId rejected** — `delete body.riderUserId` prevents client override.
+5. **Validation** — `validateTripRequestBody()`:
+   - originText/destinationText: string, trimmed, 3–200 chars.
+   - earliestDesiredAt/latestDesiredAt: valid ISO datetimes.
+   - latestDesiredAt > earliestDesiredAt (strict).
+   - Desired window ≤ 48h.
+   - earliestDesiredAt ≥ now - 10min (clock skew grace).
+   - distanceCategory: SHORT | MEDIUM | LONG.
+   - seatsNeeded: integer 1–8.
+6. **Idempotency check** — `findUnique` with `entityType: "TRIP_REQUEST"`. Returns 200 on replay.
+7. **User upsert** — ensures User record exists for FK satisfaction.
+8. **Atomic transaction** — `prisma.$transaction` creates TripRequest + IdempotencyKey together.
+   P2002 rolls back the trip request (no orphans).
+9. **P2002 catch** — fetches existing mapping, returns 200.
+10. **Success** — returns 201 with created TripRequest.
+
+#### `src/__tests__/ride-create.test.ts`
+
+- Updated idempotency replay mock data: `driverUserId` → `userId`, added `entityType: "RIDE"`.
+
+#### `src/__tests__/trip-request-create.test.ts` (new file)
+
+Seven test cases:
+
+  1. `returns 201 with created trip request on successful create` — verifies $transaction atomicity.
+  2. `returns 400 when Idempotency-Key header is missing`.
+  3. `returns 400 when earliestDesiredAt is after latestDesiredAt`.
+  4. `returns 400 when desired window exceeds 48 hours`.
+  5. `returns 400 when seatsNeeded is outside 1-8 range`.
+  6. `returns 400 when distanceCategory is invalid` — tests "VERY_FAR" rejected.
+  7. `returns 200 with existing trip request on idempotency replay`.
+Mock setup mirrors ride tests: `vi.hoisted()` for mock objects, mocks for auth/prisma/DistanceCategory.
+
+## Patch: Harden IdempotencyKey FK Semantics & CHECK Constraint
+
+### Overview
+
+Tightens the idempotency_keys table at the database level to prevent two classes of bugs:
+
+1. **Dangling idempotency keys** — where a ride or trip request gets deleted but the idempotency
+   key row survives with a NULL FK, causing subsequent replays to return `null` bodies as 200 OK.
+2. **Mismatched entity types** — where a row could theoretically have `entity_type = 'RIDE'` but
+   point at a `trip_request_id`, or have both FKs set/null simultaneously.
+
+### Why ON DELETE RESTRICT instead of SET NULL
+
+**Before (SET NULL)**:
+
+```
+idempotency_keys.ride_id  →  rides.id  ON DELETE SET NULL
+```
+
+If a ride gets deleted (now or via a future admin API), the FK becomes NULL. On the next
+replay with the same Idempotency-Key, the handler calls `idempotencyKey.findUnique({ include: { ride: true } })`
+and gets `{ ride: null }`. The endpoint would then return `NextResponse.json(null, { status: 200 })` —
+a successful HTTP 200 with a null body. The client thinks everything is fine, but the ride is gone.
+
+**After (RESTRICT)**:
+
+```
+idempotency_keys.ride_id  →  rides.id  ON DELETE RESTRICT
+```
+
+PostgreSQL now **blocks** any `DELETE FROM rides WHERE id = ?` if an idempotency_keys row references it.
+This forces the application to explicitly clean up the idempotency mapping first before deleting the
+referenced entity — making the deletion a deliberate, multi-step operation rather than a silent data loss.
+
+The same logic applies to `trip_request_id → trip_requests.id`.
+
+### Why the CHECK constraint
+
+The `idempotency_keys` table is polymorphic — it stores mappings for both rides and trip requests
+in the same table, distinguished by `entity_type`. Without a CHECK constraint, the DB permits
+rows that violate the intended exclusivity rules:
+
+| Scenario                              | entity_type  | ride_id | trip_request_id | Valid? |
+|---------------------------------------|-------------|---------|-----------------|--------|
+| Ride mapping                          | RIDE        | ✓ set   | NULL            | ✅ Yes  |
+| Trip request mapping                  | TRIP_REQUEST| NULL    | ✓ set           | ✅ Yes  |
+| Both FKs set                          | RIDE        | ✓ set   | ✓ set           | ❌ No   |
+| Wrong FK for type                     | RIDE        | NULL    | ✓ set           | ❌ No   |
+| Neither FK set                        | RIDE        | NULL    | NULL            | ❌ No   |
+
+The CHECK constraint enforces this at the database level:
+
+```sql
+CHECK (
+    (entity_type = 'RIDE'         AND ride_id IS NOT NULL AND trip_request_id IS NULL) OR
+    (entity_type = 'TRIP_REQUEST' AND trip_request_id IS NOT NULL AND ride_id IS NULL)
+)
+```
+
+This is **defense in depth** — the application code already sets these correctly, but the CHECK
+ensures no bug, migration, or manual SQL can create an invalid row.
+
+### Files Changed
+
+#### `prisma/schema.prisma`
+
+- Added `onDelete: Restrict` to both `ride` and `tripRequest` relations on the `IdempotencyKey` model.
+  Prisma's default for optional relations is `SetNull`; we now explicitly override this.
+
+#### `prisma/migrations/.../harden_idempotency_fk_and_check/migration.sql`
+
+1. **Drops** both existing FK constraints (which had `ON DELETE SET NULL`).
+2. **Recreates** them with `ON DELETE RESTRICT ON UPDATE CASCADE`.
+3. **Adds** `chk_idempotency_entity_fk` CHECK constraint enforcing the entity-type exclusivity rules.
+
+Note: Prisma doesn't natively support CHECK constraints, so this was added as raw SQL in the
+migration. Prisma will not manage or drop this constraint — it lives as a "DB-only" safeguard.
+
+## 2026-02-13 — Store Route and Timing Data (MVP 1)
+
+### Overview
+
+Adds three optional fields to both `Ride` and `TripRequest` models so that creators can attach route context and a preferred timing anchor at creation time. All fields are nullable with no breaking changes.
+
+### Fields Added
+
+| Field | Type | Validation |
+|-------|------|------------|
+| `pickupInstructions` | `String?` | If provided: trimmed, non-empty, ≤ 500 chars |
+| `dropoffInstructions` | `String?` | If provided: trimmed, non-empty, ≤ 500 chars |
+| `preferredDepartAt` | `DateTime?` | If provided: valid ISO datetime, must fall within `[earliest, latest]` window |
+
+### Files Changed
+
+#### `prisma/schema.prisma`
+
+- Added `pickupInstructions`, `dropoffInstructions`, `preferredDepartAt` to both `Ride` and `TripRequest` models.
+- All columns mapped to snake_case (`pickup_instructions`, `dropoff_instructions`, `preferred_depart_at`).
+- All nullable, default `NULL`.
+
+#### `prisma/migrations/20260213190344_add_route_context_and_timing/migration.sql`
+
+- Six `ALTER TABLE ... ADD COLUMN` statements (3 per table). No data migration needed — all nullable.
+
+#### `src/app/api/rides/route.ts`
+
+- Extended `validateRideBody()` with validation blocks for the 3 new optional fields.
+- Instructions: if provided and not a string → error. If string but empty/whitespace after trim → error. If > 500 chars → error.
+- `preferredDepartAt`: if provided, parsed as Date, checked against `[earliestDepartAt, latestDepartAt]` range.
+- Extended `parsed` return type with `pickupInstructions: string | null`, `dropoffInstructions: string | null`, `preferredDepartAt: Date | null`.
+- Added the 3 fields to `tx.ride.create({ data })`.
+
+#### `src/app/api/trip-requests/route.ts`
+
+- Same pattern as rides. `preferredDepartAt` validated against `[earliestDesiredAt, latestDesiredAt]`.
+
+#### `src/__tests__/ride-create.test.ts`
+
+Five new tests (#8–#12):
+
+- 201 with all 3 new fields (verifies trimming).
+- 400 for whitespace-only `pickupInstructions`.
+- 400 for `dropoffInstructions` > 500 chars.
+- 400 for `preferredDepartAt` before `earliestDepartAt`.
+- 400 for `preferredDepartAt` after `latestDepartAt`.
+
+#### `src/__tests__/trip-request-create.test.ts`
+
+Five new tests (#16–#20): same validation scenarios adapted for trip request field names (`earliestDesiredAt`/`latestDesiredAt`).
+
+### Test Results
+
+All 32 tests pass (12 ride + 20 trip-request).
+
+## 2026-02-14 — Browsing API Design (MVP 1)
+
+### Overview
+
+Created the definitive design blueprint for `GET /api/rides` and `GET /api/trip-requests`. Because listing endpoints are high-traffic and complex (pagination, filtering, sorting), this PR delivers the *contract* and *contracts* only, without the implementation code.
+
+### Files Added
+
+#### `docs/browsing_mvp1_contract.md`
+
+- **The Bible** for the browsing implementation.
+- Specifies strict query parameter validation rules.
+- Defines the **Keyset Pagination** strategy (Cursor-based) to ensure O(1) performance and prevent offset drift.
+- Defines deterministic sorting: `Timestamp ASC` + `ID ASC`.
+- Provides the exact Prisma `where` clause structure to handle cursor predicates safely.
+- Outlines the testing matrix required for the implementation phase.
+
+#### `src/lib/pagination.ts`
+
+- A utility module to centralize pagination logic.
+- **`encodeCursor` / `decodeCursor`**: Handles Base64 wrapping of the `{id, timestamp}` cursor object.
+- **`CursorSchema`**: Zod schema to validate decoded cursors structure at runtime.
+- **`parseLimit`**: Enforces the 1–50 limit constraint (default 20).
+- **`PaginatedResponse<T>`**: TypeScript interface ensuring consistent API response shapes.
+
+## 2026-02-16 — Booking Flow (MVP 1)
+
+### Overview
+
+Implements the core booking transaction logic. Riders can book specific rides, decrementing seat inventory atomically. Includes strict idempotency to prevent double-booking or overbooking race conditions, and cancellability that restores seat inventory.
+
+### Files Changed
+
+#### `prisma/schema.prisma`
+
+- **`Booking` model**:
+  - `id`, `rideId`, `riderUserId`, `seatsBooked`, `status` (CONFIRMED/CANCELLED).
+  - Relations to `Ride`, `User`, and `IdempotencyKey`.
+- **`BookingStatus` enum**: CONFIRMED, CANCELLED.
+- **`IdempotencyKey` updates**:
+  - Added `bookingId` field and relation.
+  - Added `BOOKING` to `IdempotencyEntityType`.
+
+#### `prisma/migrations/.../add_booking_model/migration.sql`
+
+- Added `bookings` table.
+- **Custom SQL**: Added partial unique index `UNIQUE(ride_id, rider_user_id) WHERE status = 'CONFIRMED'`.
+  - Ensures a rider can only have *one* active booking per ride.
+  - Allows re-booking if the previous one was CANCELLED.
+
+#### `src/app/api/bookings/route.ts`
+
+- **`POST /api/bookings`**
+- **Auth**: Requires verified Stetson email.
+- **Validation**: `seatsBooked` (1-8), `rideId` exists.
+- **Transaction**:
+  1. **Decrement Seats**: `UPDATE rides SET seats_available = seats_available - N WHERE id = ? AND seats_available >= N`.
+     - Returns 0 count if race condition or capacity fails -> throws 409.
+  2. **Create Booking**: Inserts booking record.
+  3. **Idempotency**: Inserts key.
+- **Concurrency**: Relies on atomic database constraints to prevent overbooking.
+
+#### `src/app/api/bookings/[bookingId]/cancel/route.ts`
+
+- **`POST .../cancel`**
+- **Auth**: Only the booking owner can cancel.
+- **Logic**:
+  - Checks if already cancelled (idempotent 200).
+  - Updates status to `CANCELLED`.
+  - Atomically increments `ride.seatsAvailable` by `seatsBooked`.
+
+#### `src/__tests__/booking-create.test.ts` & `booking-cancel.test.ts`
+
+- **Unit Tests**:
+  - Verify success flow (transaction atomicity).
+  - Verify capacity constraints (mocked race conditions).
+  - Verify double-booking constraints.
+  - Verify authorization rules.
+  - Verify idempotency replays.
+
+## 2026-02-18 — Trip Request Offers
+
+### Overview
+
+This change implements the write-side of the Trip Request Offer flow. Drivers can now offer rides to specific Trip Requests, and Riders can accept those offers. The implementation includes a new database model, status management, and strict business rules (idempotency, one-active-offer limits).
+
+### Files Changed
+
+#### `prisma/schema.prisma`
+
+- **`Offer` model**: Mapped to `Offer` table (keeping PascalCase for table name was a minor inconsistency, typically we use snake_case map, but functionality is unaffected).
+  - `id`: UUID.
+  - `tripRequestId`: FK to TripRequest.
+  - `driverUserId`: FK to User (Driver).
+  - `riderUserId`: FK to User (Rider).
+  - `seatsOffered`: Int.
+  - `priceCents`: Int.
+  - `status`: Enum (`PENDING`, `ACCEPTED`, `CANCELLED`).
+  - `message`: Optional string.
+  - Indexes: Covered by FKs and status queries.
+- **`OfferStatus` enum**: Defines the three states.
+- **`IdempotencyEntityType`**: Added `OFFER`.
+- **`IdempotencyKey` check constraints**: Updated raw SQL to support `OFFER` type.
+
+#### `prisma/migrations/20260217213327_add_offer_model/migration.sql`
+
+- Creates `Offer` table and `OfferStatus` enum.
+- Adds partial unique index: `CREATE UNIQUE INDEX offer_trip_request_accepted_unique ON "Offer"("trip_request_id") WHERE status = 'ACCEPTED'`.
+  - **Purpose**: Database-level guarantee that a TripRequest can have at most ONE accepted offer.
+
+#### `prisma/migrations/20260217214323_add_idempotency_check_offer/migration.sql`
+
+- Updates the `chk_idempotency_entity_fk` check constraint to allow `entity_type = 'OFFER'` with `offer_id` set (and others null).
+
+#### `src/app/api/trip-requests/[tripRequestId]/offers/route.ts`
+
+- **`POST` handler** (Create Offer):
+  1. **Auth**: Drivers only (must have `@stetson.edu` email).
+  2. **Validation**:
+     - `seatsOffered`: 1-8.
+     - `priceCents`: >= 0.
+     - `message`: max 500 chars.
+  3. **Guards**:
+     - **Self-offer**: Driver cannot offer on their own request.
+     - **One-active-offer**: Driver cannot have >1 PENDING/ACCEPTED offer for the same request.
+     - **Request State**: TripRequest must be `ACTIVE`.
+  4. **Idempotency**: Standard `Idempotency-Key` header support.
+  5. **Transaction**: Creates `Offer` + `IdempotencyKey` atomically.
+
+#### `src/app/api/offers/[offerId]/accept/route.ts`
+
+- **`POST` handler** (Accept Offer):
+  1. **Auth**: Only the **Rider** who owns the request can accept.
+  2. **Guards**:
+     - Offer must be `PENDING`.
+     - TripRequest must be `ACTIVE`.
+     - **Double-Accept**: Checks if another offer is already `ACCEPTED` (redundant with DB index, but provides better error message).
+  3. **Update**: Sets status to `ACCEPTED`.
+
+#### `src/app/api/offers/[offerId]/cancel/route.ts`
+
+- **`POST` handler** (Cancel Offer):
+  1. **Auth**:
+     - **Driver**: Can cancel their own offer if `PENDING`.
+     - **Rider**: Can cancel an offer on their request if `PENDING` or `ACCEPTED`.
+  2. **Update**: Sets status to `CANCELLED`.
+  3. **Idempotency**: Returns 200 if already `CANCELLED`.
+
+#### `src/__tests__/offer-lifecycle.test.ts`
+
+- **Integration Tests**: 10 scenarios using `vitest` and `prisma` mock/test-db.
+  1. Create Success.
+  2. Idempotency Replay.
+  3. Self-offer blocked (409).
+  4. Multiple active offers blocked (409).
+  5. Accept Success.
+  6. Driver acceptance blocked (403).
+  7. Double-accept blocked (409).
+  8. Driver cancel success.
+  9. Driver cancel accepted blocked (409).
+  10. Rider cancel accepted success.
+
+## 2026-02-18 — Offer Acceptance Creates Booking
+
+### Overview
+
+Added the transactional logic for Rider acceptance. when a Rider accepts an offer, the system now automatically creates a Confirmed Booking, closes the Trip Request, and cancels all other pending offers for that request.
+
+### Files Changed
+
+#### `prisma/schema.prisma`
+
+- **`Booking` model**:
+  - Made `rideId` optional (nullable).
+  - Added `tripRequestId` (FK to TripRequest, optional).
+  - Added `driverUserId` and `priceCents` to support TripRequest-based bookings.
+- **`TripRequestStatus` enum**:
+  - Added `CLOSED` status.
+- **`TripRequest` model**:
+  - Added `bookings` relation.
+
+#### `src/app/api/offers/[offerId]/accept/route.ts`
+
+- **`POST` handler** (Updated):
+  - Wrapped in `prisma.$transaction`.
+  - **Logic**:
+        1. Verify Offer (`PENDING`) and TripRequest (`ACTIVE`).
+        2. Update Offer (`ACCEPTED`).
+        3. Create Booking (`CONFIRMED`, linked to TripRequest).
+        4. Update TripRequest (`CLOSED`).
+        5. Update competing Offers (`CANCELLED`).
+
+#### `src/__tests__/offer-lifecycle.test.ts`
+
+- Updated **Test 5** to verify side effects:
+  - Checks `Booking` created with correct driver/price.
+  - Checks `TripRequest` status is `CLOSED`.
+  - Checks competing offers are `CANCELLED`.
+- Updated **Test 7** to verify double-booking prevention on fresh requests.
+
+## 2026-03-04 — MVP 1.5 Messaging REST Layer (SWE II)
+
+### Overview
+
+Implemented REST messaging endpoints on top of the SWE I messaging service layer.  
+No direct schema/model edits were made by SWE II; branch integration pulled those in unchanged.
+
+### Files Added/Updated
+
+#### `src/controllers/conversationController.ts` (NEW)
+
+- **Imports**:
+  - Uses service-layer functions from `@/services/conversationService`:
+    - `listUserConversations`
+    - `getOrCreateBookingConversation`
+    - `getOrCreateOfferConversation`
+  - Uses `assertConversationParticipant` from `@/helpers/conversationAuth`.
+  - Uses `prisma.message.findFirst` for latest-message preview lookup.
+- **`latestMessageSelect` constant**:
+  - Locks preview fields to `{ id, conversationId, senderUserId, body, createdAt }`.
+- **`ConversationListItem` type**:
+  - Defines response contract for `GET /api/conversations`, including `latestMessage | null`.
+- **`listConversationsController(userId)`**:
+  - Calls `listUserConversations(userId)` (already sorted by `updatedAt DESC` in service).
+  - Performs one `findFirst` latest-message lookup per conversation:
+    - `where: { conversationId }`
+    - `orderBy: [{ createdAt: "desc" }, { id: "desc" }]`
+  - Returns mapped list with required fields + preview.
+- **`createOrGetBookingConversationController(userId, bookingId)`**:
+  - Performs **pre-create authorization** by fetching booking participants using `bookingId` (rider + derived driver).
+  - Returns `404 BOOKING_NOT_FOUND` when caller is not a participant.
+  - Only after authorization, calls `getOrCreateBookingConversation(bookingId)`.
+  - Keeps `assertConversationParticipant` as secondary safety check.
+- **`createOrGetOfferConversationController(userId, offerId)`**:
+  - Performs **pre-create authorization** by fetching offer participants using `offerId`.
+  - Returns `404 OFFER_NOT_FOUND` when caller is not a participant.
+  - Only after authorization, calls `getOrCreateOfferConversation(offerId)`.
+  - Keeps `assertConversationParticipant` as secondary safety check.
+
+#### `src/controllers/messageController.ts` (NEW)
+
+- **Imports**:
+  - Uses `assertConversationParticipant` (privacy rule: non-participants get 404).
+  - Uses `validateMessageBody` helper from SWE I.
+  - Uses `createMessageWithRateLimit` from service layer.
+  - Uses `prisma.message.findMany` for ASC keyset pagination.
+- **Validation/pagination helpers**:
+  - `parseMessageLimit`:
+    - default `20`
+    - strict integer parsing
+    - allowed range `1..50`
+    - throws `ConversationServiceError(..., 400)` on invalid.
+  - `decodeMessageCursor`:
+    - expects base64 JSON `{ createdAt, id }`
+    - validates ISO datetime and UUID
+    - throws `400 INVALID_CURSOR` on malformed cursor.
+  - `encodeMessageCursor`:
+    - emits opaque base64 cursor using last item `{ createdAt, id }`.
+- **`getConversationMessagesController(userId, conversationId, searchParams)`**:
+  - Asserts participant first.
+  - Parses `limit` and `cursor`.
+  - Executes keyset query:
+    - base filter: `conversationId`
+    - cursor predicate:
+      - `(createdAt > cursor.createdAt) OR (createdAt = cursor.createdAt AND id > cursor.id)`
+  - Sorts `createdAt ASC`, `id ASC`.
+  - Uses `take: limit + 1` and computes `nextCursor`.
+  - Returns `{ items, nextCursor }`.
+- **`sendConversationMessageController(userId, conversationId, rawBody)`**:
+  - Asserts participant first.
+  - Validates body is JSON object.
+  - Validates message body via helper:
+    - trim
+    - non-empty
+    - max 1000 chars
+  - Calls `createMessageWithRateLimit(...)` with:
+    - `windowMinutes: 5`
+    - `maxMessages: 20`
+  - Rate-limit check and insert are now atomic (single transactional path).
+
+#### `src/routes/conversations.ts` (NEW)
+
+- **Purpose**:
+  - Central REST route layer used by Next App Router wrappers.
+  - Handles auth guard and HTTP error mapping.
+- **Error utilities**:
+  - `statusToErrorLabel` maps status to stable error label strings.
+  - `toErrorResponse` maps `ConversationServiceError` to JSON `{ error, code, message }`.
+  - Unexpected errors return `500`.
+- **Handlers**:
+  - `handleGetConversations(request)`:
+    - applies `requireStetsonAuth`
+    - returns `{ items }` from `listConversationsController`.
+  - `handleGetConversationMessages(request, conversationId)`:
+    - applies auth
+    - parses URL search params
+    - returns `{ items, nextCursor }`.
+  - `handlePostConversationMessage(request, conversationId)`:
+    - applies auth
+    - validates JSON parse (`400` on invalid JSON)
+    - sends message
+    - returns `201`.
+  - `handlePostConversationForBooking(request, bookingId)`:
+    - applies auth
+    - create/get booking conversation
+    - participant privacy via controller/helper chain.
+  - `handlePostConversationForOffer(request, offerId)`:
+    - same behavior for offer conversations.
+
+#### `src/app/api/conversations/route.ts` (NEW)
+
+- Adds Next.js API entrypoint for `GET /api/conversations`.
+- Thin wrapper that delegates to `handleGetConversations`.
+
+#### `src/app/api/conversations/[id]/messages/route.ts` (NEW)
+
+- Adds `GET` and `POST` entrypoints for `/api/conversations/:id/messages`.
+- Extracts `id` from async params and delegates to route handlers.
+
+#### `src/app/api/conversations/for-booking/[bookingId]/route.ts` (NEW)
+
+- Adds `POST /api/conversations/for-booking/:bookingId`.
+- Delegates directly to `handlePostConversationForBooking`.
+
+#### `src/app/api/conversations/for-offer/[offerId]/route.ts` (NEW)
+
+- Adds `POST /api/conversations/for-offer/:offerId`.
+- Delegates directly to `handlePostConversationForOffer`.
+
+#### `src/__tests__/conversations-list.test.ts` (NEW)
+
+- **Coverage**:
+  - `listConversationsController` returns full conversation item with `latestMessage` object or `null`.
+  - `handleGetConversations` passes through auth errors and skips data calls.
+
+#### `src/__tests__/conversation-messages.test.ts` (NEW)
+
+- **Coverage**:
+  - GET default limit (`20`) and ASC ordering.
+  - GET invalid limit returns `400`.
+  - GET keyset cursor pagination has no duplicate overlap and uses createdAt/id predicate.
+  - GET non-participant returns `404`.
+  - POST send success path.
+  - POST empty/whitespace validation (`400`).
+  - POST >1000 chars validation (`400`).
+  - POST rate limit (`429` at 20 in 5 minutes).
+  - POST non-participant returns `404`.
+
+#### `src/__tests__/conversations-for-booking-offer.test.ts` (NEW)
+
+- **Coverage**:
+  - booking conversation create/get success.
+  - offer conversation create/get success.
+  - non-participant receives `404`.
+  - service `404` and `409` errors are mapped to same HTTP statuses.
+
+### Verification Performed
+
+- `npm test`
+  - New messaging suites passed.
+  - Existing pre-existing integration suite `offer-lifecycle` still requires `DATABASE_URL` and fails in local env (unchanged known issue).
+- `npm test -- src/__tests__/conversations-list.test.ts src/__tests__/conversation-messages.test.ts src/__tests__/conversations-for-booking-offer.test.ts`
+  - All targeted messaging tests passed.
+- `npx tsc --noEmit`
+  - TypeScript compile passed.
+
+## MVP 2 Backend Slice: OSM/Nominatim Geocoding + Direct Location Storage (2026-04-21)
+
+### Scope Implemented
+
+This change set implements a narrow backend-only MVP 2 slice for geocoding and coordinate storage on Ride and TripRequest create/update flows.
+
+Implemented:
+- Server-side Nominatim geocoding integration (OSM public search endpoint)
+- Shared backend geocoding utility with deterministic query settings
+- Schema/migration changes to store resolved addresses + coordinates directly on `rides` and `trip_requests`
+- Ride and TripRequest create flow enforcement: both origin and destination must geocode successfully
+- Ride and TripRequest edit flow updates: re-geocode only changed location fields
+- Clear API error handling for missing/invalid input, no-result resolution, invalid coordinates, provider failure, and timeout
+- Test updates with mocked geocoder behavior (no live external calls)
+
+Explicitly not implemented in this slice:
+- proximity filtering
+- match suggestions
+- route overlap
+- autocomplete
+- map rendering
+- route geometry
+- stop requests, negotiation, trust/completion features
+
+---
+
+### Files Changed
+
+#### `src/lib/geocoding.ts` (NEW)
+
+Added a shared backend geocoding utility used by Ride/TripRequest APIs.
+
+Key behavior:
+- Exposes `resolveLocationOrThrow(inputText)`
+- Uses Nominatim Search API with deterministic params:
+  - `format=jsonv2`
+  - `limit=1`
+  - `countrycodes=us`
+  - `q=<trimmed-input>`
+- Uses top result only (no ranking logic beyond first result)
+- Validates and returns:
+  - `inputText` (trimmed original)
+  - `resolvedAddress` (`display_name` fallback to input)
+  - `latitude`
+  - `longitude`
+- Validates coordinate ranges:
+  - latitude `[-90, 90]`
+  - longitude `[-180, 180]`
+- Sends `User-Agent` header (`desti-mvp2-geocoder/1.0` with optional contact email)
+- Includes optional `email` query param when `GEOCODER_CONTACT_EMAIL` is configured
+- Supports timeout (`GEOCODER_TIMEOUT_MS = 8000`) via `AbortController`
+- Throws typed `GeocodingError` codes:
+  - `MISSING_INPUT`
+  - `RESOLUTION_FAILED`
+  - `INVALID_RESULT`
+  - `PROVIDER_FAILURE`
+  - `PROVIDER_TIMEOUT`
+  - `SAME_COORDINATES`
+- Adds `assertDistinctResolvedLocationsOrThrow` helper for origin/destination effective-coordinate equality checks.
+
+Config handling in this module:
+- `NOMINATIM_BASE_URL` optional, validated with URL parse, fallback to `https://nominatim.openstreetmap.org`
+- `GEOCODER_CONTACT_EMAIL` optional, format-validated, ignored if invalid
+- Config is server-only and not exposed to client-side code
+
+#### `prisma/schema.prisma`
+
+Added direct location storage fields to both models.
+
+`Ride` additions:
+- `originResolvedAddress String? @map("origin_resolved_address")`
+- `originLatitude Float? @map("origin_latitude") @db.DoublePrecision`
+- `originLongitude Float? @map("origin_longitude") @db.DoublePrecision`
+- `destinationResolvedAddress String? @map("destination_resolved_address")`
+- `destinationLatitude Float? @map("destination_latitude") @db.DoublePrecision`
+- `destinationLongitude Float? @map("destination_longitude") @db.DoublePrecision`
+
+`TripRequest` additions:
+- `originResolvedAddress String? @map("origin_resolved_address")`
+- `originLatitude Float? @map("origin_latitude") @db.DoublePrecision`
+- `originLongitude Float? @map("origin_longitude") @db.DoublePrecision`
+- `destinationResolvedAddress String? @map("destination_resolved_address")`
+- `destinationLatitude Float? @map("destination_latitude") @db.DoublePrecision`
+- `destinationLongitude Float? @map("destination_longitude") @db.DoublePrecision`
+
+`originText`/`destinationText` already existed and remain required.
+
+#### `prisma/migrations/20260421143000_add_geocoded_location_columns/migration.sql` (NEW)
+
+Safe migration strategy implemented:
+- Adds all six geocoded fields to `rides` as nullable columns
+- Adds all six geocoded fields to `trip_requests` as nullable columns
+
+Why nullable:
+- Preserves compatibility for existing rows without backfill
+- Avoids migration breakage on non-empty databases
+- Runtime API now enforces required geocoding for new creates and changed location edits
+
+#### `src/app/api/rides/route.ts`
+
+Updated `POST /api/rides` create flow.
+
+Changes:
+- Imports shared geocoder utility
+- Adds `geocodingErrorResponse` mapper:
+  - provider failure/timeout => `503 Service Unavailable`
+  - resolution/validation failures => `400 Validation Error` with field details
+- Keeps existing auth/idempotency/user-upsert invariants intact
+- For non-idempotent create path:
+  - geocodes `originText`
+  - geocodes `destinationText`
+  - rejects same effective coordinates
+  - writes raw text + resolved address + coordinates
+- No partial writes: geocoding happens before transaction write
+
+Invariant preservation:
+- Idempotency replay still returns existing entity (`200`) and skips new create
+- Existing auth and onboarding restrictions unchanged
+
+#### `src/app/api/trip-requests/route.ts`
+
+Updated `POST /api/trip-requests` create flow with same pattern as rides.
+
+Changes:
+- Imports shared geocoder utility
+- Adds `geocodingErrorResponse` mapper with same status semantics (`400`/`503`)
+- After idempotency check (and stale-key cleanup path), geocodes both origin and destination
+- Rejects same effective coordinates
+- Writes text + resolved address + coordinates in create data
+- No partial writes on geocoding failure
+
+Invariant preservation:
+- Existing auth/idempotency logic and stale-idempotency cleanup remain intact
+
+#### `src/app/api/rides/[rideId]/route.ts`
+
+Updated `PATCH /api/rides/:rideId` edit flow.
+
+Changes:
+- Imports shared geocoder utility
+- Adds `geocodingErrorResponse` mapper for edit path
+- Preserves existing edit restrictions:
+  - ownership check
+  - edit lock after confirmed booking (`RIDE_EDIT_LOCKED_CONFIRMED`)
+- Tracks whether `originText` and/or `destinationText` are effectively changed (after trim)
+- Re-geocodes only changed location field(s)
+- Keeps unchanged location fields untouched (no unnecessary geocode calls)
+- Stores updated text + resolved address + coordinates for changed fields
+- Runs same-coordinate check when both coordinate pairs are available
+- Includes location fields in update payload alongside existing ride-edit fields
+
+Invariant preservation:
+- confirmed-booking edit lock still enforced before mutation
+- seat/instruction/date validations unchanged
+
+#### `src/app/api/trip-requests/[tripRequestId]/route.ts`
+
+Updated `PATCH /api/trip-requests/:tripRequestId` edit flow.
+
+Changes mirror ride edit path:
+- geocoder import + error mapper
+- preserve existing edit restrictions:
+  - ownership
+  - active-only (`TRIP_REQUEST_CLOSED`)
+  - confirmed-booking lock (`TRIP_REQUEST_EDIT_LOCKED_CONFIRMED`)
+- re-geocode only changed origin/destination text fields
+- keep unchanged location fields without unnecessary geocode calls
+- persist text + resolved address + coordinates for changed fields
+- same-coordinate rejection when both coordinate pairs are present
+
+#### `.env.example`
+
+Added optional server-side geocoder env vars:
+- `NOMINATIM_BASE_URL`
+- `GEOCODER_CONTACT_EMAIL`
+
+#### `README.md`
+
+Updated env setup examples + environment variable table to document:
+- `NOMINATIM_BASE_URL` (optional)
+- `GEOCODER_CONTACT_EMAIL` (optional)
+
+#### Tests Updated
+
+`src/__tests__/ride-create.test.ts`
+- Added geocoder module mocks
+- Added success assertions that geocoded fields are stored on create
+- Added idempotency replay assertion that geocoder is not called
+- Added failure test for no geocode result (`400 Validation Error`)
+- Added failure test for provider failure (`503 Service Unavailable`)
+
+`src/__tests__/trip-request-create.test.ts`
+- Added geocoder module mocks
+- Added success assertions that geocoded fields are stored on create
+- Added idempotency replay assertion that geocoder is not called
+- Added provider failure test (`503 Service Unavailable`)
+
+`src/__tests__/ride-edit.test.ts`
+- Added geocoder module mocks
+- Added coverage that changed destination text triggers re-geocoding and coordinate updates
+- Added coverage that unchanged location text (after trimming) does not trigger geocoding
+- Existing edit-lock behavior tests remain and pass
+
+`src/__tests__/trip-request-edit.test.ts`
+- Added geocoder module mocks
+- Added assertions that changed destination re-geocodes and stores resolved coordinates
+- Added coverage that unchanged location text does not trigger geocoding
+- Existing edit restrictions remain covered and passing
+
+---
+
+### API Behavior Changes (Summary)
+
+Create (`POST /api/rides`, `POST /api/trip-requests`):
+- now requires successful geocoding of both origin and destination
+- now persists resolved address and coordinates for both endpoints
+- fails closed:
+  - `400` for validation/resolution/unusable coordinate issues
+  - `503` for provider failure/timeout
+
+Edit (`PATCH /api/rides/:rideId`, `PATCH /api/trip-requests/:tripRequestId`):
+- if origin/destination text changes, changed field is re-geocoded and updated
+- if text is unchanged after trimming, geocoder is not called
+- existing edit restrictions (ownership/status/confirmed-booking locks) remain enforced
+
+---
+
+### Migration / Compatibility Notes
+
+- DB migration adds nullable geocoded columns only (safe for existing non-empty data)
+- No backfill system added in this task
+- Runtime enforcement guarantees new create records have resolved coordinates
+- Legacy rows remain readable and editable under existing business rules without forced backfill
+
+---
+
+### Verification Performed
+
+- `npx prisma generate` (after schema changes)
+- `npm run test -- src/__tests__/ride-create.test.ts src/__tests__/trip-request-create.test.ts src/__tests__/ride-edit.test.ts src/__tests__/trip-request-edit.test.ts`
+  - All targeted tests passed
+- `npx tsc --noEmit`
+  - TypeScript compile passed
+
+### Follow-up: Manual Verification Page (2026-04-21)
+
+#### `src/app/(protected)/geocode-mvp2-test/page.tsx` (NEW)
+
+Added a protected, dummy frontend page for manual verification of MVP2 geocoding backend flows.
+
+Route:
+- `/geocode-mvp2-test`
+
+Purpose:
+- Quickly exercise backend-only geocoding changes without touching primary product flows.
+
+Includes 4 lightweight test forms:
+- Create Ride (`POST /api/rides`)
+- Create Trip Request (`POST /api/trip-requests`)
+- Patch Ride locations (`PATCH /api/rides/:rideId`)
+- Patch Trip Request locations (`PATCH /api/trip-requests/:tripRequestId`)
+
+Behavior:
+- Shows raw status + JSON response body for each operation.
+- Auto-populates patch IDs from successful create responses.
+- Sends idempotency keys for create calls.
+- Designed as a temporary class-demo test harness.
+
+### Follow-up Hardening (Review Fixes)
+
+Applied follow-up changes after PR review comments:
+
+- **Production guard for debug test harness**
+  - `src/app/(protected)/geocode-mvp2-test/page.tsx` is now a server component gate.
+  - In production, the route returns `notFound()` unless `ENABLE_GEO_MVP2_TEST=true`.
+  - Moved client UI logic into `src/app/(protected)/geocode-mvp2-test/GeocodeMvp2TestClient.tsx`.
+
+- **Client date parsing hardening**
+  - `localToIso` now validates empty/invalid values and returns `null`.
+  - Create handlers now short-circuit with local `400`-style response objects when datetime inputs are invalid.
+
+- **Ride PATCH legacy coordinate handling**
+  - `src/app/api/rides/[rideId]/route.ts` now resolves missing legacy origin/destination coordinates before distinctness checks.
+  - If either side has null coords, backend geocodes that side from current text and populates resolved address + lat/lon before calling distinctness guard.
+
+- **Geocoder strict parsing + policy controls** (`src/lib/geocoding.ts`)
+  - Invalid explicit `NOMINATIM_BASE_URL` now fails with clear configuration error (no silent fallback).
+  - Coordinate string parsing now uses strict `Number(trimmed)` (rejects malformed suffixes).
+  - Added in-memory geocode cache (TTL-based) keyed by normalized input.
+  - Added global request gate to enforce max **1 outbound Nominatim request/second**.
+
+- **.env example ordering cleanup**
+  - Reordered demo geocoder keys to satisfy linter preference (`GEOCODER_CONTACT_EMAIL` before `NOMINATIM_BASE_URL`).
+
+- **Test hardening**
+  - Tightened mock geocoding error `code` typing to `GeocodingErrorCode` in:
+    - `src/__tests__/ride-create.test.ts`
+    - `src/__tests__/trip-request-create.test.ts`
+    - `src/__tests__/ride-edit.test.ts`
+    - `src/__tests__/trip-request-edit.test.ts`
+  - Added missing negative-path edit tests for:
+    - geocoding lookup failure
+    - distinctness/duplicate-coordinate failure paths
+
+Verification:
+- `npm run test -- src/__tests__/ride-create.test.ts src/__tests__/trip-request-create.test.ts src/__tests__/ride-edit.test.ts src/__tests__/trip-request-edit.test.ts`
+- `npx tsc --noEmit`
+
+---
+
+## Match Core Phase 1.5: Candidate Ride Quality Refinement (2026-04-21)
+
+### Scope Guardrails
+
+This change is **backend-only** and **read-only** for matching:
+- Refined `GET /api/trip-requests/:tripRequestId/matches` candidate quality
+- No frontend work
+- No persistence changes
+- No match lifecycle state/match table additions
+- No DB writes introduced by matching
+
+### Files Changed
+
+- `src/services/trip-request-ride-matching-service.ts`
+- `src/__tests__/trip-request-ride-matching-service.test.ts`
+- `AGENTS.md` (Continuous Learning & Code Review Rules only)
+
+### Threshold Tightening
+
+Updated match thresholds to favor quality over recall (campus/demo-friendly):
+
+- `ORIGIN_THRESHOLD_KM`: **15 -> 8**
+- `DESTINATION_THRESHOLD_KM`: **15 -> 8**
+- `TIME_WINDOW_MINUTES`: **90 -> 45**
+
+Rationale:
+- 15 km/90 min allowed many technically valid but implausible candidates for a campus demo.
+- 8 km and 45 minutes reduce weak edges while still allowing practical nearby matches.
+
+### Scoring Formula Update
+
+The previous score mixed raw kilometers and raw minutes directly. This made unit magnitudes hard to reason about and tune.
+
+Now each metric is normalized against its threshold, then weighted:
+
+- `normalizedOrigin = min(originDistanceKm / ORIGIN_THRESHOLD_KM, 1)`
+- `normalizedDestination = min(destinationDistanceKm / DESTINATION_THRESHOLD_KM, 1)`
+- `normalizedTime = min(timeDifferenceMinutes / TIME_WINDOW_MINUTES, 1)`
+
+Weighted base score:
+
+- `0.35 * normalizedOrigin`
+- `0.35 * normalizedDestination`
+- `0.20 * normalizedTime`
+
+Imbalance penalty (origin vs destination quality mismatch):
+
+- `imbalance = abs(normalizedOrigin - normalizedDestination)`
+- tolerance before penalty: `IMBALANCE_TOLERANCE = 0.25`
+- normalized penalty after tolerance: `(imbalance - tolerance) / (1 - tolerance)`
+- penalty contribution: `0.10 * normalizedImbalancePenalty`
+
+Final score:
+
+`score = weightedBase + imbalancePenaltyContribution`
+
+Lower score remains better.
+
+### Quality Cutoff
+
+Added explicit post-scoring pruning to remove weak candidates that pass basic threshold checks but still score poorly:
+
+- `MAX_MATCH_SCORE = 0.68`
+- `MAX_ALLOWED_IMBALANCE = 0.75`
+
+Candidate is rejected if either condition fails.
+
+Effect:
+- prevents near-threshold, low-quality, noisy candidates from polluting results
+- reinforces "few strong matches" behavior for demo use
+
+### Top-N Result Cap
+
+Added fixed cap:
+
+- `MAX_MATCH_RESULTS = 5`
+
+After scoring and sorting, only top 5 candidates are returned.
+
+Effect:
+- cleaner response set
+- less noisy UX downstream
+- deterministic high-signal shortlist
+
+### Hard Exclusions Preserved/Strengthened
+
+The matcher continues to exclude:
+- cancelled/completed rides (non-`ACTIVE` rides rejected)
+- full rides (`seatsAvailable < 1` rejected)
+- self matches (`driverUserId === riderUserId` rejected)
+- rides in the past (new explicit `ride reference time < now` guard + DB prefilter lower-bound clamped to now)
+
+No booking/seat mutation paths were changed.
+
+### Endpoint Contract Stability
+
+Response shape was kept stable:
+- `rideId`
+- `originText`
+- `destinationText`
+- `departureTime`
+- `availableSeats`
+- `originDistance`
+- `destinationDistance`
+- `timeDifference`
+- `score`
+
+No extra fields were introduced.
+
+### Tests Added/Updated
+
+Updated `src/__tests__/trip-request-ride-matching-service.test.ts` to cover refinement behavior:
+
+- tighter threshold exclusion for near-boundary weak rides
+- balanced candidate outranks imbalanced candidate
+- quality cutoff removes technically-valid weak candidate
+- result count is capped to top N
+- past rides are excluded
+- score ordering remains correct for retained candidates
+- empty array returned when all candidates are weak
+- cancelled/completed exclusion remains enforced
+
+Also made top-N assertion robust by deriving expected IDs from `MAX_MATCH_RESULTS` rather than hardcoding.
+
+### Verification
+
+Executed:
+
+- `npm run test -- src/__tests__/trip-request-ride-matching-service.test.ts src/__tests__/trip-request-matches-route.test.ts`
+
+Result:
+- all targeted tests passed
+
+### AGENTS.md Durable Rule Updates
+
+Updated only the `Continuous Learning & Code Review Rules` section with reusable backend rules:
+
+1. Normalize mixed-unit scoring inputs before weighting.
+2. For capped backend result sets, tests should derive expectations from shared exported limits instead of hardcoded values.
+
+No raw CodeRabbit output was copied into AGENTS.
+
+## 2026-04-22 — MVP 2 Stop Request Core (Backend-Only)
+
+### Scope
+
+Implemented a backend-only, REST-only stop-request flow for existing rides, without touching frontend code.
+
+Added a separate StopRequest model and dedicated service/routes so this flow remains clear and isolated from:
+- direct booking
+- rider -> driver ride offers
+- trip-request offers
+
+Implemented lifecycle:
+- rider creates stop request on active/bookable ride
+- driver lists and quotes pending stop request
+- rider accepts quoted request or rejects
+- driver can reject open request
+- acceptance creates booking atomically with fresh seat/ride validity checks
+
+No counteroffers, no map routing, no chat changes, and no background jobs were added.
+
+### Files Changed
+
+- `prisma/schema.prisma` (MODIFIED)
+- `prisma/migrations/20260422123000_add_stop_request_model/migration.sql` (NEW)
+- `src/services/stop-request-service.ts` (NEW)
+- `src/app/api/rides/[rideId]/stop-requests/route.ts` (NEW)
+- `src/app/api/me/stop-requests/outgoing/route.ts` (NEW)
+- `src/app/api/stop-requests/[stopRequestId]/quote/route.ts` (NEW)
+- `src/app/api/stop-requests/[stopRequestId]/accept/route.ts` (NEW)
+- `src/app/api/stop-requests/[stopRequestId]/reject/route.ts` (NEW)
+- `src/__tests__/stop-request-service.test.ts` (NEW)
+- `src/__tests__/stop-request-routes.test.ts` (NEW)
+- `AGENTS.md` (NEW)
+
+### StopRequest Schema
+
+#### Prisma additions
+
+Added enum:
+- `StopRequestState`
+  - `PENDING`
+  - `QUOTED`
+  - `ACCEPTED`
+  - `REJECTED`
+
+Added model:
+- `StopRequest` mapped to `stop_requests`
+- fields:
+  - `id`
+  - `rideId`
+  - `riderUserId`
+  - `driverUserId`
+  - `requestedPickupText`
+  - `requestedPickupLatitude`
+  - `requestedPickupLongitude`
+  - `requestedDropoffText`
+  - `requestedDropoffLatitude`
+  - `requestedDropoffLongitude`
+  - `riderNote` (nullable)
+  - `quotedPriceCents` (nullable until quoted)
+  - `state`
+  - `createdAt`
+  - `updatedAt`
+  - `quotedAt` (nullable)
+  - `acceptedAt` (nullable)
+  - `rejectedAt` (nullable)
+
+Relations:
+- `StopRequest -> Ride`
+- `StopRequest -> User (rider)`
+- `StopRequest -> User (driver)`
+- back-relations added on `Ride` and `User`
+
+Indexes:
+- `(ride_id, state, created_at, id)`
+- `(driver_user_id, created_at, id)`
+- `(rider_user_id, created_at, id)`
+
+#### Migration details
+
+`prisma/migrations/20260422123000_add_stop_request_model/migration.sql`:
+- creates `StopRequestState` enum
+- creates `stop_requests` table
+- creates read/list indexes
+- adds FKs to `rides(id)` and `users(clerk_user_id)`
+
+Schema change is additive and does not alter existing booking, ride-offer, or trip-request-offer tables.
+
+### Service Layer
+
+Added `src/services/stop-request-service.ts` with:
+- `createStopRequest(rideId, riderUserId, payload)`
+- `listStopRequestsForDriver(rideId, driverUserId)`
+- `listStopRequestsForRider(riderUserId)`
+- `quoteStopRequest(stopRequestId, driverUserId, quotedPriceCents)`
+- `acceptStopRequest(stopRequestId, riderUserId)`
+- `rejectStopRequest(stopRequestId, actorUserId)`
+- `StopRequestError` typed error mapping for route handlers
+
+### Validation & Authorization Rules Implemented
+
+Creation:
+- ride must exist
+- ride must be active, future, and currently have seats
+- rider cannot request stop on own ride
+- rider cannot create stop request if already confirmed on that ride
+- pickup/dropoff text must be trimmed non-empty (1..200)
+- coordinates must be finite and within valid latitude/longitude ranges
+- rider note optional, max 500
+
+Visibility:
+- driver incoming list requires ride ownership
+- rider outgoing list is scoped to authenticated rider
+- unrelated users cannot list incoming requests for rides they do not own
+
+Quote:
+- only ride owner/driver can quote
+- only `PENDING` can transition to `QUOTED`
+- quoted price must be positive int32
+
+Accept:
+- only stop-request rider can accept
+- only `QUOTED` can be accepted
+- quoted price must exist
+- acceptance path is fully atomic (details below)
+
+Reject:
+- actor must be either ride owner/driver or requesting rider
+- only `PENDING` or `QUOTED` can transition to `REJECTED`
+- terminal states are not reopened
+
+### State Transitions
+
+Implemented transitions:
+- `PENDING -> QUOTED` (driver quote)
+- `QUOTED -> ACCEPTED` (rider accept)
+- `PENDING -> REJECTED` (driver/rider reject)
+- `QUOTED -> REJECTED` (driver/rider reject)
+
+Not allowed:
+- quote non-pending
+- accept non-quoted
+- reject accepted/rejected
+- any silent reopen from terminal states
+
+### Atomic Acceptance and Booking Integration
+
+`acceptStopRequest` uses one transaction to guarantee correctness:
+
+1. Load stop request + ride context and authorize rider.
+2. Verify stop request is still `QUOTED` and has `quotedPriceCents`.
+3. Conditionally decrement ride seats with strict guard:
+   - same ride + driver
+   - `status = ACTIVE`
+   - `latestDepartAt > now`
+   - `seatsAvailable >= 1`
+4. If decrement fails (`count = 0`), re-read ride and return precise conflict reason (`RIDE_NOT_ACTIVE`, `RIDE_DEPARTED`, `RIDE_NO_SEATS`, etc.).
+5. Create confirmed booking (`seatsBooked = 1`, `priceCents = quotedPriceCents`) in same transaction.
+6. Transition stop request to `ACCEPTED` and set `acceptedAt` in same transaction.
+
+If any step fails, transaction rolls back:
+- no partial booking without state transition
+- no accepted state without booking
+- no seat oversell
+
+### Coexistence with Existing Flows
+
+No existing booking/offer flow was removed or rewritten.
+
+Coexistence behavior maintained:
+- direct booking still decrements `Ride.seatsAvailable`
+- ride-offer acceptance still decrements `Ride.seatsAvailable`
+- stop-request acceptance also decrements `Ride.seatsAvailable`
+- all three compete against the same real seat inventory
+
+Pending/quoted stop requests do not reserve seats.
+Only accepted stop requests consume capacity through booking creation.
+
+### REST Endpoints Added
+
+- `POST /api/rides/:rideId/stop-requests`
+  - create pending stop request
+
+- `GET /api/rides/:rideId/stop-requests`
+  - driver-only incoming stop requests for one ride
+
+- `GET /api/me/stop-requests/outgoing`
+  - rider-only outgoing stop requests
+
+- `POST /api/stop-requests/:stopRequestId/quote`
+  - driver quotes pending request
+
+- `POST /api/stop-requests/:stopRequestId/accept`
+  - rider accepts quoted request atomically with booking create
+
+- `POST /api/stop-requests/:stopRequestId/reject`
+  - driver or rider rejects pending/quoted request
+
+### Tests Added
+
+#### `src/__tests__/stop-request-service.test.ts`
+
+Covers:
+- creation success
+- multiple pending requests allowed on same ride
+- self-stop-request blocked
+- cancelled/full/past ride blocked
+- invalid coordinates/text blocked
+- driver incoming visibility and unauthorized block
+- rider outgoing visibility
+- quote success + quote guards (state, price, auth)
+- accept success with booking creation and seat decrement
+- acceptance fails safely when seat consumed or ride invalidated
+- stop request not marked accepted if booking write fails
+- terminal state acceptance blocked
+- reject by driver/rider in allowed states
+- unauthorized rejection blocked
+- rejected stays closed
+
+#### `src/__tests__/stop-request-routes.test.ts`
+
+Covers route wiring + validation + error mapping for:
+- create
+- create payload validation
+- driver incoming list
+- rider outgoing list
+- quote + quote payload validation
+- accept
+- reject
+- domain error mapping to HTTP response
+
+### Commands Executed
+
+- `npm run test -- src/__tests__/stop-request-service.test.ts src/__tests__/stop-request-routes.test.ts src/__tests__/ride-offer-service.test.ts src/__tests__/ride-offer-routes.test.ts src/__tests__/booking-create.test.ts` (success)
+- `npm run lint -- src/services/stop-request-service.ts src/app/api/rides/[rideId]/stop-requests/route.ts src/app/api/me/stop-requests/outgoing/route.ts src/app/api/stop-requests/[stopRequestId]/quote/route.ts src/app/api/stop-requests/[stopRequestId]/accept/route.ts src/app/api/stop-requests/[stopRequestId]/reject/route.ts src/__tests__/stop-request-service.test.ts src/__tests__/stop-request-routes.test.ts` (success)
+- `npx prisma generate` (success)
+
+### AGENTS.md Update
+
+Added a new `Continuous Learning & Code Review Rules` section with durable backend rules only:
+- transactional seat-consumption ordering
+- guarded state transitions
+- no capacity reservation for pending negotiations
+- explicit conflict diagnosis on conditional write misses
+- deterministic primitive validation
+- ownership checks on both child and parent contexts
+- scoped read/list authorization
+- shared seat-competition primitive across flows
+
+No raw CodeRabbit output was copied.
+
+### Scope / Invariant Confirmation
+
+Confirmed:
+- backend-only changes
+- REST-only changes
+- no frontend edits
+- no counteroffers or multi-round negotiation
+- no routing/map overlap APIs
+- no chat/background job scope creep
+- no overselling seats
+- no self-stop-request
+- acceptance is atomic
+- pending/quoted stop requests do not reserve seats
+- direct booking, ride offers, and trip-request offers remain intact
+
+## 2026-04-22 — MVP 2 Trust / Completion Core (Backend-Only)
+
+### Scope
+
+Implemented the backend trust/completion foundation for MVP 2 with strict scope control:
+- manual booking completion
+- immutable rider -> driver ratings for completed bookings
+- aggregate driver rating summary
+- shared active-trip participant visibility helper for future live location/trip position work
+
+No frontend files were added or modified for this slice.
+No live location, polling, trip position, map, or background jobs were introduced.
+
+### Files Changed
+
+- `prisma/schema.prisma` (MODIFIED)
+- `prisma/migrations/20260422181000_add_booking_completion_and_rating_core/migration.sql` (NEW)
+- `src/services/trust-service.ts` (NEW)
+- `src/services/active-trip-visibility-service.ts` (NEW)
+- `src/app/api/bookings/[bookingId]/complete/route.ts` (NEW)
+- `src/app/api/bookings/[bookingId]/rating/route.ts` (NEW)
+- `src/app/api/users/[userId]/rating-summary/route.ts` (NEW)
+- `src/app/api/bookings/[bookingId]/cancel/route.ts` (MODIFIED)
+- `src/lib/booking-query.ts` (MODIFIED)
+- `src/__tests__/trust-service.test.ts` (NEW)
+- `src/__tests__/active-trip-visibility-service.test.ts` (NEW)
+- `src/__tests__/trust-routes.test.ts` (NEW)
+- `src/__tests__/booking-cancel.test.ts` (MODIFIED)
+- `src/__tests__/bookings-mine.test.ts` (MODIFIED)
+
+### Booking Completion Changes
+
+#### Data model
+
+`BookingStatus` now includes `COMPLETED`, and `Booking` now includes nullable `completedAt`:
+- status lifecycle now supports `CONFIRMED -> COMPLETED` manually
+- completion timestamp stored in `bookings.completed_at`
+
+#### Manual completion endpoint
+
+Added:
+- `POST /api/bookings/:bookingId/complete`
+
+Behavior:
+- requires authenticated + onboarded user (`requireStetsonAuth`)
+- validates booking existence
+- resolves driver participant from either:
+  - `booking.driverUserId` (trip-request-based bookings)
+  - or `booking.ride.driverUserId` (ride-based bookings)
+- authorization is explicit and simple for this phase: **driver-only completion**
+- valid transition only from `CONFIRMED`
+- rejects cleanly when:
+  - already completed (`BOOKING_ALREADY_COMPLETED`, 409)
+  - cancelled (`BOOKING_CANCELLED`, 409)
+  - actor is not driver (`BOOKING_COMPLETE_FORBIDDEN`, 403)
+  - ride is no longer active (`RIDE_NOT_ACTIVE`, 409)
+- performs race-safe transition via conditional `updateMany(where: { id, status: CONFIRMED })`
+- sets `status=COMPLETED` and `completedAt=now`
+
+#### Cancellation guard updated to preserve lifecycle invariants
+
+`POST /api/bookings/:bookingId/cancel` was tightened so completion cannot be undone through cancel flow:
+- now only transitions `CONFIRMED -> CANCELLED`
+- `COMPLETED` bookings return `409 Conflict`
+- `CANCELLED` remains idempotent (`200 Booking already cancelled.`)
+
+This prevents completed bookings from being treated as active/cancellable.
+
+### Rating Schema
+
+Added new `Rating` model mapped to `ratings`:
+- `id`
+- `bookingId`
+- `raterUserId`
+- `rateeUserId`
+- `score`
+- `comment` (nullable)
+- `createdAt`
+
+Relations:
+- `Rating -> Booking` (1:1 via unique `booking_id`)
+- `Rating -> User` as `rater`
+- `Rating -> User` as `ratee`
+- Back-relations on `User`:
+  - `ratingsGiven`
+  - `ratingsReceived`
+- Back-relation on `Booking`:
+  - `rating`
+
+DB-level constraints added:
+- unique rating per booking (`ratings_booking_id_key`)
+- score range check (`score BETWEEN 1 AND 5`)
+- anti-self-rating check (`rater_user_id <> ratee_user_id`)
+
+Indexes:
+- `(ratee_user_id, created_at, id)`
+- `(rater_user_id, created_at, id)`
+
+### One-Rating-Per-Booking Enforcement
+
+Enforced in two layers:
+
+1) Application rules in `createBookingRating`:
+- booking must exist
+- booking must be `COMPLETED`
+- actor must be the booking rider
+- ratee is derived as booking driver
+
+2) DB uniqueness safety:
+- `ratings.booking_id` is unique
+- concurrent duplicate submissions are blocked at DB level
+- Prisma unique conflict maps to stable `409 BOOKING_ALREADY_RATED`
+
+No edit/update rating route was added, so ratings are immutable after creation.
+
+### Rating Creation Endpoint
+
+Added:
+- `POST /api/bookings/:bookingId/rating`
+
+Behavior:
+- requires authenticated + onboarded user
+- validates JSON body and score/comment constraints
+- `score` must be integer `1..5`
+- `comment` optional, trimmed, max length 500
+- enforces rider-only authoring
+- enforces completed-booking prerequisite
+- creates immutable rating record
+- returns created rating payload with:
+  - `id`
+  - `bookingId`
+  - `raterUserId`
+  - `rateeUserId`
+  - `score`
+  - `comment`
+  - `createdAt`
+
+### Driver Rating Summary Logic
+
+Added reusable summary service + endpoint:
+- Service: `getDriverRatingSummary(userId)`
+- Endpoint: `GET /api/users/:userId/rating-summary`
+
+Summary behavior:
+- validates target user exists
+- aggregates `Rating` rows where `rateeUserId = :userId`
+- returns:
+  - `averageRating` (rounded to 2 decimals, nullable when no ratings)
+  - `ratingCount`
+
+Response shape:
+- `{ userId, averageRating, ratingCount }`
+
+### Active-Trip Visibility Helper
+
+Added shared helper service:
+- `canUserAccessActiveTripDataByBooking(userId, bookingId)`
+- `canUserAccessActiveTripDataByRide(userId, rideId)`
+
+Policy implemented:
+- allow only real participants:
+  - ride driver
+  - confirmed rider participant(s)
+- require active lifecycle window:
+  - booking-based access requires `booking.status === CONFIRMED`
+  - if booking is ride-backed, ride must be `ACTIVE`
+- deny unrelated users
+- deny completed/cancelled/inactive contexts
+- ride-based helper also requires at least one confirmed booking participant
+
+This helper is intentionally foundation-only and not yet wired into live-location endpoints.
+
+### Booking Query Support Update
+
+`parseBookingStatus` now supports:
+- `CONFIRMED` (default)
+- `COMPLETED`
+- `CANCELLED`
+
+This keeps API filtering aligned with the new completion lifecycle.
+
+### Tests Added/Updated
+
+#### New: `src/__tests__/trust-service.test.ts`
+
+Covers:
+- completion success for authorized driver
+- completion fail for already completed
+- completion fail for cancelled
+- completion fail for unauthorized actor
+- rider can rate completed booking
+- incomplete booking cannot be rated
+- duplicate rating blocked (immutability/one-per-booking)
+- non-participant cannot rate
+- invalid score rejected
+- rating summary average + count computation
+
+#### New: `src/__tests__/active-trip-visibility-service.test.ts`
+
+Covers:
+- driver allowed on active booking
+- confirmed rider allowed on active booking
+- unrelated user denied
+- completed booking denied
+- cancelled/inactive trip denied
+- ride-based helper participant checks and no-participant denial
+
+#### New: `src/__tests__/trust-routes.test.ts`
+
+Covers:
+- completion route wiring + conflict mapping
+- rating route wiring
+- rating summary route response contract
+
+#### Updated existing tests
+
+- `src/__tests__/booking-cancel.test.ts`
+  - now expects cancel transition guard to target `status: CONFIRMED`
+  - added completed-booking conflict case
+- `src/__tests__/bookings-mine.test.ts`
+  - includes `status=COMPLETED` filter support
+
+### Commands Run
+
+- `npm run postinstall` (runs `prisma generate`) — success
+- `npm test -- src/__tests__/trust-service.test.ts src/__tests__/active-trip-visibility-service.test.ts src/__tests__/trust-routes.test.ts src/__tests__/booking-cancel.test.ts src/__tests__/bookings-mine.test.ts` — success
+- `npm run lint -- src/services/trust-service.ts src/services/active-trip-visibility-service.ts src/app/api/bookings/[bookingId]/complete/route.ts src/app/api/bookings/[bookingId]/rating/route.ts src/app/api/users/[userId]/rating-summary/route.ts src/app/api/bookings/[bookingId]/cancel/route.ts src/lib/booking-query.ts src/__tests__/trust-service.test.ts src/__tests__/active-trip-visibility-service.test.ts src/__tests__/trust-routes.test.ts src/__tests__/booking-cancel.test.ts src/__tests__/bookings-mine.test.ts` — success
+
+### Invariant / Scope Confirmation
+
+Confirmed for this slice:
+- backend-only changes
+- REST-only additions
+- no frontend modifications
+- no live location endpoints
+- no polling/heartbeat endpoints
+- no current trip position endpoint
+- no map scope
+- no driver->rider ratings
+- no dual-confirmation completion flow
+- no automatic completion or background jobs
+- one immutable rider->driver rating per completed booking
+- ratings only for completed bookings
+- unauthorized users cannot complete or rate others’ bookings
+- cancellation and lifecycle transitions remain explicitly guarded
+
+## 2026-04-22 — Location Tracking Core (Backend + Frontend Polling)
+
+### Scope implemented
+
+Implemented the requested latest-location trip tracking core across backend and frontend with strict scope control:
+
+- driver can start trip location sharing
+- driver can overwrite latest trip location
+- confirmed trip participants can read latest location while active
+- driver and rider polling integrated into existing trip UI
+- no realtime transport and no location history table
+
+No websockets, no SSE, no background tracking, no breadcrumb history, no ETA logic, and no route replay were added.
+
+---
+
+### Data model changes (Option A: store latest location on existing trip record)
+
+Chosen storage record: **`Booking`**.
+
+Why `Booking` is the right place in this codebase:
+
+1. Existing active-trip lifecycle and permissions already center on booking participation (`CONFIRMED` / `COMPLETED` / `CANCELLED`) and driver-vs-rider actor checks.
+2. The project already has booking-level completion flow and booking-level active-trip visibility helper logic, so this keeps tracking aligned with current domain boundaries.
+3. Booking supports both current ride-backed and trip-request-backed confirmed trip relationships without introducing a second tracking record type.
+4. It allows minimal additive changes without rewriting ride/booking architecture.
+
+Added fields to `Booking` in `prisma/schema.prisma`:
+
+- `currentLatitude Float?` (`current_latitude`)
+- `currentLongitude Float?` (`current_longitude`)
+- `locationUpdatedAt DateTime?` (`location_updated_at`)
+- `tripStartedAt DateTime?` (`trip_started_at`)
+- `isLocationSharingActive Boolean @default(false)` (`is_location_sharing_active`)
+
+Migration added:
+
+- `prisma/migrations/20260422202000_add_booking_location_tracking_core/migration.sql`
+
+This is latest-location-only storage (overwrite semantics), with no history table.
+
+---
+
+### Shared visibility/permission helper extension
+
+Extended `src/services/active-trip-visibility-service.ts` to make route checks reusable and consistent:
+
+New shared context + helper exports:
+
+- `activeTripBookingSelect` now includes tracking fields
+- `ActiveTripBookingRecord`
+- `ActiveTripBookingContext`
+- `getActiveTripBookingContext(bookingId)`
+- `isUserBookingParticipant(userId, context)`
+- `canUserAccessActiveTripDataInBookingContext(userId, context)`
+
+Existing behavior remains intact:
+
+- `canUserAccessActiveTripDataByBooking`
+- `canUserAccessActiveTripDataByRide`
+
+This keeps participant and active-window logic centralized and reusable for location routes.
+
+---
+
+### Backend endpoints implemented
+
+#### 1) Start sharing
+
+New route:
+
+- `POST /api/bookings/:bookingId/start`
+- file: `src/app/api/bookings/[bookingId]/start/route.ts`
+
+Behavior:
+
+- requires authenticated/onboarded Stetson user via `requireStetsonAuth`
+- validates booking id
+- resolves booking context via shared helper
+- enforces participant membership (non-participants get not found)
+- enforces driver-only start
+- enforces active trip window (`CONFIRMED`, and ride-backed trips must still be `ACTIVE`)
+- sets `isLocationSharingActive = true`
+- sets `tripStartedAt` if unset
+- idempotent-style success when already started
+
+Response includes latest-location payload shape:
+
+- `bookingId`
+- `latitude`
+- `longitude`
+- `locationUpdatedAt`
+- `tripStartedAt`
+- `isLocationSharingActive`
+
+#### 2) Driver location update
+
+New route:
+
+- `POST /api/bookings/:bookingId/location`
+- file: `src/app/api/bookings/[bookingId]/location/route.ts`
+
+Behavior:
+
+- requires authenticated/onboarded user
+- validates JSON payload and coordinate ranges:
+  - latitude in `[-90, 90]`
+  - longitude in `[-180, 180]`
+- enforces participant membership first
+- enforces active trip window
+- enforces driver-only writes
+- enforces sharing started (`isLocationSharingActive` + `tripStartedAt`)
+- overwrites `currentLatitude` and `currentLongitude`
+- updates `locationUpdatedAt`
+
+No append/history behavior exists.
+
+#### 3) Current location read
+
+New route:
+
+- `GET /api/bookings/:bookingId/location`
+- file: `src/app/api/bookings/[bookingId]/location/route.ts`
+
+Behavior:
+
+- requires authenticated/onboarded user
+- enforces participant membership (driver or confirmed rider for the booking)
+- enforces active trip window
+- enforces sharing started
+- returns latest stored location payload
+
+No-location-yet handling:
+
+- when sharing is active but no point has been posted yet, returns `200` with `latitude/longitude/locationUpdatedAt = null`.
+
+#### 4) Stop sharing after trip end
+
+No background task was added. Blocking is enforced by normal lifecycle gates:
+
+- if booking is `COMPLETED`/`CANCELLED` or ride-backed parent ride is no longer active, start/read/write routes reject with conflict state responses.
+
+---
+
+### Frontend polling integration
+
+Added reusable frontend hook:
+
+- `src/lib/use-booking-location-tracking.ts`
+
+Hook responsibilities:
+
+- loads current location/share status for selected booking
+- starts sharing (driver action)
+- driver polling loop (10s default):
+  - reads device geolocation
+  - posts latest coordinates
+- rider polling loop (10s default):
+  - fetches latest driver location
+- avoids overlapping network writes/reads with in-flight guards
+- stops polling on:
+  - sharing inactive
+  - screen unmount
+  - booking context unmount/change
+- handles geolocation errors and permission denial gracefully
+- prevents repeated post attempts after hard permission denial in current session
+
+Integrated into existing trip details UI:
+
+- file: `src/app/(protected)/bookings/page.tsx`
+- location panel added inside existing booking details modal
+
+Driver-side behavior in UI:
+
+- "Start Trip / Share Location" action
+- sharing status badge
+- lat/lng + last updated display
+- geolocation and API errors surfaced clearly
+
+Rider-side behavior in UI:
+
+- polls and displays latest lat/lng + last updated when sharing is active
+- clean inactive/no-location messaging via status payload
+
+No map overbuild was added. Display is minimal and demo-friendly.
+
+---
+
+### Backend authorization and lifecycle guarantees
+
+Read/write authorization now enforces:
+
+- write (`POST /location`): only driver participant
+- read (`GET /location`): only booking participants (driver or confirmed rider)
+- non-participants cannot read/write trip location
+
+Lifecycle gating enforces:
+
+- only active confirmed trip windows can start/read/write
+- completed/cancelled/inactive states reject location operations
+- sharing must be started before update/read location operations
+
+---
+
+### Tests added/updated
+
+#### New backend tests
+
+1. `src/__tests__/booking-start-route.test.ts`
+   - driver can start eligible trip
+   - non-driver cannot start
+   - completed trip cannot start
+   - cancelled trip cannot start
+
+2. `src/__tests__/booking-location-route.test.ts`
+   - driver can update location for active trip
+   - non-driver cannot update
+   - invalid coordinates rejected
+   - inactive/completed/cancelled updates rejected
+   - driver can read
+   - confirmed rider can read
+   - unrelated user cannot read
+   - inactive/completed/cancelled reads blocked
+   - no-location-yet returns clean null location payload
+
+#### Updated helper coverage (already present)
+
+- `src/__tests__/active-trip-visibility-service.test.ts` remains valid and was rerun.
+
+#### Frontend test work
+
+Added focused hook tests:
+
+- `src/__tests__/use-booking-location-tracking.test.ts`
+
+Covers intended behaviors:
+
+- polling start/stop lifecycle
+- interval cleanup behavior
+- geolocation permission denied handling
+
+Execution boundary encountered in this local environment:
+
+- vitest jsdom worker startup currently times out (`[vitest-pool-runner]: Timeout waiting for worker to respond`), including existing jsdom suites.
+- backend test suites run and pass.
+
+---
+
+### Commands executed
+
+- `npm run postinstall` (Prisma generate) — success
+- `npm run lint -- <changed files>` — success
+- `npm test -- src/__tests__/booking-start-route.test.ts src/__tests__/booking-location-route.test.ts src/__tests__/active-trip-visibility-service.test.ts` — success (`22 passed`)
+- attempted jsdom test execution for frontend hook; blocked by local vitest worker startup timeout as noted above
+
+---
+
+### Invariants and non-scope confirmation
+
+Confirmed preserved:
+
+- no overselling seat logic changed
+- no self-booking flow changes
+- ride/trip request editing restrictions untouched
+- cancellation rules untouched
+- onboarding gate still enforced via `requireStetsonAuth`
+- only driver writes live location
+- only confirmed trip participants read live location
+- latest-location only (overwrite)
+- inactive/completed/cancelled trips blocked for tracking endpoints
+- no websocket/history/ETA/map-overbuild scope creep
+
+
+## 2026-04-22 — Mapbox Autocomplete Refinement (Strict Selection + Unified Location State)
+
+### Scope
+
+Refined the existing Mapbox autocomplete UX and form integration for:
+- `Post Ride`
+- `Post Trip Request`
+
+This refinement is intentionally narrow:
+- no backend architecture rewrite
+- no new location persistence model
+- no routing/map/ETA/live-tracking scope additions
+
+### Files Changed
+
+- `src/lib/location-field.ts` (NEW)
+- `src/components/LocationAutocompleteInput.tsx` (MODIFIED)
+- `src/lib/mapbox-location-autocomplete.ts` (MODIFIED)
+- `src/lib/post-ride-form.ts` (MODIFIED)
+- `src/lib/post-trip-request-form.ts` (MODIFIED)
+- `src/app/(protected)/post-ride/page.tsx` (MODIFIED)
+- `src/app/(protected)/post-trip-request/page.tsx` (MODIFIED)
+- `src/__tests__/post-ride-form.test.ts` (MODIFIED)
+- `src/__tests__/post-trip-request-form.test.ts` (MODIFIED)
+- `src/__tests__/location-autocomplete-input.test.tsx` (MODIFIED)
+
+### Final Location Field State Structure
+
+All location form inputs now use one standardized shape:
+
+```ts
+locationField = {
+  inputText: string,
+  selectedLabel: string | null,
+  latitude: number | null,
+  longitude: number | null,
+  isValidSelection: boolean,
+}
+```
+
+Applied in both forms as:
+- `formValues.origin: locationField`
+- `formValues.destination: locationField`
+
+### Selection and Invalidation Rules
+
+Implemented consistently for ride + trip request forms:
+
+1. Suggestion selected:
+- `inputText = suggestion.label`
+- `selectedLabel = suggestion.label`
+- `latitude/longitude = suggestion coordinates`
+- `isValidSelection = true`
+
+2. User edits text after selection:
+- `selectedLabel = null`
+- `latitude = null`
+- `longitude = null`
+- `isValidSelection = false`
+
+This is centralized in `src/lib/location-field.ts` via:
+- `createLocationFieldFromSelection(...)`
+- `updateLocationFieldInput(...)`
+- `hasValidLocationFieldSelection(...)`
+
+### Submission Blocking (No Free Text Submit)
+
+Submission is now hard-blocked unless each location field has a valid selected suggestion state.
+
+Validation behavior:
+- if `inputText` is blank -> required error
+- if text exists but `isValidSelection` is not valid -> error:
+  - `Please select a valid location from suggestions.`
+
+This is enforced in payload builders:
+- `buildPostRidePayload(...)`
+- `buildPostTripRequestPayload(...)`
+
+No fallback path allows arbitrary typed text through as a valid location field for these autocomplete inputs.
+
+### UI Validity Signal
+
+`LocationAutocompleteInput` now reflects validity directly:
+- invalid state (no valid selection): red border + message
+- valid state (selection present): green confirmation text
+
+It also marks the input with `aria-invalid` when invalid.
+
+### Mapbox Result Filtering Applied
+
+Suggestion filtering is intentionally simple and strict:
+- Mapbox query now uses `types=address,place,poi`
+- explicitly excludes broad `country` / `region` results when returned
+- keeps `country=us` constraint
+
+This improves precision while avoiding scope expansion.
+
+### Debounce + Request Cancellation + Race Safety
+
+Implemented request control in `LocationAutocompleteInput`:
+- debounce set to `300ms`
+- in-flight requests aborted via `AbortController` when query changes
+- request sequencing guard (`latestRequestIdRef`) ensures stale/older responses cannot overwrite newer results
+
+This prevents race-condition UI regressions during rapid typing.
+
+### Backend Boundary Confirmation
+
+Backend location persistence/geocoding architecture remains intact.
+
+No changes were made to:
+- ride/trip request API storage model
+- matching logic
+- tracking logic
+- database schema for suggestions
+
+Autocomplete remains a frontend UX layer feeding existing submit flows.
+
+### Test Coverage Notes
+
+Updated focused tests for form-level selection requirements:
+- `post-ride-form.test.ts`
+- `post-trip-request-form.test.ts`
+
+A focused component test exists for autocomplete behavior:
+- `location-autocomplete-input.test.tsx`
+
+In this environment, jsdom/vitest worker startup still times out for that test file (`[vitest-pool-runner]: Timeout waiting for worker to respond`), so it could not be executed locally here despite being lint-clean.

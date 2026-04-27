@@ -1,0 +1,439 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Local user record — linked to Clerk via clerkUserId.
+model User {
+  id          String @id @default(uuid())
+  clerkUserId String @unique @map("clerk_user_id")
+  email       String
+
+  // ── Onboarding profile fields (nullable until onboarding completes) ────
+  name               String?        @map("name")
+  yearAtStetson      YearAtStetson? @map("year_at_stetson")
+  gender             Gender?
+  age                Int?
+  profilePictureUrl  String?        @map("profile_picture_url")
+  onboardingComplete Boolean        @default(false) @map("onboarding_complete")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  rides        Ride[]        @relation("DriverRides")
+  tripRequests TripRequest[] @relation("RiderTripRequests")
+  bookings     Booking[]
+
+  driverOffers Offer[] @relation("DriverOffers")
+  riderOffers  Offer[] @relation("RiderOffers")
+  driverRideOffers RideOffer[] @relation("RideOfferDriver")
+  riderRideOffers  RideOffer[] @relation("RideOfferRider")
+  driverStopRequests StopRequest[] @relation("StopRequestDriver")
+  riderStopRequests  StopRequest[] @relation("StopRequestRider")
+  ratingsGiven    Rating[]      @relation("RatingRater")
+  ratingsReceived Rating[]      @relation("RatingRatee")
+
+  @@map("users")
+}
+
+/// Year classification at Stetson University.
+enum YearAtStetson {
+  FRESHMAN
+  SOPHOMORE
+  JUNIOR
+  SENIOR
+}
+
+/// Gender identity options for onboarding.
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+  PREFER_NOT_TO_SAY
+}
+
+/// Distance category for a ride or trip request.
+enum DistanceCategory {
+  SHORT
+  MEDIUM
+  LONG
+}
+
+/// In-ride music preference.
+enum MusicPreference {
+  MUSIC_ALLOWED
+  NO_MUSIC
+}
+
+/// Vehicle type for a posted ride.
+enum VehicleType {
+  SEDAN
+  SUV
+  TRUCK
+  VAN
+  COUPE
+  OTHER
+}
+
+/// Current status of a ride.
+enum RideStatus {
+  ACTIVE
+  CANCELLED
+}
+
+/// Current status of a trip request.
+enum TripRequestStatus {
+  ACTIVE
+  CANCELLED
+  CLOSED
+}
+
+/// Lifecycle state of a persisted trip-request-to-ride match.
+enum MatchState {
+  SUGGESTED
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+/// Current status of a booking.
+enum BookingStatus {
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+}
+
+/// Discriminator for the idempotency key table.
+
+/// A trip request posted by a rider.
+model TripRequest {
+  id                  String            @id @default(uuid())
+  riderUserId         String            @map("rider_user_id")
+  originText          String            @map("origin_text")
+  originResolvedAddress String?         @map("origin_resolved_address")
+  originLatitude      Float?            @map("origin_latitude") @db.DoublePrecision
+  originLongitude     Float?            @map("origin_longitude") @db.DoublePrecision
+  destinationText     String            @map("destination_text")
+  destinationResolvedAddress String?    @map("destination_resolved_address")
+  destinationLatitude Float?            @map("destination_latitude") @db.DoublePrecision
+  destinationLongitude Float?           @map("destination_longitude") @db.DoublePrecision
+  earliestDesiredAt   DateTime          @map("earliest_desired_at")
+  latestDesiredAt     DateTime          @map("latest_desired_at")
+  distanceCategory    DistanceCategory  @map("distance_category")
+  seatsNeeded         Int               @map("seats_needed")
+  pickupInstructions  String?           @map("pickup_instructions")
+  dropoffInstructions String?           @map("dropoff_instructions")
+  preferredDepartAt   DateTime?         @map("preferred_depart_at")
+  status              TripRequestStatus @default(ACTIVE)
+  createdAt           DateTime          @default(now()) @map("created_at")
+  updatedAt           DateTime          @updatedAt @map("updated_at")
+
+  rider           User             @relation("RiderTripRequests", fields: [riderUserId], references: [clerkUserId])
+  idempotencyKeys IdempotencyKey[]
+  offers          Offer[]
+  bookings        Booking[]
+  matches         Match[]
+
+  @@index([earliestDesiredAt, id])
+  @@map("trip_requests")
+}
+
+/// Idempotency key mapping — shared across rides and trip requests.
+model IdempotencyKey {
+  id             String                @id @default(uuid())
+  userId         String                @map("user_id")
+  idempotencyKey String                @map("idempotency_key")
+  entityType     IdempotencyEntityType @map("entity_type")
+  rideId         String?               @map("ride_id")
+  tripRequestId  String?               @map("trip_request_id")
+  bookingId      String?               @map("booking_id")
+  offerId        String?               @map("offer_id")
+  createdAt      DateTime              @default(now()) @map("created_at")
+
+  ride        Ride?        @relation(fields: [rideId], references: [id], onDelete: Restrict)
+  tripRequest TripRequest? @relation(fields: [tripRequestId], references: [id], onDelete: Restrict)
+  booking     Booking?     @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  offer       Offer?       @relation(fields: [offerId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, idempotencyKey, entityType])
+  @@map("idempotency_keys")
+}
+
+/// Discriminator for the idempotency key table.
+enum IdempotencyEntityType {
+  RIDE
+  TRIP_REQUEST
+  BOOKING
+  OFFER
+}
+
+/// A ride offered by a driver.
+model Ride {
+  id                  String           @id @default(uuid())
+  driverUserId        String           @map("driver_user_id")
+  originText          String           @map("origin_text")
+  originResolvedAddress String?        @map("origin_resolved_address")
+  originLatitude      Float?           @map("origin_latitude") @db.DoublePrecision
+  originLongitude     Float?           @map("origin_longitude") @db.DoublePrecision
+  destinationText     String           @map("destination_text")
+  destinationResolvedAddress String?   @map("destination_resolved_address")
+  destinationLatitude Float?           @map("destination_latitude") @db.DoublePrecision
+  destinationLongitude Float?          @map("destination_longitude") @db.DoublePrecision
+  earliestDepartAt    DateTime         @map("earliest_depart_at")
+  latestDepartAt      DateTime         @map("latest_depart_at")
+  distanceCategory    DistanceCategory @map("distance_category")
+  priceCents          Int              @map("price_cents")
+  seatsTotal          Int              @map("seats_total")
+  seatsAvailable      Int              @map("seats_available")
+  musicPreference     MusicPreference? @map("music_preference")
+  hasAc               Boolean?         @map("has_ac")
+  hasTrunkSpace       Boolean?         @map("has_trunk_space")
+  vehicleType         VehicleType?     @map("vehicle_type")
+  pickupInstructions  String?          @map("pickup_instructions")
+  dropoffInstructions String?          @map("dropoff_instructions")
+  preferredDepartAt   DateTime?        @map("preferred_depart_at")
+  status              RideStatus       @default(ACTIVE)
+  createdAt           DateTime         @default(now()) @map("created_at")
+  updatedAt           DateTime         @updatedAt @map("updated_at")
+
+  driver          User             @relation("DriverRides", fields: [driverUserId], references: [clerkUserId])
+  bookings        Booking[]
+  idempotencyKeys IdempotencyKey[]
+  matches         Match[]
+  rideOffers      RideOffer[]
+  stopRequests    StopRequest[]
+
+  @@index([earliestDepartAt, id])
+  @@map("rides")
+}
+
+/// Persisted lifecycle record for a trip-request-to-ride match suggestion.
+model Match {
+  id                          String     @id @default(uuid())
+  tripRequestId               String     @map("trip_request_id")
+  rideId                      String     @map("ride_id")
+  state                       MatchState @default(SUGGESTED)
+  scoreSnapshot               Float      @map("score_snapshot") @db.DoublePrecision
+  originDistanceSnapshot      Float      @map("origin_distance_snapshot") @db.DoublePrecision
+  destinationDistanceSnapshot Float      @map("destination_distance_snapshot") @db.DoublePrecision
+  timeDifferenceSnapshot      Float      @map("time_difference_snapshot") @db.DoublePrecision
+  acceptedAt                  DateTime?  @map("accepted_at")
+  rejectedAt                  DateTime?  @map("rejected_at")
+  expiredAt                   DateTime?  @map("expired_at")
+  expirationReason            String?    @map("expiration_reason")
+  createdAt                   DateTime   @default(now()) @map("created_at")
+  updatedAt                   DateTime   @updatedAt @map("updated_at")
+
+  tripRequest TripRequest @relation(fields: [tripRequestId], references: [id])
+  ride        Ride        @relation(fields: [rideId], references: [id])
+
+  @@unique([tripRequestId, rideId])
+  @@index([tripRequestId, state, createdAt, id])
+  @@index([rideId])
+  @@map("matches")
+}
+
+/// A booking made by a rider for a ride.
+model Booking {
+  id            String        @id @default(uuid())
+  rideId        String?       @map("ride_id")
+  tripRequestId String?       @map("trip_request_id")
+  driverUserId  String?       @map("driver_user_id")
+  riderUserId   String        @map("rider_user_id")
+  seatsBooked   Int           @map("seats_booked")
+  priceCents    Int?          @map("price_cents")
+  currentLatitude          Float?        @map("current_latitude") @db.DoublePrecision
+  currentLongitude         Float?        @map("current_longitude") @db.DoublePrecision
+  locationUpdatedAt        DateTime?     @map("location_updated_at")
+  tripStartedAt            DateTime?     @map("trip_started_at")
+  isLocationSharingActive  Boolean       @default(false) @map("is_location_sharing_active")
+  status        BookingStatus @default(CONFIRMED)
+  completedAt   DateTime?     @map("completed_at")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  ride            Ride?            @relation(fields: [rideId], references: [id])
+  tripRequest     TripRequest?     @relation(fields: [tripRequestId], references: [id])
+  rider           User             @relation(fields: [riderUserId], references: [clerkUserId])
+  idempotencyKeys IdempotencyKey[]
+  conversation    Conversation?
+  rating          Rating?
+
+  // Partial unique index `UNIQUE(rideId, riderUserId) WHERE status = 'CONFIRMED'` 
+  // will be added via migration SQL.
+  @@index([riderUserId, status, createdAt])
+  @@index([rideId, status, createdAt, id])
+  @@index([tripRequestId, status, createdAt, id])
+  @@map("bookings")
+}
+
+/// Immutable rider -> driver score for one completed booking.
+model Rating {
+  id          String   @id @default(uuid())
+  bookingId   String   @unique @map("booking_id")
+  raterUserId String   @map("rater_user_id")
+  rateeUserId String   @map("ratee_user_id")
+  score       Int
+  comment     String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  rater   User    @relation("RatingRater", fields: [raterUserId], references: [clerkUserId])
+  ratee   User    @relation("RatingRatee", fields: [rateeUserId], references: [clerkUserId])
+
+  @@index([rateeUserId, createdAt, id])
+  @@index([raterUserId, createdAt, id])
+  @@map("ratings")
+}
+
+/// Offer status.
+enum OfferStatus {
+  PENDING
+  ACCEPTED
+  CANCELLED
+}
+
+/// Ride offer negotiation state.
+enum RideOfferState {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+/// Stop request lifecycle state.
+enum StopRequestState {
+  PENDING
+  QUOTED
+  ACCEPTED
+  REJECTED
+}
+
+/// A driver's offer on a trip request.
+model Offer {
+  id            String      @id @default(uuid())
+  tripRequestId String      @map("trip_request_id")
+  driverUserId  String      @map("driver_user_id")
+  riderUserId   String      @map("rider_user_id")
+  seatsOffered  Int         @map("seats_offered")
+  priceCents    Int         @map("price_cents")
+  message       String?
+  status        OfferStatus @default(PENDING)
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+
+  tripRequest     TripRequest      @relation(fields: [tripRequestId], references: [id])
+  driver          User             @relation("DriverOffers", fields: [driverUserId], references: [clerkUserId])
+  rider           User             @relation("RiderOffers", fields: [riderUserId], references: [clerkUserId])
+  idempotencyKeys IdempotencyKey[]
+  conversation    Conversation?
+
+  @@index([riderUserId, createdAt, id])
+  @@index([driverUserId, createdAt, id])
+  @@index([tripRequestId, status])
+  @@map("offers")
+}
+
+/// A rider's offer on a posted ride.
+model RideOffer {
+  id               String         @id @default(uuid())
+  rideId           String         @map("ride_id")
+  riderUserId      String         @map("rider_user_id")
+  driverUserId     String         @map("driver_user_id")
+  offeredPriceCents Int           @map("offered_price_cents")
+  state            RideOfferState @default(PENDING)
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
+  acceptedAt       DateTime?      @map("accepted_at")
+  rejectedAt       DateTime?      @map("rejected_at")
+
+  ride   Ride @relation(fields: [rideId], references: [id])
+  rider  User @relation("RideOfferRider", fields: [riderUserId], references: [clerkUserId])
+  driver User @relation("RideOfferDriver", fields: [driverUserId], references: [clerkUserId])
+
+  @@index([rideId, state, createdAt, id])
+  @@index([driverUserId, createdAt, id])
+  @@index([riderUserId, createdAt, id])
+  @@map("ride_offers")
+}
+
+/// A rider's request for an accommodation stop on an existing ride.
+model StopRequest {
+  id                        String           @id @default(uuid())
+  rideId                    String           @map("ride_id")
+  riderUserId               String           @map("rider_user_id")
+  driverUserId              String           @map("driver_user_id")
+  requestedPickupText       String           @map("requested_pickup_text")
+  requestedPickupLatitude   Float            @map("requested_pickup_latitude") @db.DoublePrecision
+  requestedPickupLongitude  Float            @map("requested_pickup_longitude") @db.DoublePrecision
+  requestedDropoffText      String           @map("requested_dropoff_text")
+  requestedDropoffLatitude  Float            @map("requested_dropoff_latitude") @db.DoublePrecision
+  requestedDropoffLongitude Float            @map("requested_dropoff_longitude") @db.DoublePrecision
+  riderNote                 String?          @map("rider_note")
+  quotedPriceCents          Int?             @map("quoted_price_cents")
+  state                     StopRequestState @default(PENDING)
+  createdAt                 DateTime         @default(now()) @map("created_at")
+  updatedAt                 DateTime         @updatedAt @map("updated_at")
+  quotedAt                  DateTime?        @map("quoted_at")
+  acceptedAt                DateTime?        @map("accepted_at")
+  rejectedAt                DateTime?        @map("rejected_at")
+
+  ride   Ride @relation(fields: [rideId], references: [id])
+  rider  User @relation("StopRequestRider", fields: [riderUserId], references: [clerkUserId])
+  driver User @relation("StopRequestDriver", fields: [driverUserId], references: [clerkUserId])
+
+  @@index([rideId, state, createdAt, id])
+  @@index([driverUserId, createdAt, id])
+  @@index([riderUserId, createdAt, id])
+  @@map("stop_requests")
+}
+
+/// Conversation type discriminator.
+enum ConversationType {
+  BOOKING
+  OFFER
+}
+
+/// A conversation between a rider and driver, anchored to a booking or offer.
+model Conversation {
+  id           String           @id @default(uuid())
+  type         ConversationType
+  bookingId    String?          @unique @map("booking_id")
+  offerId      String?          @unique @map("offer_id")
+  riderUserId  String           @map("rider_user_id")
+  driverUserId String           @map("driver_user_id")
+  createdAt    DateTime         @default(now()) @map("created_at")
+  updatedAt    DateTime         @updatedAt @map("updated_at")
+
+  booking  Booking?  @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  offer    Offer?    @relation(fields: [offerId], references: [id], onDelete: Restrict)
+  messages Message[]
+
+  @@index([riderUserId, updatedAt])
+  @@index([driverUserId, updatedAt])
+  @@map("conversations")
+}
+
+/// A single message within a conversation.
+model Message {
+  id             String   @id @default(uuid())
+  conversationId String   @map("conversation_id")
+  senderUserId   String   @map("sender_user_id")
+  body           String
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+
+  @@index([conversationId, createdAt])
+  @@map("messages")
+}

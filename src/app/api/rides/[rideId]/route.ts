@@ -1,0 +1,735 @@
+import { NextRequest, NextResponse } from "next/server";
+import { requireStetsonAuth } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import {
+    BookingStatus,
+    DistanceCategory,
+    MusicPreference,
+    RideStatus,
+    VehicleType,
+} from "@prisma/client";
+import {
+    assertDistinctResolvedLocationsOrThrow,
+    GeocodingError,
+    resolveLocationOrThrow,
+} from "@/lib/geocoding";
+
+const VALID_DISTANCE_CATEGORIES: ReadonlySet<string> = new Set(
+    Object.values(DistanceCategory)
+);
+const VALID_MUSIC_PREFERENCES: ReadonlySet<string> = new Set(
+    Object.values(MusicPreference)
+);
+const VALID_VEHICLE_TYPES: ReadonlySet<string> = new Set(
+    Object.values(VehicleType)
+);
+const MAX_DEPARTURE_WINDOW_MS = 48 * 60 * 60 * 1000; // 48 hours
+const CLOCK_SKEW_GRACE_MS = 10 * 60 * 1000; // 10 minutes
+
+const ALLOWED_UPDATE_FIELDS = new Set([
+    "originText",
+    "destinationText",
+    "earliestDepartAt",
+    "latestDepartAt",
+    "preferredDepartAt",
+    "distanceCategory",
+    "priceCents",
+    "seatsTotal",
+    "musicPreference",
+    "hasAc",
+    "hasTrunkSpace",
+    "vehicleType",
+    "pickupInstructions",
+    "dropoffInstructions"
+]);
+
+interface ValidationError {
+    field: string;
+    message: string;
+}
+
+function getErrorMessage(error: unknown): string | null {
+    if (error instanceof Error) {
+        return error.message;
+    }
+    return null;
+}
+
+function geocodingErrorResponse(
+    field: "originText" | "destinationText",
+    error: unknown
+) {
+    if (error instanceof GeocodingError) {
+        if (
+            error.code === "PROVIDER_FAILURE" ||
+            error.code === "PROVIDER_TIMEOUT"
+        ) {
+            console.error(
+                `[PATCH /api/rides/:rideId] Geocoding provider failure for ${field}:`,
+                error
+            );
+            return NextResponse.json(
+                {
+                    error: "Service Unavailable",
+                    message:
+                        "Location lookup is temporarily unavailable. Please try again.",
+                },
+                { status: 503 }
+            );
+        }
+
+        return NextResponse.json(
+            {
+                error: "Validation Error",
+                message: "One or more fields are invalid.",
+                details: [{ field, message: error.message }],
+            },
+            { status: 400 }
+        );
+    }
+
+    console.error(
+        `[PATCH /api/rides/:rideId] Unexpected geocoding error for ${field}:`,
+        error
+    );
+    return NextResponse.json(
+        {
+            error: "Service Unavailable",
+            message: "Location lookup is temporarily unavailable. Please try again.",
+        },
+        { status: 503 }
+    );
+}
+
+export async function PATCH(
+    request: NextRequest,
+    { params }: { params: Promise<{ rideId: string }> }
+) {
+    try {
+        const auth = await requireStetsonAuth(request);
+        if (auth.error) return auth.error;
+
+        const resolvedParams = await params;
+        const rideId = resolvedParams.rideId;
+
+        const ride = await prisma.ride.findUnique({
+            where: { id: rideId },
+            include: { bookings: { where: { status: BookingStatus.CONFIRMED }, take: 1 } }
+        });
+
+        if (!ride) {
+            return NextResponse.json(
+                { error: "Not Found", message: "Ride not found." },
+                { status: 404 }
+            );
+        }
+
+        if (ride.driverUserId !== auth.user.clerkUserId) {
+            return NextResponse.json(
+                { error: "Forbidden", message: "You don't own this ride." },
+                { status: 403 }
+            );
+        }
+
+        if (ride.bookings.length > 0) {
+            return NextResponse.json(
+                {
+                    error: "Conflict",
+                    code: "RIDE_EDIT_LOCKED_CONFIRMED",
+                    message: "Ride can’t be edited after it has a confirmed booking. Cancel it instead."
+                },
+                { status: 409 }
+            );
+        }
+
+        let body: Record<string, unknown>;
+        try {
+            body = await request.json();
+            if (typeof body !== "object" || body === null || Array.isArray(body)) {
+                throw new Error("Invalid format");
+            }
+        } catch {
+            return NextResponse.json(
+                { error: "Bad Request", message: "Request body must be a JSON object." },
+                { status: 400 }
+            );
+        }
+
+        const unknownKeys = Object.keys(body).filter(key => !ALLOWED_UPDATE_FIELDS.has(key));
+        if (unknownKeys.length > 0) {
+            return NextResponse.json(
+                { error: "Bad Request", message: `Unknown fields are not allowed: ${unknownKeys.join(", ")}` },
+                { status: 400 }
+            );
+        }
+
+        const errors: ValidationError[] = [];
+
+        let finalOriginText = ride.originText;
+        if (body.originText !== undefined) {
+            const val = body.originText;
+            if (typeof val !== "string") {
+                errors.push({ field: "originText", message: "Must be a string." });
+            } else {
+                finalOriginText = val.trim();
+                if (finalOriginText.length < 3 || finalOriginText.length > 200) {
+                    errors.push({ field: "originText", message: "Must be between 3 and 200 characters after trimming." });
+                }
+            }
+        }
+
+        let finalDestinationText = ride.destinationText;
+        if (body.destinationText !== undefined) {
+            const val = body.destinationText;
+            if (typeof val !== "string") {
+                errors.push({ field: "destinationText", message: "Must be a string." });
+            } else {
+                finalDestinationText = val.trim();
+                if (finalDestinationText.length < 3 || finalDestinationText.length > 200) {
+                    errors.push({ field: "destinationText", message: "Must be between 3 and 200 characters after trimming." });
+                }
+            }
+        }
+
+        let finalEarliestDepartAt = ride.earliestDepartAt;
+        if (body.earliestDepartAt !== undefined) {
+            const val = body.earliestDepartAt;
+            if (typeof val !== "string" || !val) {
+                errors.push({ field: "earliestDepartAt", message: "Must be an ISO datetime string." });
+            } else {
+                const date = new Date(val);
+                if (isNaN(date.getTime())) {
+                    errors.push({ field: "earliestDepartAt", message: "Must be a valid ISO datetime." });
+                } else {
+                    finalEarliestDepartAt = date;
+                }
+            }
+        }
+
+        let finalLatestDepartAt = ride.latestDepartAt;
+        if (body.latestDepartAt !== undefined) {
+            const val = body.latestDepartAt;
+            if (typeof val !== "string" || !val) {
+                errors.push({ field: "latestDepartAt", message: "Must be an ISO datetime string." });
+            } else {
+                const date = new Date(val);
+                if (isNaN(date.getTime())) {
+                    errors.push({ field: "latestDepartAt", message: "Must be a valid ISO datetime." });
+                } else {
+                    finalLatestDepartAt = date;
+                }
+            }
+        }
+
+        if (finalEarliestDepartAt && finalLatestDepartAt) {
+            if (finalLatestDepartAt.getTime() <= finalEarliestDepartAt.getTime()) {
+                errors.push({ field: "latestDepartAt", message: "latestDepartAt must be strictly after earliestDepartAt." });
+            } else {
+                const windowMs = finalLatestDepartAt.getTime() - finalEarliestDepartAt.getTime();
+                if (windowMs > MAX_DEPARTURE_WINDOW_MS) {
+                    errors.push({ field: "latestDepartAt", message: "Departure window must be 48 hours or less." });
+                }
+            }
+        }
+
+        if (body.earliestDepartAt !== undefined && finalEarliestDepartAt) {
+            const graceThreshold = Date.now() - CLOCK_SKEW_GRACE_MS;
+            if (finalEarliestDepartAt.getTime() < graceThreshold) {
+                errors.push({ field: "earliestDepartAt", message: "earliestDepartAt must not be in the past (10-minute grace allowed)." });
+            }
+        }
+
+        let finalPreferredDepartAt = ride.preferredDepartAt;
+        if (body.preferredDepartAt !== undefined) {
+            const val = body.preferredDepartAt;
+            if (val === null) {
+                finalPreferredDepartAt = null;
+            } else if (typeof val !== "string") {
+                errors.push({ field: "preferredDepartAt", message: "Must be an ISO datetime string or null." });
+            } else {
+                const date = new Date(val);
+                if (isNaN(date.getTime())) {
+                    errors.push({ field: "preferredDepartAt", message: "Must be a valid ISO datetime." });
+                } else {
+                    finalPreferredDepartAt = date;
+                }
+            }
+        }
+
+        if (finalPreferredDepartAt && finalEarliestDepartAt && finalLatestDepartAt) {
+            if (finalPreferredDepartAt.getTime() < finalEarliestDepartAt.getTime()) {
+                errors.push({ field: "preferredDepartAt", message: "preferredDepartAt must not be before earliestDepartAt." });
+            } else if (finalPreferredDepartAt.getTime() > finalLatestDepartAt.getTime()) {
+                errors.push({ field: "preferredDepartAt", message: "preferredDepartAt must not be after latestDepartAt." });
+            }
+        }
+
+        let finalDistanceCategory = ride.distanceCategory;
+        if (body.distanceCategory !== undefined) {
+            const val = body.distanceCategory;
+            if (typeof val !== "string" || !VALID_DISTANCE_CATEGORIES.has(val)) {
+                errors.push({ field: "distanceCategory", message: "distanceCategory must be one of SHORT, MEDIUM, or LONG." });
+            } else {
+                finalDistanceCategory = val as DistanceCategory;
+            }
+        }
+
+        let finalPriceCents = ride.priceCents;
+        if (body.priceCents !== undefined) {
+            const val = body.priceCents;
+            if (typeof val !== "number" || !Number.isInteger(val) || val < 0) {
+                errors.push({ field: "priceCents", message: "priceCents must be a non-negative integer." });
+            } else {
+                finalPriceCents = val;
+            }
+        }
+
+        let finalSeatsTotal = ride.seatsTotal;
+        if (body.seatsTotal !== undefined) {
+            const val = body.seatsTotal;
+            if (typeof val !== "number" || !Number.isInteger(val) || val < 1 || val > 8) {
+                errors.push({ field: "seatsTotal", message: "seatsTotal must be an integer between 1 and 8." });
+            } else {
+                finalSeatsTotal = val;
+            }
+        }
+
+        let finalMusicPreference = ride.musicPreference;
+        if (body.musicPreference !== undefined) {
+            const val = body.musicPreference;
+            if (val === null) {
+                finalMusicPreference = null;
+            } else if (
+                typeof val !== "string" ||
+                !VALID_MUSIC_PREFERENCES.has(val)
+            ) {
+                errors.push({
+                    field: "musicPreference",
+                    message:
+                        "musicPreference must be one of MUSIC_ALLOWED or NO_MUSIC, or null.",
+                });
+            } else {
+                finalMusicPreference = val as MusicPreference;
+            }
+        }
+
+        let finalHasAc = ride.hasAc;
+        if (body.hasAc !== undefined) {
+            const val = body.hasAc;
+            if (val === null) {
+                finalHasAc = null;
+            } else if (typeof val !== "boolean") {
+                errors.push({
+                    field: "hasAc",
+                    message: "hasAc must be true, false, or null.",
+                });
+            } else {
+                finalHasAc = val;
+            }
+        }
+
+        let finalHasTrunkSpace = ride.hasTrunkSpace;
+        if (body.hasTrunkSpace !== undefined) {
+            const val = body.hasTrunkSpace;
+            if (val === null) {
+                finalHasTrunkSpace = null;
+            } else if (typeof val !== "boolean") {
+                errors.push({
+                    field: "hasTrunkSpace",
+                    message: "hasTrunkSpace must be true, false, or null.",
+                });
+            } else {
+                finalHasTrunkSpace = val;
+            }
+        }
+
+        let finalVehicleType = ride.vehicleType;
+        if (body.vehicleType !== undefined) {
+            const val = body.vehicleType;
+            if (val === null) {
+                finalVehicleType = null;
+            } else if (
+                typeof val !== "string" ||
+                !VALID_VEHICLE_TYPES.has(val)
+            ) {
+                errors.push({
+                    field: "vehicleType",
+                    message:
+                        "vehicleType must be one of SEDAN, SUV, TRUCK, VAN, COUPE, or OTHER, or null.",
+                });
+            } else {
+                finalVehicleType = val as VehicleType;
+            }
+        }
+
+        let finalPickupInstructions = ride.pickupInstructions;
+        if (body.pickupInstructions !== undefined) {
+            const val = body.pickupInstructions;
+            if (val === null) {
+                finalPickupInstructions = null;
+            } else if (typeof val !== "string") {
+                errors.push({ field: "pickupInstructions", message: "Must be a string or null." });
+            } else {
+                const trimmed = val.trim();
+                if (trimmed.length === 0) {
+                    errors.push({ field: "pickupInstructions", message: "Must not be empty after trimming." });
+                } else if (trimmed.length > 500) {
+                    errors.push({ field: "pickupInstructions", message: "Must be 500 characters or fewer." });
+                } else {
+                    finalPickupInstructions = trimmed;
+                }
+            }
+        }
+
+        let finalDropoffInstructions = ride.dropoffInstructions;
+        if (body.dropoffInstructions !== undefined) {
+            const val = body.dropoffInstructions;
+            if (val === null) {
+                finalDropoffInstructions = null;
+            } else if (typeof val !== "string") {
+                errors.push({ field: "dropoffInstructions", message: "Must be a string or null." });
+            } else {
+                const trimmed = val.trim();
+                if (trimmed.length === 0) {
+                    errors.push({ field: "dropoffInstructions", message: "Must not be empty after trimming." });
+                } else if (trimmed.length > 500) {
+                    errors.push({ field: "dropoffInstructions", message: "Must be 500 characters or fewer." });
+                } else {
+                    finalDropoffInstructions = trimmed;
+                }
+            }
+        }
+
+        if (errors.length > 0) {
+            return NextResponse.json(
+                {
+                    error: "Validation Error",
+                    message: "One or more fields are invalid.",
+                    details: errors
+                },
+                { status: 400 }
+            );
+        }
+
+        const originTextChanged =
+            body.originText !== undefined && finalOriginText !== ride.originText;
+        const destinationTextChanged =
+            body.destinationText !== undefined &&
+            finalDestinationText !== ride.destinationText;
+
+        let finalOriginResolvedAddress = ride.originResolvedAddress ?? null;
+        let finalOriginLatitude = ride.originLatitude ?? null;
+        let finalOriginLongitude = ride.originLongitude ?? null;
+        let finalDestinationResolvedAddress =
+            ride.destinationResolvedAddress ?? null;
+        let finalDestinationLatitude = ride.destinationLatitude ?? null;
+        let finalDestinationLongitude = ride.destinationLongitude ?? null;
+
+        if (originTextChanged) {
+            let originLocation: Awaited<ReturnType<typeof resolveLocationOrThrow>>;
+            try {
+                originLocation = await resolveLocationOrThrow(finalOriginText);
+            } catch (error) {
+                return geocodingErrorResponse("originText", error);
+            }
+
+            finalOriginText = originLocation.inputText;
+            finalOriginResolvedAddress = originLocation.resolvedAddress;
+            finalOriginLatitude = originLocation.latitude;
+            finalOriginLongitude = originLocation.longitude;
+        }
+
+        if (destinationTextChanged) {
+            let destinationLocation: Awaited<
+                ReturnType<typeof resolveLocationOrThrow>
+            >;
+            try {
+                destinationLocation = await resolveLocationOrThrow(
+                    finalDestinationText
+                );
+            } catch (error) {
+                return geocodingErrorResponse("destinationText", error);
+            }
+
+            finalDestinationText = destinationLocation.inputText;
+            finalDestinationResolvedAddress = destinationLocation.resolvedAddress;
+            finalDestinationLatitude = destinationLocation.latitude;
+            finalDestinationLongitude = destinationLocation.longitude;
+        }
+
+        if (finalOriginLatitude === null || finalOriginLongitude === null) {
+            let resolvedOrigin: Awaited<ReturnType<typeof resolveLocationOrThrow>>;
+            try {
+                resolvedOrigin = await resolveLocationOrThrow(finalOriginText);
+            } catch (error) {
+                return geocodingErrorResponse("originText", error);
+            }
+
+            finalOriginText = resolvedOrigin.inputText;
+            finalOriginResolvedAddress = resolvedOrigin.resolvedAddress;
+            finalOriginLatitude = resolvedOrigin.latitude;
+            finalOriginLongitude = resolvedOrigin.longitude;
+        }
+
+        if (finalDestinationLatitude === null || finalDestinationLongitude === null) {
+            let resolvedDestination: Awaited<
+                ReturnType<typeof resolveLocationOrThrow>
+            >;
+            try {
+                resolvedDestination = await resolveLocationOrThrow(
+                    finalDestinationText
+                );
+            } catch (error) {
+                return geocodingErrorResponse("destinationText", error);
+            }
+
+            finalDestinationText = resolvedDestination.inputText;
+            finalDestinationResolvedAddress = resolvedDestination.resolvedAddress;
+            finalDestinationLatitude = resolvedDestination.latitude;
+            finalDestinationLongitude = resolvedDestination.longitude;
+        }
+
+        if (
+            finalOriginLatitude !== null &&
+            finalOriginLongitude !== null &&
+            finalDestinationLatitude !== null &&
+            finalDestinationLongitude !== null
+        ) {
+            try {
+                assertDistinctResolvedLocationsOrThrow(
+                    {
+                        latitude: finalOriginLatitude,
+                        longitude: finalOriginLongitude,
+                    },
+                    {
+                        latitude: finalDestinationLatitude,
+                        longitude: finalDestinationLongitude,
+                    }
+                );
+            } catch (error) {
+                return geocodingErrorResponse("destinationText", error);
+            }
+        }
+
+        let finalSeatsAvailable = ride.seatsAvailable;
+        if (body.seatsTotal !== undefined && body.seatsTotal !== ride.seatsTotal) {
+            finalSeatsAvailable = finalSeatsTotal;
+        }
+
+        try {
+            const [updateResult, transUpdatedRide] = await prisma.$transaction([
+                prisma.ride.updateMany({
+                    where: {
+                        id: rideId,
+                        bookings: { none: { status: BookingStatus.CONFIRMED } }
+                    },
+                    data: {
+                        originText: finalOriginText,
+                        originResolvedAddress: finalOriginResolvedAddress,
+                        originLatitude: finalOriginLatitude,
+                        originLongitude: finalOriginLongitude,
+                        destinationText: finalDestinationText,
+                        destinationResolvedAddress:
+                            finalDestinationResolvedAddress,
+                        destinationLatitude: finalDestinationLatitude,
+                        destinationLongitude: finalDestinationLongitude,
+                        earliestDepartAt: finalEarliestDepartAt,
+                        latestDepartAt: finalLatestDepartAt,
+                        preferredDepartAt: finalPreferredDepartAt,
+                        distanceCategory: finalDistanceCategory,
+                        priceCents: finalPriceCents,
+                        seatsTotal: finalSeatsTotal,
+                        seatsAvailable: finalSeatsAvailable,
+                        musicPreference: finalMusicPreference,
+                        hasAc: finalHasAc,
+                        hasTrunkSpace: finalHasTrunkSpace,
+                        vehicleType: finalVehicleType,
+                        pickupInstructions: finalPickupInstructions,
+                        dropoffInstructions: finalDropoffInstructions
+                    }
+                }),
+                prisma.ride.findUnique({
+                    where: { id: rideId }
+                })
+            ]);
+
+            if (updateResult.count === 0) {
+                if (!transUpdatedRide) {
+                    return NextResponse.json(
+                        { error: "Not Found", message: "Ride not found." },
+                        { status: 404 }
+                    );
+                }
+                return NextResponse.json(
+                    {
+                        error: "Conflict",
+                        code: "RIDE_EDIT_LOCKED_CONFIRMED",
+                        message: "Ride can’t be edited after it has a confirmed booking. Cancel it instead."
+                    },
+                    { status: 409 }
+                );
+            }
+
+            return NextResponse.json(transUpdatedRide, { status: 200 });
+        } catch (updateError: unknown) {
+            console.error("[PATCH /api/rides/:rideId] Unexpected error during update:", updateError);
+            throw updateError;
+        }
+
+    } catch (error) {
+        console.error("[PATCH /api/rides/:rideId] Unexpected error:", error);
+        return NextResponse.json(
+            { error: "Internal Server Error", message: "An unexpected error occurred while updating the ride." },
+            { status: 500 }
+        );
+    }
+}
+
+export async function DELETE(
+    request: NextRequest,
+    { params }: { params: Promise<{ rideId: string }> }
+) {
+    try {
+        const auth = await requireStetsonAuth(request);
+        if (auth.error) return auth.error;
+
+        const resolvedParams = await params;
+        const rideId = resolvedParams.rideId;
+
+        const ride = await prisma.ride.findUnique({
+            where: { id: rideId },
+            select: {
+                id: true,
+                driverUserId: true,
+                latestDepartAt: true,
+                status: true,
+            },
+        });
+
+        if (!ride) {
+            return NextResponse.json(
+                { error: "Not Found", message: "Ride not found." },
+                { status: 404 }
+            );
+        }
+
+        if (ride.driverUserId !== auth.user.clerkUserId) {
+            return NextResponse.json(
+                { error: "Forbidden", message: "You don't own this ride." },
+                { status: 403 }
+            );
+        }
+
+        if (ride.status === RideStatus.CANCELLED) {
+            return NextResponse.json(
+                { message: "Ride already cancelled." },
+                { status: 200 }
+            );
+        }
+
+        const now = new Date();
+        if (ride.latestDepartAt <= now) {
+            return NextResponse.json(
+                {
+                    error: "Conflict",
+                    message: "Ride cannot be cancelled after it has already departed.",
+                },
+                { status: 409 }
+            );
+        }
+
+        const result = await prisma.$transaction(async (tx) => {
+            const transactionNow = new Date();
+            const updateResult = await tx.ride.updateMany({
+                where: {
+                    id: rideId,
+                    driverUserId: auth.user.clerkUserId,
+                    status: RideStatus.ACTIVE,
+                    latestDepartAt: { gt: transactionNow },
+                },
+                data: {
+                    status: RideStatus.CANCELLED,
+                },
+            });
+
+            if (updateResult.count === 0) {
+                const latestRide = await tx.ride.findUnique({
+                    where: { id: rideId },
+                    select: {
+                        id: true,
+                        driverUserId: true,
+                        latestDepartAt: true,
+                        status: true,
+                    },
+                });
+
+                if (!latestRide) {
+                    throw new Error("Ride not found.");
+                }
+
+                if (latestRide.driverUserId !== auth.user.clerkUserId) {
+                    throw new Error("Unauthorized access to ride.");
+                }
+
+                if (latestRide.status === RideStatus.CANCELLED) {
+                    return { message: "Ride already cancelled." };
+                }
+
+                if (latestRide.latestDepartAt <= transactionNow) {
+                    throw new Error("Ride already departed.");
+                }
+
+                throw new Error("Ride cancellation failed.");
+            }
+
+            await tx.booking.updateMany({
+                where: {
+                    rideId,
+                    status: BookingStatus.CONFIRMED,
+                },
+                data: {
+                    status: BookingStatus.CANCELLED,
+                },
+            });
+
+            return { message: "Ride cancelled successfully." };
+        });
+
+        return NextResponse.json(result, { status: 200 });
+    } catch (error: unknown) {
+        const message = getErrorMessage(error);
+
+        if (message === "Ride not found.") {
+            return NextResponse.json(
+                { error: "Not Found", message: "Ride not found." },
+                { status: 404 }
+            );
+        }
+
+        if (message === "Unauthorized access to ride.") {
+            return NextResponse.json(
+                { error: "Forbidden", message: "You don't own this ride." },
+                { status: 403 }
+            );
+        }
+
+        if (message === "Ride already departed.") {
+            return NextResponse.json(
+                {
+                    error: "Conflict",
+                    message: "Ride cannot be cancelled after it has already departed.",
+                },
+                { status: 409 }
+            );
+        }
+
+        console.error("[DELETE /api/rides/:rideId] Unexpected error:", error);
+        return NextResponse.json(
+            {
+                error: "Internal Server Error",
+                message: "An unexpected error occurred while cancelling the ride.",
+            },
+            { status: 500 }
+        );
+    }
+}
