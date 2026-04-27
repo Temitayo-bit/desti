@@ -2,9 +2,9 @@
 "use client";
 
 import { Star } from "lucide-react";
-import { type MockTripData } from "../mockData";
+import { type TripData } from "../types";
 
-export function DriverCard({ driver }: { driver: MockTripData["driver"] }) {
+export function DriverCard({ driver }: { driver: TripData["driver"] }) {
     return (
         <article className="flex flex-col gap-4 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
             <div className="flex items-center gap-4">

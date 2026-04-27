@@ -1,25 +1,6 @@
-export type TripStatus = "LOADING" | "ACTIVE" | "ARRIVED" | "COMPLETED" | "ERROR";
+import type { TripData } from "./types";
 
-export interface MockTripData {
-    status: TripStatus;
-    driver: {
-        name: string;
-        rating: number;
-        vehicle: string;
-        plate: string;
-        avatarUrl?: string;
-    };
-    locations: {
-        pickup: string;
-        destination: string;
-    };
-    eta: {
-        minutes: number;
-        arrivalTime: string;
-    };
-}
-
-export const MOCK_TRIP: MockTripData = {
+export const MOCK_TRIP: TripData = {
     status: "ACTIVE",
     driver: {
         name: "Odogwu Silencer",
