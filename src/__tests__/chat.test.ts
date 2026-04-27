@@ -98,7 +98,7 @@ describe("Chat Gateway", () => {
                 model: "gemini-test-model",
                 config: expect.objectContaining({
                     systemInstruction: expect.stringContaining(
-                        "You are Desti Assistant, the in-app help assistant for Desti, a Stetson University ride-sharing platform."
+                        "You are Desti Assistant.\n\nYou are NOT a general-purpose assistant."
                     ),
                 }),
                 history: [
@@ -263,6 +263,40 @@ describe("Chat Gateway", () => {
         const req3 = makeRequest({});
         const res3 = await POST(req3);
         expect(res3.status).toBe(400);
+    });
+
+    // ── 5b. Canonical FAQ + output guard (no trust in model alone) ───────
+
+    it("returns a canonical post-ride answer without calling Gemini or loading knowledge", async () => {
+        vi.resetModules();
+        const { POST } = await import("@/app/api/chat/route");
+        const { CANONICAL_POST_RIDE_ANSWER } = await import("@/lib/desti-chat-guard");
+
+        const req = makeRequest({ message: "How do I post a ride?" });
+        const res = await POST(req);
+        const json = (await res.json()) as { answer?: string };
+
+        expect(res.status).toBe(200);
+        expect(json.answer).toBe(CANONICAL_POST_RIDE_ANSWER);
+        expect(mockChatsCreate).not.toHaveBeenCalled();
+        expect(mockReadFile).not.toHaveBeenCalled();
+    });
+
+    it("replaces model output that names external rideshare apps", async () => {
+        mockSendMessage.mockResolvedValue({
+            text: "Try BlaBlaCar or check Facebook groups for carpooling.",
+        });
+
+        vi.resetModules();
+        const { POST } = await import("@/app/api/chat/route");
+        const { REFUSAL_OUT_OF_SCOPE } = await import("@/lib/desti-chat-guard");
+
+        const req = makeRequest({ message: "Explain how pricing works" });
+        const res = await POST(req);
+        const json = (await res.json()) as { answer?: string };
+
+        expect(res.status).toBe(200);
+        expect(json.answer).toBe(REFUSAL_OUT_OF_SCOPE);
     });
 
     // ── 6. Validation: invalid history → 400 ─────────────────────────────
