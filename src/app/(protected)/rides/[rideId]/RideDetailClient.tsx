@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { format } from "date-fns";
 import { useRouter } from "next/navigation";
 import { User, MapPin, Calendar, Check, X, CarFront, Flag } from "lucide-react";
@@ -16,6 +16,8 @@ import {
   updateLocationFieldInput,
   hasValidLocationFieldSelection,
 } from "@/lib/location-field";
+import { partitionPrismaMatches } from "@/lib/match-lifecycle-partition";
+import { MatchLifecycleBadge } from "@/components/MatchLifecycleBadge";
 
 interface RideDetailClientProps {
   ride: any;
@@ -108,6 +110,12 @@ export function RideDetailClient({ ride, currentUserClerkId }: RideDetailClientP
       b.riderUserId === currentUserClerkId &&
       (b.status === "CONFIRMED" || b.status === "COMPLETED")
   );
+
+  const { suggested: suggestedMatches, accepted: acceptedMatches, expired: expiredMatches } =
+    useMemo(
+      () => partitionPrismaMatches(ride.matches ?? []),
+      [ride.matches],
+    );
 
   const handleBookRide = async () => {
     if (bookingInProgress || ride.seatsAvailable <= 0 || isOwner) return;
@@ -722,25 +730,126 @@ export function RideDetailClient({ ride, currentUserClerkId }: RideDetailClientP
                   )}
                 </div>
 
-                <div className="bg-white rounded-3xl p-6 shadow-sm border border-zinc-100">
-                  <h3 className="font-bold text-zinc-900 mb-4">Matches Found</h3>
-                  {ride.matches?.length > 0 ? (
-                    <div className="space-y-4">
-                      {ride.matches.map((match: any) => (
-                        <div key={match.id} className="border border-zinc-100 rounded-xl p-4 bg-zinc-50">
-                          <p className="font-medium text-sm text-zinc-900 mb-1">Match with {match.tripRequest?.rider?.name}</p>
-                          <p className="text-xs text-zinc-500">From: {match.tripRequest?.originText}</p>
-                          <p className="text-xs text-zinc-500">To: {match.tripRequest?.destinationText}</p>
-                          <p className="text-xs font-semibold text-[#006837] mt-1">Score: {Math.round(match.scoreSnapshot * 100)}%</p>
-                          <div className="flex gap-2 mt-3">
-                            <button className="w-full bg-[#006837] text-white text-xs font-bold py-2 rounded-lg" onClick={() => router.push(`/trip-requests/${match.tripRequestId}`)}>View Request</button>
+                <div className="bg-white rounded-3xl p-6 shadow-sm border border-zinc-100 space-y-6">
+                  <div>
+                    <h3 className="font-bold text-zinc-900 mb-1">Suggested trip requests</h3>
+                    <p className="text-xs text-zinc-500 mb-4">
+                      Active suggestions only. Rejected matches stay hidden.
+                    </p>
+                    {suggestedMatches.length > 0 ? (
+                      <div className="space-y-4">
+                        {suggestedMatches.map((match: any) => (
+                          <div
+                            key={match.id}
+                            className="border border-zinc-100 rounded-xl p-4 bg-zinc-50"
+                          >
+                            <div className="flex flex-wrap items-center gap-2 mb-2">
+                              <MatchLifecycleBadge state="SUGGESTED" />
+                            </div>
+                            <p className="font-medium text-sm text-zinc-900 mb-1">
+                              {match.tripRequest?.rider?.name
+                                ? `Match with ${match.tripRequest.rider.name}`
+                                : "Trip request match"}
+                            </p>
+                            <p className="text-xs text-zinc-500">
+                              From: {match.tripRequest?.originText}
+                            </p>
+                            <p className="text-xs text-zinc-500">
+                              To: {match.tripRequest?.destinationText}
+                            </p>
+                            <p className="text-xs font-semibold text-[#006837] mt-1">
+                              Score: {Math.round(match.scoreSnapshot * 100)}%
+                            </p>
+                            <div className="flex gap-2 mt-3">
+                              <button
+                                type="button"
+                                className="w-full bg-[#006837] text-white text-xs font-bold py-2 rounded-lg"
+                                onClick={() =>
+                                  router.push(`/trip-requests/${match.tripRequestId}`)
+                                }
+                              >
+                                View request
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-zinc-500">No suggested matches yet.</p>
+                    )}
+                  </div>
+
+                  {acceptedMatches.length > 0 ? (
+                    <div>
+                      <h4 className="text-sm font-bold text-zinc-800 mb-3">Accepted pairing</h4>
+                      <p className="text-xs text-zinc-500 mb-3">
+                        The rider confirmed this route match. Open the trip request to send or
+                        manage offers—not an open suggestion anymore.
+                      </p>
+                      <div className="space-y-4">
+                        {acceptedMatches.map((match: any) => (
+                          <div
+                            key={match.id}
+                            className="border border-emerald-100 rounded-xl p-4 bg-emerald-50/40"
+                          >
+                            <div className="flex flex-wrap items-center gap-2 mb-2">
+                              <MatchLifecycleBadge state="ACCEPTED" />
+                            </div>
+                            <p className="font-medium text-sm text-zinc-900 mb-1">
+                              {match.tripRequest?.rider?.name ?? "Trip request"}
+                            </p>
+                            <p className="text-xs text-zinc-500">
+                              From: {match.tripRequest?.originText}
+                            </p>
+                            <p className="text-xs text-zinc-500">
+                              To: {match.tripRequest?.destinationText}
+                            </p>
+                            <div className="flex gap-2 mt-3">
+                              <button
+                                type="button"
+                                className="w-full bg-[#006837] text-white text-xs font-bold py-2 rounded-lg"
+                                onClick={() =>
+                                  router.push(`/trip-requests/${match.tripRequestId}`)
+                                }
+                              >
+                                Open trip request
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  ) : (
-                    <p className="text-sm text-zinc-500">No matches found yet.</p>
-                  )}
+                  ) : null}
+
+                  {expiredMatches.length > 0 ? (
+                    <div>
+                      <h4 className="text-sm font-bold text-zinc-800 mb-3">Expired suggestions</h4>
+                      <div className="space-y-4 opacity-90">
+                        {expiredMatches.map((match: any) => (
+                          <div
+                            key={match.id}
+                            className="border border-amber-100 rounded-xl p-4 bg-amber-50/30"
+                          >
+                            <div className="flex flex-wrap items-center gap-2 mb-2">
+                              <MatchLifecycleBadge state="EXPIRED" />
+                            </div>
+                            <p className="font-medium text-sm text-zinc-900 mb-1">
+                              {match.tripRequest?.rider?.name ?? "Trip request"}
+                            </p>
+                            <p className="text-xs text-zinc-500">
+                              From: {match.tripRequest?.originText}
+                            </p>
+                            <p className="text-xs text-zinc-500">
+                              To: {match.tripRequest?.destinationText}
+                            </p>
+                            <p className="text-xs text-zinc-600 mt-2">
+                              This suggestion is no longer active.
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             )}
