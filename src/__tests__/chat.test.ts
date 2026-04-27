@@ -98,7 +98,7 @@ describe("Chat Gateway", () => {
                 model: "gemini-test-model",
                 config: expect.objectContaining({
                     systemInstruction: expect.stringContaining(
-                        "You are Desti Assistant—help for Desti, a campus transport app for verified Stetson students."
+                        "You are Desti Assistant, the in-app help assistant for Desti, a Stetson University ride-sharing platform."
                     ),
                 }),
                 history: [
@@ -193,6 +193,25 @@ describe("Chat Gateway", () => {
 
         expect(res.status).toBe(503);
         expect(json.error).toBe("AI service unavailable. Missing server configuration.");
+    });
+
+    it("returns 503 when Gemini reports model unavailable (e.g. high demand)", async () => {
+        const err = new Error(
+            `{"error":{"code":503,"message":"This model is currently experiencing high demand.","status":"UNAVAILABLE"}}`
+        ) as Error & { status: number };
+        err.status = 503;
+        mockSendMessage.mockRejectedValue(err);
+
+        vi.resetModules();
+        const { POST } = await import("@/app/api/chat/route");
+
+        const res = await POST(makeRequest({ message: "Hi" }));
+        const json = await res.json() as { error?: string };
+
+        expect(res.status).toBe(503);
+        expect(json.error).toBe(
+            "The AI help service is temporarily busy. Please try again in a moment."
+        );
     });
 
     // ── 5. Validation: missing message → 400 ─────────────────────────────

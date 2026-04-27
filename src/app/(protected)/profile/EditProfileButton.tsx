@@ -3,6 +3,7 @@
 import { useState, useRef, type ChangeEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useRouter } from "next/navigation";
+import { invalidateDestiProfileCache } from "@/hooks/use-desti-profile";
 import { ONBOARDING_YEAR_OPTIONS } from "@/lib/onboarding-form";
 
 export function EditProfileButton({ user, variant = "icon" }: { user: any; variant?: "icon" | "footer" }) {
@@ -49,6 +50,7 @@ export function EditProfileButton({ user, variant = "icon" }: { user: any; varia
 
             const data = await response.json();
             setProfilePictureUrl(data.profilePictureUrl);
+            invalidateDestiProfileCache();
         } catch {
             setError("Failed to upload photo.");
             setProfilePicturePreview(profilePictureUrl);

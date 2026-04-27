@@ -27,6 +27,7 @@ import {
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { UserAvatar } from "@/components/UserAvatar";
+import { useDestiProfile } from "@/hooks/use-desti-profile";
 import { ProtectedShell } from "../_components/ProtectedShell";
 import {
     appendUniqueMessages,
@@ -233,6 +234,10 @@ function buildThreadRows(messages: ConversationMessageItem[]): ThreadRow[] {
 
 export default function MessagesPage() {
     const { userId } = useAuth();
+    const {
+        profilePictureUrl: meProfilePictureUrl,
+        displayName: meDisplayName,
+    } = useDestiProfile();
     const searchParams = useSearchParams();
     const requestedConversationId = searchParams.get("conversationId");
     const [conversations, setConversations] = useState<ConversationListItem[]>(
@@ -1021,7 +1026,7 @@ export default function MessagesPage() {
                                                     return (
                                                         <li
                                                             key={row.key}
-                                                            className={`flex gap-2 ${
+                                                            className={`flex gap-2 items-end ${
                                                                 isCurrentUserMessage
                                                                     ? "justify-end"
                                                                     : "justify-start"
@@ -1058,6 +1063,14 @@ export default function MessagesPage() {
                                                                     )}
                                                                 </p>
                                                             </div>
+                                                            {isCurrentUserMessage ? (
+                                                                <UserAvatar
+                                                                    src={meProfilePictureUrl}
+                                                                    name={meDisplayName}
+                                                                    size="sm"
+                                                                    className="mt-0.5 shrink-0 self-end"
+                                                                />
+                                                            ) : null}
                                                         </li>
                                                     );
                                                 })}

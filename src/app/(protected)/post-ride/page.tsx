@@ -1,13 +1,14 @@
 "use client";
 
-import { useUser } from "@clerk/nextjs";
 import { format, parseISO } from "date-fns";
 import Link from "next/link";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeftRight, Calendar, Car, Check, ChevronDown, Info, MapPin, Flag, X } from "lucide-react";
 import { ProtectedShell } from "../_components/ProtectedShell";
+import { UserAvatar } from "@/components/UserAvatar";
 import { DestiLogo } from "@/components/DestiLogo";
+import { useDestiProfile } from "@/hooks/use-desti-profile";
 import {
   buildOfferPayload,
   type OfferFieldErrors,
@@ -189,7 +190,7 @@ function DistanceCategoryField({
 }
 
 export default function PostRidePage() {
-  const { user, isLoaded: userLoaded } = useUser();
+  const { profilePictureUrl, displayName, isLoading: profileLoading } = useDestiProfile();
   const [formValues, setFormValues] = useState<PostRideFormValues>(initialFormValues);
   const [fieldErrors, setFieldErrors] = useState<PostRideFieldErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -935,20 +936,18 @@ export default function PostRidePage() {
                 <div className="flex flex-col items-stretch justify-between gap-4 border-t border-zinc-100 pt-5 md:flex-row md:items-center">
                   <div className="flex items-center gap-3">
                     <div className="flex -space-x-2">
-                      {userLoaded && user?.imageUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element -- Clerk avatars use dynamic hosts not in next/image allowlist
-                        <img
-                          src={user.imageUrl}
-                          alt=""
-                          className="h-10 w-10 rounded-full border-2 border-white object-cover"
+                      {!profileLoading ? (
+                        <UserAvatar
+                          src={profilePictureUrl}
+                          name={displayName}
+                          size="md"
+                          className="border-2 border-white"
                         />
                       ) : (
                         <div
-                          className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-white bg-emerald-100 text-xs font-bold text-[#0d3d2e]"
+                          className="h-10 w-10 shrink-0 animate-pulse rounded-full border-2 border-white bg-zinc-200"
                           aria-hidden
-                        >
-                          ?
-                        </div>
+                        />
                       )}
                       <div
                         className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-white bg-zinc-200 text-xs font-semibold text-zinc-600"
