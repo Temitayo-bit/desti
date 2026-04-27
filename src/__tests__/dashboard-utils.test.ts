@@ -89,11 +89,16 @@ describe("dashboard helpers", () => {
             priceCents: 1000,
             totalSeatsBooked: 3,
             originText: "A",
+            originLatitude: null,
+            originLongitude: null,
             destinationText: "B",
+            destinationLatitude: null,
+            destinationLongitude: null,
             startsAt: "2026-03-10T13:00:00.000Z",
             endsAt: "2026-03-10T15:00:00.000Z",
             distanceCategory: "SHORT" as const,
             driverName: null,
+            vehicleType: null,
         };
 
         expect(getSeatDisplayText(booking, "rider-9")).toBe("1 seat booked");

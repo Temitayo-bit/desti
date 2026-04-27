@@ -1,5 +1,9 @@
 export type DistanceCategory = "SHORT" | "MEDIUM" | "LONG";
 
+export type MusicPreference = "MUSIC_ALLOWED" | "NO_MUSIC";
+
+export type VehicleType = "SEDAN" | "SUV" | "TRUCK" | "VAN" | "COUPE" | "OTHER";
+
 export interface DashboardRideSummary {
   id: string;
   originText: string;
@@ -13,6 +17,10 @@ export interface DashboardRideSummary {
   seatsAvailable: number;
   status: "ACTIVE";
   driverName?: string | null;
+  hasAc?: boolean | null;
+  hasTrunkSpace?: boolean | null;
+  musicPreference?: MusicPreference | null;
+  vehicleType?: VehicleType | null;
 }
 
 export interface DashboardRideInBooking {
@@ -33,6 +41,7 @@ export interface DashboardRideInBooking {
   seatsAvailable: number;
   status: "ACTIVE";
   driverName?: string | null;
+  vehicleType?: VehicleType | null;
 }
 
 export interface DashboardTripRequestInBooking {
@@ -93,6 +102,9 @@ export interface DashboardOfferSummary {
     seatsNeeded: number;
     status: "ACTIVE" | "CLOSED" | "CANCELLED";
   };
+  driver: {
+    name: string | null;
+  } | null;
 }
 
 export interface DashboardResponse {
@@ -100,6 +112,7 @@ export interface DashboardResponse {
   summary: {
     activeRidesDrivingCount: number;
     confirmedBookingsCount: number;
+    passengerBookingsCount: number;
     pendingOffersSentCount: number;
     pendingOffersReceivedCount: number;
   };
@@ -131,6 +144,7 @@ export interface NormalizedDashboardBooking {
   distanceCategory: DistanceCategory;
   priceCents: number | null;
   driverName: string | null;
+  vehicleType: VehicleType | null;
 }
 
 export function normalizeDashboardBooking(
@@ -158,6 +172,7 @@ export function normalizeDashboardBooking(
       distanceCategory: booking.ride.distanceCategory,
       priceCents: booking.priceCents ?? booking.ride.priceCents,
       driverName: booking.ride.driverName ?? null,
+      vehicleType: booking.ride.vehicleType ?? null,
     };
   }
 
@@ -179,6 +194,7 @@ export function normalizeDashboardBooking(
     distanceCategory: booking.tripRequest.distanceCategory,
     priceCents: booking.priceCents,
     driverName: booking.tripRequest.driverName ?? null,
+    vehicleType: null,
   };
 }
 
