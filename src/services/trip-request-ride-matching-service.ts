@@ -20,12 +20,17 @@ const MS_PER_MINUTE = 60_000;
 const tripRequestSelect = {
     id: true,
     riderUserId: true,
+    status: true,
+    originText: true,
+    destinationText: true,
     originLatitude: true,
     originLongitude: true,
     destinationLatitude: true,
     destinationLongitude: true,
     earliestDesiredAt: true,
+    latestDesiredAt: true,
     preferredDepartAt: true,
+    seatsNeeded: true,
 } satisfies Prisma.TripRequestSelect;
 
 const rideSelect = {
@@ -58,6 +63,22 @@ export interface RideMatchCandidate {
     destinationText: string;
     departureTime: string;
     availableSeats: number;
+    originDistance: number;
+    destinationDistance: number;
+    timeDifference: number;
+    score: number;
+}
+
+/** Suggested trip request for a driver’s ride (same scoring rules as `findCandidateRidesForTripRequest`). */
+export interface TripRequestForRideMatch {
+    tripRequestId: string;
+    originText: string;
+    destinationText: string;
+    earliestDesiredAt: string;
+    latestDesiredAt: string;
+    preferredDepartAt: string | null;
+    seatsNeeded: number;
+    riderUserId: string;
     originDistance: number;
     destinationDistance: number;
     timeDifference: number;
@@ -186,6 +207,9 @@ function toRideMatchCandidate(
     tripRequest: TripRequestForMatching,
     now: Date
 ): RideMatchCandidate | null {
+    if (tripRequest.status !== "ACTIVE") {
+        return null;
+    }
     if (
         ride.status !== "ACTIVE" ||
         ride.seatsAvailable < 1 ||
@@ -333,4 +357,122 @@ export async function findCandidateRidesForTripRequest(
         .slice(0, MAX_MATCH_RESULTS);
 
     return matches;
+}
+
+function toTripRequestForRideMatch(
+    ride: RideForMatching,
+    tripRequest: TripRequestForMatching,
+    now: Date
+): TripRequestForRideMatch | null {
+    const c = toRideMatchCandidate(ride, tripRequest, now);
+    if (!c) {
+        return null;
+    }
+
+    return {
+        tripRequestId: tripRequest.id,
+        originText: tripRequest.originText,
+        destinationText: tripRequest.destinationText,
+        earliestDesiredAt: tripRequest.earliestDesiredAt.toISOString(),
+        latestDesiredAt: tripRequest.latestDesiredAt.toISOString(),
+        preferredDepartAt: tripRequest.preferredDepartAt
+            ? tripRequest.preferredDepartAt.toISOString()
+            : null,
+        seatsNeeded: tripRequest.seatsNeeded,
+        riderUserId: tripRequest.riderUserId,
+        originDistance: c.originDistance,
+        destinationDistance: c.destinationDistance,
+        timeDifference: c.timeDifference,
+        score: c.score,
+    };
+}
+
+/**
+ * Suggested active trip requests for a driver’s ride. Uses the same `toRideMatchCandidate`
+ * scoring as the trip-request → rides direction (not duplicated on the client).
+ */
+export async function findCandidateTripRequestsForRide(
+    rideId: string
+): Promise<TripRequestForRideMatch[]> {
+    const ride = await prisma.ride.findUnique({
+        where: { id: rideId },
+        select: rideSelect,
+    });
+
+    if (!ride) {
+        throw new TripRequestRideMatchingError("Ride not found.", {
+            statusCode: 404,
+            error: "Not Found",
+            code: "RIDE_NOT_FOUND",
+        });
+    }
+
+    if (
+        ride.originLatitude === null ||
+        ride.originLongitude === null ||
+        ride.destinationLatitude === null ||
+        ride.destinationLongitude === null
+    ) {
+        throw new TripRequestRideMatchingError(
+            "Ride is missing required coordinates for matching.",
+            {
+                statusCode: 400,
+                error: "Bad Request",
+                code: "RIDE_COORDINATES_REQUIRED",
+            }
+        );
+    }
+
+    const now = new Date();
+    const rideTime = getRideReferenceTime(ride);
+    if (rideTime.getTime() < now.getTime()) {
+        return [];
+    }
+
+    if (ride.status !== "ACTIVE" || ride.seatsAvailable < 1) {
+        return [];
+    }
+
+    const lowerBound = new Date(
+        rideTime.getTime() - TIME_WINDOW_MINUTES * MS_PER_MINUTE
+    );
+    const upperBound = new Date(
+        rideTime.getTime() + TIME_WINDOW_MINUTES * MS_PER_MINUTE
+    );
+    const effectiveLowerBound = new Date(
+        Math.max(lowerBound.getTime(), now.getTime())
+    );
+
+    const tripRequests = await prisma.tripRequest.findMany({
+        where: {
+            status: "ACTIVE",
+            seatsNeeded: { gte: 1 },
+            riderUserId: { not: ride.driverUserId },
+            originLatitude: { not: null },
+            originLongitude: { not: null },
+            destinationLatitude: { not: null },
+            destinationLongitude: { not: null },
+            earliestDesiredAt: { lte: upperBound },
+            latestDesiredAt: { gte: effectiveLowerBound },
+        },
+        orderBy: [{ earliestDesiredAt: "asc" }, { id: "asc" }],
+        take: MAX_RIDE_CANDIDATES,
+        select: tripRequestSelect,
+    });
+
+    return tripRequests
+        .map((tr) => toTripRequestForRideMatch(ride, tr, now))
+        .filter(
+            (candidate): candidate is TripRequestForRideMatch => candidate !== null
+        )
+        .sort((a, b) => {
+            if (a.score !== b.score) {
+                return a.score - b.score;
+            }
+            if (a.timeDifference !== b.timeDifference) {
+                return a.timeDifference - b.timeDifference;
+            }
+            return a.tripRequestId.localeCompare(b.tripRequestId);
+        })
+        .slice(0, MAX_MATCH_RESULTS);
 }

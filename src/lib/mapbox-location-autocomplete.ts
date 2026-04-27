@@ -23,9 +23,17 @@ interface MapboxGeocodingResponse {
 export const LOCATION_AUTOCOMPLETE_MIN_QUERY_LENGTH = 3;
 export const LOCATION_AUTOCOMPLETE_DEBOUNCE_MS = 300;
 
+/**
+ * Public Mapbox token for browser Geocoding API calls.
+ * In `.env` / `.env.local` it must be available to the **client** bundle, so use a
+ * `NEXT_PUBLIC_…` name (e.g. `NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN=pk.…`). A plain
+ * `MAPBOX_…` secret is not visible to this module in the browser.
+ */
 export function getMapboxPublicAccessToken(): string | null {
-  const token = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN?.trim();
-  return token ? token : null;
+  const token =
+    process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN?.trim() ||
+    process.env.NEXT_PUBLIC_MAPBOX_TOKEN?.trim();
+  return token || null;
 }
 
 export function isMapboxAutocompleteEnabled(): boolean {

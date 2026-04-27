@@ -36,7 +36,6 @@ function validFormValues(
     latestDesiredAt: "2030-01-01T12:00",
     preferredDepartAt: "",
     seatsNeeded: "3",
-    distanceCategory: "MEDIUM",
     pickupInstructions: "",
     dropoffInstructions: "",
     ...overrides,
@@ -67,7 +66,6 @@ describe("post-trip-request form helpers", () => {
         earliestDesiredAt: "2030-01-01T08:30",
         latestDesiredAt: "2030-01-01T08:15",
         seatsNeeded: "9",
-        distanceCategory: "",
       }),
       now,
     );
