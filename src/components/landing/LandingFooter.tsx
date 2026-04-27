@@ -1,4 +1,6 @@
 import { Globe, User } from "lucide-react";
+import Link from "next/link";
+import { DestiLogo } from "@/components/DestiLogo";
 
 const footerLinkClass =
     "text-sm text-zinc-600 transition-colors hover:text-zinc-900 md:text-base";
@@ -8,9 +10,11 @@ export function LandingFooter() {
         <footer className="border-t border-zinc-200 bg-[#f8f8f6]">
             <div className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-10 md:flex-row md:items-center md:justify-between md:px-6 lg:max-w-7xl lg:px-8 lg:py-12">
                 <div>
-                    <p className="text-lg font-bold tracking-tight text-zinc-950">Destination</p>
+                    <Link href="/" className="inline-flex">
+                        <DestiLogo size="lg" />
+                    </Link>
                     <p className="mt-2 text-sm text-zinc-500 md:mt-3">
-                        © {new Date().getFullYear()} Destination · Stetson University. All rights reserved.
+                        © {new Date().getFullYear()} Desti · Stetson University. All rights reserved.
                     </p>
                 </div>
 
