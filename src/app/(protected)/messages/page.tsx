@@ -15,7 +15,7 @@ import {
     isTomorrow,
     isYesterday,
 } from "date-fns";
-import { ArrowLeft, SendHorizontal } from "lucide-react";
+import { ArrowLeft, Loader2, MessageSquare, SendHorizontal } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { ProtectedShell } from "../_components/ProtectedShell";
 import {
@@ -104,6 +104,18 @@ function formatMessageTime(value: string): string {
     return format(parsed, "h:mm a");
 }
 
+function formatDateDivider(value: string): string {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return "";
+    if (isToday(parsed)) return "Today";
+    if (isYesterday(parsed)) return "Yesterday";
+    return format(parsed, "EEEE, MMM d");
+}
+
+function getInitial(name: string): string {
+    return name.trim().charAt(0).toUpperCase() || "?";
+}
+
 function formatRelativeTripDate(value: string | null): string | null {
     if (!value) return null;
     const parsed = new Date(value);
@@ -164,6 +176,7 @@ export default function MessagesPage() {
     const messagesRef = useRef<ConversationMessageItem[]>([]);
     const threadRequestIdRef = useRef(0);
     const selectedConversationIdRef = useRef<string | null>(null);
+    const threadEndRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         messagesRef.current = messages;
@@ -171,6 +184,10 @@ export default function MessagesPage() {
     useEffect(() => {
         selectedConversationIdRef.current = selectedConversationId;
     }, [selectedConversationId]);
+
+    useEffect(() => {
+        threadEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, [messages]);
 
     const selectedConversation = useMemo(
         () =>
@@ -562,15 +579,26 @@ export default function MessagesPage() {
                         >
                             <div className="border-b border-zinc-100 px-4 py-4">
                                 <h2 className="text-lg font-semibold tracking-tight text-zinc-900">
-                                    All Conversations
+                                    Conversations
                                 </h2>
+                                <p className="mt-1 flex items-center gap-1.5 text-[11px] text-zinc-400">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                                    Only verified students. Never share passwords or bank info.
+                                </p>
                             </div>
 
                             <div className="min-h-0 flex-1 overflow-y-auto">
                                 {loadingConversations ? (
                                     <div className="space-y-3 p-4">
-                                        <div className="h-20 animate-pulse rounded-xl bg-zinc-100" />
-                                        <div className="h-20 animate-pulse rounded-xl bg-zinc-100" />
+                                        {[1,2,3].map(i => (
+                                            <div key={i} className="flex items-center gap-3">
+                                                <div className="h-10 w-10 shrink-0 animate-pulse rounded-full bg-zinc-100" />
+                                                <div className="flex-1 space-y-2">
+                                                    <div className="h-4 w-24 animate-pulse rounded bg-zinc-100" />
+                                                    <div className="h-3 w-36 animate-pulse rounded bg-zinc-100" />
+                                                </div>
+                                            </div>
+                                        ))}
                                     </div>
                                 ) : conversationsError ? (
                                     <div className="p-4">
@@ -586,8 +614,12 @@ export default function MessagesPage() {
                                         </button>
                                     </div>
                                 ) : conversations.length === 0 ? (
-                                    <div className="p-4 text-sm text-zinc-500">
-                                        No conversations yet.
+                                    <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
+                                        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-100">
+                                            <MessageSquare size={20} className="text-zinc-400" />
+                                        </div>
+                                        <p className="text-sm font-medium text-zinc-500">No conversations yet</p>
+                                        <p className="text-xs text-zinc-400">Messages from rides and offers will appear here.</p>
                                     </div>
                                 ) : (
                                     <ul className="p-2">
@@ -599,6 +631,7 @@ export default function MessagesPage() {
                                                 conversation.tripDestinationText,
                                                 conversation.tripStartsAt
                                             );
+                                            const initial = getInitial(conversation.counterpartDisplayName);
                                             return (
                                                 <li key={conversation.id}>
                                                     <button
@@ -614,36 +647,38 @@ export default function MessagesPage() {
                                                                 : "border-transparent hover:bg-zinc-50"
                                                         }`}
                                                     >
-                                                        <div className="flex items-start justify-between gap-3">
-                                                            <div className="min-w-0">
-                                                                <p className="truncate font-semibold text-zinc-900">
-                                                                    {
-                                                                        conversation.counterpartDisplayName
-                                                                    }
-                                                                </p>
-                                                                {tripContext ? (
-                                                                    <p className="mt-0.5 truncate text-sm text-zinc-500">
-                                                                        {tripContext}
-                                                                    </p>
-                                                                ) : null}
+                                                        <div className="flex items-start gap-3">
+                                                            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
+                                                                isActive ? "bg-emerald-200 text-emerald-800" : "bg-zinc-100 text-zinc-600"
+                                                            }`}>
+                                                                {initial}
                                                             </div>
-                                                            <span className="shrink-0 text-xs text-zinc-400">
-                                                                {formatUpdatedAt(
-                                                                    conversation.updatedAt
-                                                                )}
-                                                            </span>
+                                                            <div className="min-w-0 flex-1">
+                                                                <div className="flex items-center justify-between gap-2">
+                                                                    <p className="truncate text-sm font-semibold text-zinc-900">
+                                                                        {conversation.counterpartDisplayName}
+                                                                    </p>
+                                                                    <span className="shrink-0 text-[11px] text-zinc-400">
+                                                                        {formatUpdatedAt(conversation.updatedAt)}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="mt-0.5 flex items-center gap-1.5">
+                                                                    <span className={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                                                                        conversation.type === "BOOKING"
+                                                                            ? "bg-emerald-100 text-emerald-700"
+                                                                            : "bg-amber-100 text-amber-700"
+                                                                    }`}>
+                                                                        {conversation.type === "BOOKING" ? "Trip" : "Offer"}
+                                                                    </span>
+                                                                    {tripContext && (
+                                                                        <span className="truncate text-[11px] text-zinc-400">{tripContext}</span>
+                                                                    )}
+                                                                </div>
+                                                                <p className="mt-1 truncate text-sm text-zinc-500">
+                                                                    {conversation.latestMessage?.body ?? "No messages yet."}
+                                                                </p>
+                                                            </div>
                                                         </div>
-
-                                                        <p
-                                                            className={`truncate text-sm text-zinc-600 ${
-                                                                tripContext
-                                                                    ? "mt-1.5"
-                                                                    : "mt-2"
-                                                            }`}
-                                                        >
-                                                            {conversation.latestMessage?.body ??
-                                                                "No messages yet."}
-                                                        </p>
                                                     </button>
                                                 </li>
                                             );
@@ -659,12 +694,18 @@ export default function MessagesPage() {
                             } min-h-0 flex-1 flex-col md:flex`}
                         >
                             {!selectedConversation ? (
-                                <div className="flex h-full items-center justify-center p-6 text-sm text-zinc-500">
-                                    Select a conversation to view messages.
+                                <div className="flex h-full flex-col items-center justify-center gap-4 p-6">
+                                    <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-zinc-100">
+                                        <MessageSquare size={28} className="text-zinc-300" />
+                                    </div>
+                                    <div className="text-center">
+                                        <p className="text-sm font-medium text-zinc-500">Select a conversation</p>
+                                        <p className="mt-1 text-xs text-zinc-400">Pick one from the sidebar to start chatting.</p>
+                                    </div>
                                 </div>
                             ) : (
                                 <>
-                                    <header className="flex items-center gap-3 border-b border-zinc-100 px-4 py-4">
+                                    <header className="flex items-center gap-3 border-b border-zinc-100 px-4 py-3">
                                         <button
                                             type="button"
                                             onClick={() => setMobileView("list")}
@@ -674,17 +715,28 @@ export default function MessagesPage() {
                                             <ArrowLeft size={18} />
                                         </button>
 
-                                        <div className="min-w-0">
-                                            <p className="truncate font-semibold text-zinc-900">
-                                                {
-                                                    selectedConversation.counterpartDisplayName
-                                                }
-                                            </p>
-                                            {selectedTripContext ? (
-                                                <p className="truncate text-sm text-zinc-500">
+                                        <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold bg-emerald-100 text-emerald-700`}>
+                                            {getInitial(selectedConversation.counterpartDisplayName)}
+                                        </div>
+
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex items-center gap-2">
+                                                <p className="truncate text-sm font-semibold text-zinc-900">
+                                                    {selectedConversation.counterpartDisplayName}
+                                                </p>
+                                                <span className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                                                    selectedConversation.type === "BOOKING"
+                                                        ? "bg-emerald-100 text-emerald-700"
+                                                        : "bg-amber-100 text-amber-700"
+                                                }`}>
+                                                    {selectedConversation.type === "BOOKING" ? "Active Trip" : "Offer"}
+                                                </span>
+                                            </div>
+                                            {selectedTripContext && (
+                                                <p className="truncate text-xs text-zinc-400">
                                                     {selectedTripContext}
                                                 </p>
-                                            ) : null}
+                                            )}
                                         </div>
                                     </header>
 
@@ -693,6 +745,7 @@ export default function MessagesPage() {
                                             <div className="space-y-3">
                                                 <div className="h-10 w-44 animate-pulse rounded-2xl bg-zinc-200" />
                                                 <div className="ml-auto h-10 w-52 animate-pulse rounded-2xl bg-zinc-200" />
+                                                <div className="h-10 w-36 animate-pulse rounded-2xl bg-zinc-200" />
                                             </div>
                                         ) : threadError ? (
                                             <div className="space-y-3">
@@ -713,50 +766,64 @@ export default function MessagesPage() {
                                                 </button>
                                             </div>
                                         ) : messages.length === 0 ? (
-                                            <p className="text-sm text-zinc-500">
-                                                No messages yet. Send the first message.
-                                            </p>
+                                            <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
+                                                <p className="text-sm font-medium text-zinc-500">No messages yet</p>
+                                                <p className="text-xs text-zinc-400">Send the first message to start the conversation.</p>
+                                            </div>
                                         ) : (
                                             <ul className="space-y-3">
-                                                {messages.map((message) => {
+                                                {messages.map((message, idx) => {
                                                     const isCurrentUserMessage =
                                                         message.senderUserId ===
                                                         currentUserId;
 
+                                                    const currentDate = formatDateDivider(message.createdAt);
+                                                    const prevDate = idx > 0 ? formatDateDivider(messages[idx - 1].createdAt) : null;
+                                                    const showDivider = currentDate && currentDate !== prevDate;
+
                                                     return (
-                                                        <li
-                                                            key={message.id}
-                                                            className={`flex ${
-                                                                isCurrentUserMessage
-                                                                    ? "justify-end"
-                                                                    : "justify-start"
-                                                            }`}
-                                                        >
+                                                        <li key={message.id}>
+                                                            {showDivider && (
+                                                                <div className="mb-3 flex items-center gap-3 py-1">
+                                                                    <div className="h-px flex-1 bg-zinc-200" />
+                                                                    <span className="text-[11px] font-medium text-zinc-400">{currentDate}</span>
+                                                                    <div className="h-px flex-1 bg-zinc-200" />
+                                                                </div>
+                                                            )}
                                                             <div
-                                                                className={`max-w-[85%] rounded-2xl px-4 py-2 shadow-sm ${
+                                                                className={`flex ${
                                                                     isCurrentUserMessage
-                                                                        ? "bg-emerald-700 text-white"
-                                                                        : "bg-white text-zinc-900"
+                                                                        ? "justify-end"
+                                                                        : "justify-start"
                                                                 }`}
                                                             >
-                                                                <p className="text-sm">
-                                                                    {message.body}
-                                                                </p>
-                                                                <p
-                                                                    className={`mt-1 text-xs ${
+                                                                <div
+                                                                    className={`max-w-[80%] rounded-2xl px-4 py-2.5 shadow-sm ${
                                                                         isCurrentUserMessage
-                                                                            ? "text-emerald-100"
-                                                                            : "text-zinc-400"
+                                                                            ? "bg-emerald-700 text-white"
+                                                                            : "bg-white text-zinc-900"
                                                                     }`}
                                                                 >
-                                                                    {formatMessageTime(
-                                                                        message.createdAt
-                                                                    )}
-                                                                </p>
+                                                                    <p className="text-sm leading-relaxed">
+                                                                        {message.body}
+                                                                    </p>
+                                                                    <p
+                                                                        className={`mt-1 text-[11px] ${
+                                                                            isCurrentUserMessage
+                                                                                ? "text-emerald-200"
+                                                                                : "text-zinc-400"
+                                                                        }`}
+                                                                    >
+                                                                        {formatMessageTime(
+                                                                            message.createdAt
+                                                                        )}
+                                                                    </p>
+                                                                </div>
                                                             </div>
                                                         </li>
                                                     );
                                                 })}
+                                                <div ref={threadEndRef} />
                                             </ul>
                                         )}
                                     </div>
@@ -786,12 +853,17 @@ export default function MessagesPage() {
                                                     type="submit"
                                                     disabled={
                                                         sendingMessage ||
+                                                        !composerText.trim() ||
                                                         !selectedConversationId
                                                     }
                                                     className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-700 text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
                                                     aria-label="Send message"
                                                 >
-                                                    <SendHorizontal size={18} />
+                                                    {sendingMessage ? (
+                                                        <Loader2 size={18} className="animate-spin" />
+                                                    ) : (
+                                                        <SendHorizontal size={18} />
+                                                    )}
                                                 </button>
                                             </div>
 
@@ -807,10 +879,6 @@ export default function MessagesPage() {
                                                 ) : null}
                                             </div>
                                         </form>
-                                        <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-center text-xs text-blue-700">
-                                            Keep conversations respectful and related to your
-                                            ride. Report any inappropriate behavior.
-                                        </div>
                                     </footer>
                                 </>
                             )}

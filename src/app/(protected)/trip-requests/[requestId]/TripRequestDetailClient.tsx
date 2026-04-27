@@ -187,9 +187,6 @@ export function TripRequestDetailClient({ tripRequest, currentUserClerkId }: Tri
   return (
     <ProtectedShell
       activeNav="browseTripRequests"
-      layout="topnav"
-      topNavActive="requests"
-      topNavPrimaryAction={{ label: "Create Trip Request", href: "/post-trip-request" }}
     >
       <div className="max-w-5xl mx-auto px-4 py-8 md:px-8">
         <div className="mb-6 flex items-center justify-between">

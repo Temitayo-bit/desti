@@ -495,7 +495,7 @@ export default function DashboardPage() {
     : "Welcome back";
 
   return (
-    <ProtectedShell activeNav="dashboard" layout="topnav" topNavActive="dashboard">
+    <ProtectedShell activeNav="dashboard">
       <div className="space-y-8">
         {loading ? (
           <div className="space-y-6">
@@ -978,9 +978,9 @@ export default function DashboardPage() {
             <footer className="mt-10 border-t border-zinc-200 pt-8 text-sm text-zinc-500">
               <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <p className={`text-base font-bold ${MOSS_CLASS}`}>Destination Stetson</p>
+                  <p className={`text-base font-bold ${MOSS_CLASS}`}>Desti</p>
                   <p className="mt-0.5">
-                    © {new Date().getFullYear()} Destination Stetson University. All rights reserved.
+                    © {new Date().getFullYear()} Desti · Stetson University. All rights reserved.
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-4">

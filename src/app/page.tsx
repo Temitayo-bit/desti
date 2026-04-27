@@ -62,7 +62,7 @@ const howItWorksSteps = [
 const testimonials = [
     {
         quote:
-            "Destination changed my weekend trips home. I feel safe knowing I'm with other students and I save so much on gas money!",
+            "Desti changed my weekend trips home. I feel safe knowing I'm with other students and I save so much on gas money!",
         name: "Jalen Jenkins",
         role: "Stetson '26 • Political Science",
         avatar: "J",
@@ -136,7 +136,7 @@ export default async function HomePage({
             <header className="landing-header">
                 <div className="landing-header__inner">
                     <Link href="/" className="landing-logo">
-                        <span className="landing-logo__text">Destination</span>
+                        <span className="landing-logo__text">Desti</span>
                     </Link>
 
                     <nav className="landing-nav">
@@ -355,7 +355,7 @@ export default async function HomePage({
                 <div className="landing-footer__inner">
                     <div className="landing-footer__top">
                         <Link href="/" className="landing-logo landing-logo--footer">
-                            <span className="landing-logo__text">Destination</span>
+                            <span className="landing-logo__text">Desti</span>
                         </Link>
 
                         <nav className="landing-footer__links">
@@ -372,7 +372,7 @@ export default async function HomePage({
                     </div>
 
                     <div className="landing-footer__bottom">
-                        <p>© 2026 Destination Stetson University. All rights reserved.</p>
+                        <p>© 2026 Desti · Stetson University. All rights reserved.</p>
                     </div>
                 </div>
             </footer>

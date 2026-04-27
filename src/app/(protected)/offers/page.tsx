@@ -258,8 +258,6 @@ export default function OffersPage() {
   return (
     <ProtectedShell
       activeNav="dashboard"
-      layout="topnav"
-      topNavActive="dashboard"
     >
       <section className="space-y-6 md:space-y-8">
         <Link

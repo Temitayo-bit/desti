@@ -72,8 +72,6 @@ export default async function ProfilePage() {
     return (
         <ProtectedShell
             activeNav="profile"
-            layout="topnav"
-            topNavActive="profile"
         >
             <div className="grid gap-5 lg:grid-cols-[300px_1fr] lg:items-start">
 
