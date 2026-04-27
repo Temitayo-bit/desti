@@ -31,6 +31,11 @@ import {
   buildPostRidePayload,
   canSubmitPostRide,
 } from "@/lib/post-ride-form";
+import {
+  dedupeApiMatchesByMatchId,
+  filterSuggestedApiItems,
+} from "@/lib/match-lifecycle-partition";
+import { MatchLifecycleBadge } from "@/components/MatchLifecycleBadge";
 
 interface ApiValidationDetail {
   field?: string;
@@ -122,6 +127,8 @@ const initialOfferForm: OfferFormValues = {
 interface SuggestedTripRequestMatch {
   matchId: string;
   tripRequestId: string;
+  /** Present on API payloads; omitted treated as suggested. */
+  state?: string;
   scoreSnapshot: number;
   originText: string;
   destinationText: string;
@@ -227,9 +234,10 @@ export default function PostRidePage() {
           throw new Error("Failed to load suggested trip requests");
         }
         const data: unknown = await response.json();
-        const items = Array.isArray((data as { items?: unknown }).items)
+        const raw = Array.isArray((data as { items?: unknown }).items)
           ? (data as { items: SuggestedTripRequestMatch[] }).items
           : [];
+        const items = dedupeApiMatchesByMatchId(filterSuggestedApiItems(raw));
         if (!cancelled) {
           setSuggestedMatches(items);
           setSuggestedLoad("ok");
@@ -412,7 +420,11 @@ export default function PostRidePage() {
 
       if (response.ok) {
         setSuggestedMatches((prev) =>
-          prev.filter((x) => x.tripRequestId !== tripRequestId),
+          dedupeApiMatchesByMatchId(
+            filterSuggestedApiItems(
+              prev.filter((x) => x.tripRequestId !== tripRequestId),
+            ),
+          ),
         );
         closeSendOffer();
         return;
@@ -546,7 +558,7 @@ export default function PostRidePage() {
                     ) : null}
                     {suggestedLoad === "ok" && suggestedMatches.length === 0 ? (
                       <p className="text-sm text-zinc-600">
-                        No suggestions yet.{" "}
+                        No suggested matches yet.{" "}
                         <Link
                           href="/browse-trip-requests"
                           className="font-semibold text-[#0d3d2e] underline decoration-zinc-300 underline-offset-2 hover:decoration-[#0d3d2e]"
@@ -568,11 +580,12 @@ export default function PostRidePage() {
                               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between lg:gap-6">
                                 <div className="min-w-0 flex-1 space-y-3 text-left">
                                   <div className="flex flex-wrap items-center gap-2">
+                                    <MatchLifecycleBadge state="SUGGESTED" />
                                     <span
-                                      className="inline-flex items-center rounded-full bg-emerald-100/90 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-900 ring-1 ring-emerald-200/80"
+                                      className="text-[11px] font-medium text-zinc-500"
                                       title="Lower scores indicate a stronger match"
                                     >
-                                      Match {m.scoreSnapshot.toFixed(3)}
+                                      Score {m.scoreSnapshot.toFixed(3)}
                                     </span>
                                   </div>
                                   <div className="space-y-2.5">
@@ -624,7 +637,7 @@ export default function PostRidePage() {
                                 </div>
                                 <div className="flex w-full shrink-0 flex-col gap-2 sm:max-w-[11rem] lg:w-44">
                                   <Link
-                                    href="/browse-trip-requests"
+                                    href={`/trip-requests/${encodeURIComponent(m.tripRequestId)}`}
                                     className="inline-flex h-10 w-full items-center justify-center rounded-lg border border-zinc-200 bg-white text-sm font-semibold text-zinc-800 shadow-sm transition hover:border-zinc-300 hover:bg-zinc-50"
                                     title={routeTitle}
                                   >

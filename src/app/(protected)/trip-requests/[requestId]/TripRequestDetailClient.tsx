@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { format } from "date-fns";
 import { useRouter } from "next/navigation";
 import { User, Calendar, Check, X } from "lucide-react";
 import { ProtectedShell } from "../../_components/ProtectedShell";
 import { StaticRouteMap } from "@/components/StaticRouteMap";
 import { UserAvatar } from "@/components/UserAvatar";
+import { MatchLifecycleBadge } from "@/components/MatchLifecycleBadge";
+import { partitionPrismaMatches } from "@/lib/match-lifecycle-partition";
 
 interface TripRequestDetailClientProps {
   tripRequest: any;
@@ -47,6 +49,12 @@ export function TripRequestDetailClient({ tripRequest, currentUserClerkId }: Tri
   const hasConfirmedBooking =
     tripRequest.bookings &&
     tripRequest.bookings.some((b: any) => b.status === "CONFIRMED" || b.status === "COMPLETED");
+
+  const { suggested: suggestedMatches, accepted: acceptedMatches, expired: expiredMatches } =
+    useMemo(
+      () => partitionPrismaMatches(tripRequest.matches ?? []),
+      [tripRequest.matches],
+    );
 
   const handleSendOffer = async () => {
     const priceCents = Math.round(Number(offerData.priceDollars) * 100);
@@ -442,26 +450,129 @@ export function TripRequestDetailClient({ tripRequest, currentUserClerkId }: Tri
 
                 <div
                   id="matching-rides"
-                  className="bg-white rounded-3xl p-6 shadow-sm border border-zinc-100 scroll-mt-24"
+                  className="bg-white rounded-3xl p-6 shadow-sm border border-zinc-100 scroll-mt-24 space-y-6"
                 >
-                  <h3 className="font-bold text-zinc-900 mb-4">Matches Found</h3>
-                  {tripRequest.matches?.length > 0 ? (
-                    <div className="space-y-4">
-                      {tripRequest.matches.map((match: any) => (
-                        <div key={match.id} className="border border-zinc-100 rounded-xl p-4 bg-zinc-50">
-                          <p className="font-medium text-sm text-zinc-900 mb-1">Match with {match.ride?.driver?.name}</p>
-                          <p className="text-xs text-zinc-500">From: {match.ride?.originText}</p>
-                          <p className="text-xs text-zinc-500">To: {match.ride?.destinationText}</p>
-                          <p className="text-xs font-semibold text-amber-700 mt-1">Score: {Math.round(match.scoreSnapshot * 100)}%</p>
-                          <div className="flex gap-2 mt-3">
-                            <button className="w-full bg-amber-600 text-white text-xs font-bold py-2 rounded-lg" onClick={() => router.push(`/rides/${match.rideId}`)}>View Ride</button>
+                  <div>
+                    <h3 className="font-bold text-zinc-900 mb-1">Suggested rides</h3>
+                    <p className="text-xs text-zinc-500 mb-4">
+                      Dismissed or expired suggestions stay out of this list. Open a ride to
+                      request a seat or work through offers—there is no separate “confirm match”
+                      step here.
+                    </p>
+                    {suggestedMatches.length > 0 ? (
+                      <div className="space-y-4">
+                        {suggestedMatches.map((match: any) => (
+                          <div
+                            key={match.id}
+                            className="border border-zinc-100 rounded-xl p-4 bg-zinc-50"
+                          >
+                            <div className="flex flex-wrap items-center gap-2 mb-2">
+                              <MatchLifecycleBadge state="SUGGESTED" />
+                            </div>
+                            <p className="font-medium text-sm text-zinc-900 mb-1">
+                              {match.ride?.driver?.name
+                                ? `Match with ${match.ride.driver.name}`
+                                : "Ride match"}
+                            </p>
+                            <p className="text-xs text-zinc-500">From: {match.ride?.originText}</p>
+                            <p className="text-xs text-zinc-500">To: {match.ride?.destinationText}</p>
+                            <p className="text-xs font-semibold text-amber-700 mt-1">
+                              Score: {Math.round(match.scoreSnapshot * 100)}%
+                            </p>
+                            <div className="flex gap-2 mt-3">
+                              <button
+                                type="button"
+                                className="w-full bg-amber-600 text-white text-xs font-bold py-2 rounded-lg"
+                                onClick={() => router.push(`/rides/${match.rideId}`)}
+                              >
+                                View ride
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-zinc-500">No suggested matches yet.</p>
+                    )}
+                  </div>
+
+                  {acceptedMatches.length > 0 ? (
+                    <div>
+                      <h4 className="text-sm font-bold text-zinc-800 mb-3">Accepted match</h4>
+                      <p className="text-xs text-zinc-500 mb-3">
+                        You confirmed this ride as a match. Continue with offers or your booking—this
+                        is no longer a pending suggestion.
+                      </p>
+                      <div className="space-y-4">
+                        {acceptedMatches.map((match: any) => {
+                          const bookingForRide = tripRequest.bookings?.find(
+                            (b: any) => b.rideId === match.rideId,
+                          );
+                          return (
+                            <div
+                              key={match.id}
+                              className="border border-emerald-100 rounded-xl p-4 bg-emerald-50/40"
+                            >
+                              <div className="flex flex-wrap items-center gap-2 mb-2">
+                                <MatchLifecycleBadge state="ACCEPTED" />
+                              </div>
+                              <p className="font-medium text-sm text-zinc-900 mb-1">
+                                {match.ride?.driver?.name ?? "Driver"}
+                              </p>
+                              <p className="text-xs text-zinc-500">From: {match.ride?.originText}</p>
+                              <p className="text-xs text-zinc-500">To: {match.ride?.destinationText}</p>
+                              <div className="flex flex-col gap-2 mt-3 sm:flex-row">
+                                <button
+                                  type="button"
+                                  className="w-full bg-amber-600 text-white text-xs font-bold py-2 rounded-lg sm:flex-1"
+                                  onClick={() => router.push(`/rides/${match.rideId}`)}
+                                >
+                                  View ride
+                                </button>
+                                {bookingForRide ? (
+                                  <button
+                                    type="button"
+                                    className="w-full bg-[#006837] text-white text-xs font-bold py-2 rounded-lg sm:flex-1"
+                                    onClick={() =>
+                                      router.push(`/confirmed/${bookingForRide.id}`)
+                                    }
+                                  >
+                                    View booking
+                                  </button>
+                                ) : null}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                  ) : (
-                    <p className="text-sm text-zinc-500">No matches found yet.</p>
-                  )}
+                  ) : null}
+
+                  {expiredMatches.length > 0 ? (
+                    <div>
+                      <h4 className="text-sm font-bold text-zinc-800 mb-3">Expired suggestions</h4>
+                      <div className="space-y-4 opacity-90">
+                        {expiredMatches.map((match: any) => (
+                          <div
+                            key={match.id}
+                            className="border border-amber-100 rounded-xl p-4 bg-amber-50/30"
+                          >
+                            <div className="flex flex-wrap items-center gap-2 mb-2">
+                              <MatchLifecycleBadge state="EXPIRED" />
+                            </div>
+                            <p className="font-medium text-sm text-zinc-900 mb-1">
+                              {match.ride?.driver?.name ?? "Driver"}
+                            </p>
+                            <p className="text-xs text-zinc-500">From: {match.ride?.originText}</p>
+                            <p className="text-xs text-zinc-500">To: {match.ride?.destinationText}</p>
+                            <p className="text-xs text-zinc-600 mt-2">
+                              This suggestion is no longer active.
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             )}

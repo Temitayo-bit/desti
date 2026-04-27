@@ -1,6 +1,5 @@
 "use client";
 
-import { useUser } from "@clerk/nextjs";
 import { format, parseISO } from "date-fns";
 import Link from "next/link";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
@@ -36,6 +35,11 @@ import {
   buildPostTripRequestPayload,
   canSubmitPostTripRequest,
 } from "@/lib/post-trip-request-form";
+import {
+  dedupeApiMatchesByMatchId,
+  filterSuggestedApiItems,
+} from "@/lib/match-lifecycle-partition";
+import { MatchLifecycleBadge } from "@/components/MatchLifecycleBadge";
 
 interface ApiValidationDetail {
   field?: string;
@@ -177,7 +181,6 @@ function DistanceCategoryField({
 }
 
 export default function PostTripRequestPage() {
-  const { user, isLoaded: userLoaded } = useUser();
   const [formValues, setFormValues] = useState<PostTripRequestFormValues>(initialFormValues);
   const [fieldErrors, setFieldErrors] = useState<PostTripRequestFieldErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -209,9 +212,10 @@ export default function PostTripRequestPage() {
           throw new Error("Failed to load suggested rides");
         }
         const data: unknown = await response.json();
-        const items = Array.isArray((data as { items?: unknown }).items)
+        const raw = Array.isArray((data as { items?: unknown }).items)
           ? (data as { items: ActiveTripRequestMatch[] }).items
           : [];
+        const items = dedupeApiMatchesByMatchId(filterSuggestedApiItems(raw));
         if (!cancelled) {
           setSuggestedMatches(items);
           setSuggestedLoad("ok");
@@ -449,7 +453,7 @@ export default function PostTripRequestPage() {
                     ) : null}
                     {suggestedLoad === "ok" && suggestedMatches.length === 0 ? (
                       <p className="text-sm text-zinc-600">
-                        No suggestions yet.{" "}
+                        No suggested matches yet.{" "}
                         <Link
                           href="/browse"
                           className="font-semibold text-[#0d3d2e] underline decoration-zinc-300 underline-offset-2 hover:decoration-[#0d3d2e]"
@@ -471,11 +475,12 @@ export default function PostTripRequestPage() {
                               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between lg:gap-6">
                                 <div className="min-w-0 flex-1 space-y-3 text-left">
                                   <div className="flex flex-wrap items-center gap-2">
+                                    <MatchLifecycleBadge state="SUGGESTED" />
                                     <span
-                                      className="inline-flex items-center rounded-full bg-emerald-100/90 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-900 ring-1 ring-emerald-200/80"
+                                      className="text-[11px] font-medium text-zinc-500"
                                       title="Lower scores indicate a stronger match"
                                     >
-                                      Match {m.scoreSnapshot.toFixed(3)}
+                                      Score {m.scoreSnapshot.toFixed(3)}
                                     </span>
                                   </div>
                                   <div className="space-y-2.5">
@@ -517,10 +522,11 @@ export default function PostTripRequestPage() {
                                 </div>
                                 <div className="flex w-full shrink-0 flex-col gap-2 sm:max-w-[11rem] lg:w-44">
                                   <Link
-                                    href={`/browse?rideId=${m.rideId}`}
+                                    href={`/rides/${encodeURIComponent(m.rideId)}`}
                                     className="inline-flex h-10 w-full items-center justify-center rounded-xl bg-[#0d3d2e] text-sm font-semibold text-white shadow-sm transition hover:bg-[#0a3026]"
+                                    title={routeTitle}
                                   >
-                                    View Ride
+                                    View ride
                                   </Link>
                                 </div>
                               </div>
