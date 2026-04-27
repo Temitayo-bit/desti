@@ -10,6 +10,7 @@ interface ProfilePictureUploadProps {
 export function ProfilePictureUpload({ currentUrl }: ProfilePictureUploadProps) {
     const inputRef = useRef<HTMLInputElement>(null);
     const [uploading, setUploading] = useState(false);
+    const [uploadError, setUploadError] = useState<string | null>(null);
     const router = useRouter();
 
     async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -21,6 +22,7 @@ export function ProfilePictureUpload({ currentUrl }: ProfilePictureUploadProps) 
 
         try {
             setUploading(true);
+            setUploadError(null);
             const res = await fetch("/api/user/profile-picture", {
                 method: "POST",
                 body: formData,
@@ -28,13 +30,14 @@ export function ProfilePictureUpload({ currentUrl }: ProfilePictureUploadProps) 
 
             if (!res.ok) {
                 const data = await res.json().catch(() => null);
-                alert(data?.message ?? "Failed to upload photo.");
+                setUploadError(data?.message ?? "Failed to upload photo.");
                 return;
             }
 
+            setUploadError(null);
             router.refresh();
         } catch {
-            alert("An error occurred while uploading your photo.");
+            setUploadError("An error occurred while uploading your photo.");
         } finally {
             setUploading(false);
             if (inputRef.current) inputRef.current.value = "";
@@ -62,6 +65,14 @@ export function ProfilePictureUpload({ currentUrl }: ProfilePictureUploadProps) 
                       ? "Change photo"
                       : "Upload photo"}
             </button>
+            {uploadError ? (
+                <div
+                    role="alert"
+                    className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-left text-sm text-red-700"
+                >
+                    {uploadError}
+                </div>
+            ) : null}
         </div>
     );
 }
