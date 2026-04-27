@@ -17,7 +17,10 @@ let inflight: Promise<DestiProfileState> | null = null;
 async function fetchDestiProfile(): Promise<DestiProfileState> {
   const res = await fetch("/api/me");
   if (!res.ok) {
-    return { profilePictureUrl: null, displayName: null };
+    const body = await res.text().catch(() => "");
+    throw new Error(
+      `GET /api/me failed: ${res.status} ${res.statusText}${body ? ` — ${body.slice(0, 200)}` : ""}`
+    );
   }
   const data = (await res.json()) as {
     localUser?: { profilePictureUrl?: string | null; name?: string | null };
@@ -31,7 +34,8 @@ async function fetchDestiProfile(): Promise<DestiProfileState> {
 
 /**
  * Single-flight load: shares one in-flight request. Only writes `memoryCache` when the
- * fetch’s start generation still matches `cacheGeneration` (not invalidated mid-flight).
+ * fetch succeeds and the fetch’s start generation still matches `cacheGeneration` (not invalidated mid-flight).
+ * Failed HTTP / thrown errors do not update `memoryCache`.
  * Clears `inflight` in `finally` only for that same promise so newer requests are not nulled.
  */
 function getOrFetchDestiProfile(): Promise<DestiProfileState> {
@@ -75,27 +79,15 @@ export function useDestiProfile(): DestiProfileState & { isLoading: boolean } {
     setState((prev) => ({ ...prev, isLoading: true }));
     try {
       const r = await getOrFetchDestiProfile();
-      if (genAtStart === cacheGeneration) {
-        setState({ ...r, isLoading: false });
-      } else {
-        const snap = memoryCache;
-        if (snap) {
-          setState({ ...snap, isLoading: false });
-        } else {
-          setState((p) => ({ ...p, isLoading: false }));
-        }
+      if (genAtStart !== cacheGeneration) {
+        return;
       }
+      setState({ ...r, isLoading: false });
     } catch {
-      if (genAtStart === cacheGeneration) {
-        setState({ profilePictureUrl: null, displayName: null, isLoading: false });
-      } else {
-        const snap = memoryCache;
-        if (snap) {
-          setState({ ...snap, isLoading: false });
-        } else {
-          setState((p) => ({ ...p, isLoading: false }));
-        }
+      if (genAtStart !== cacheGeneration) {
+        return;
       }
+      setState({ profilePictureUrl: null, displayName: null, isLoading: false });
     }
   }, []);
 
@@ -112,29 +104,21 @@ export function useDestiProfile(): DestiProfileState & { isLoading: boolean } {
       }
       try {
         const r = await getOrFetchDestiProfile();
-        if (cancelled) return;
-        if (genAtStart === cacheGeneration) {
-          setState({ ...r, isLoading: false });
-        } else {
-          const snap = memoryCache;
-          if (snap) {
-            setState({ ...snap, isLoading: false });
-          } else {
-            setState((p) => ({ ...p, isLoading: false }));
-          }
+        if (cancelled) {
+          return;
         }
+        if (genAtStart !== cacheGeneration) {
+          return;
+        }
+        setState({ ...r, isLoading: false });
       } catch {
-        if (cancelled) return;
-        if (genAtStart === cacheGeneration) {
-          setState({ profilePictureUrl: null, displayName: null, isLoading: false });
-        } else {
-          const snap = memoryCache;
-          if (snap) {
-            setState({ ...snap, isLoading: false });
-          } else {
-            setState((p) => ({ ...p, isLoading: false }));
-          }
+        if (cancelled) {
+          return;
         }
+        if (genAtStart !== cacheGeneration) {
+          return;
+        }
+        setState({ profilePictureUrl: null, displayName: null, isLoading: false });
       }
     })();
     return () => {
