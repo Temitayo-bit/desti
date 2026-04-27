@@ -24,8 +24,8 @@ const BANNED_ANSWER_PATTERNS: RegExp[] = [
     /\bcarpooling apps?\b/i,
     /\buber driver\b/i,
     /\buber\s+or\s+lyft\b/i,
-    /\buber\b.*\blyft\b/is,
-    /\blyft\b.*\buber\b/is,
+    /\buber\b[\s\S]*\blyft\b/i,
+    /\blyft\b[\s\S]*\buber\b/i,
     /* Common opening for generic web copy the model should never produce */
     /posting a ride typically means/i,
     /###\s*where to post your ride/i,
