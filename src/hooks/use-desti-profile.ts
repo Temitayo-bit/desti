@@ -77,18 +77,24 @@ export function useDestiProfile(): DestiProfileState & { isLoading: boolean } {
       const r = await getOrFetchDestiProfile();
       if (genAtStart === cacheGeneration) {
         setState({ ...r, isLoading: false });
-      } else if (memoryCache) {
-        setState({ ...memoryCache, isLoading: false });
       } else {
-        setState((p) => ({ ...p, isLoading: false }));
+        const snap = memoryCache;
+        if (snap) {
+          setState({ ...snap, isLoading: false });
+        } else {
+          setState((p) => ({ ...p, isLoading: false }));
+        }
       }
     } catch {
       if (genAtStart === cacheGeneration) {
         setState({ profilePictureUrl: null, displayName: null, isLoading: false });
-      } else if (memoryCache) {
-        setState({ ...memoryCache, isLoading: false });
       } else {
-        setState((p) => ({ ...p, isLoading: false }));
+        const snap = memoryCache;
+        if (snap) {
+          setState({ ...snap, isLoading: false });
+        } else {
+          setState((p) => ({ ...p, isLoading: false }));
+        }
       }
     }
   }, []);
@@ -97,28 +103,37 @@ export function useDestiProfile(): DestiProfileState & { isLoading: boolean } {
     let cancelled = false;
     const genAtStart = cacheGeneration;
     (async () => {
-      if (memoryCache) {
-        setState({ ...memoryCache, isLoading: false });
-        return;
+      {
+        const snap = memoryCache;
+        if (snap) {
+          setState({ ...snap, isLoading: false });
+          return;
+        }
       }
       try {
         const r = await getOrFetchDestiProfile();
         if (cancelled) return;
         if (genAtStart === cacheGeneration) {
           setState({ ...r, isLoading: false });
-        } else if (memoryCache) {
-          setState({ ...memoryCache, isLoading: false });
         } else {
-          setState((p) => ({ ...p, isLoading: false }));
+          const snap = memoryCache;
+          if (snap) {
+            setState({ ...snap, isLoading: false });
+          } else {
+            setState((p) => ({ ...p, isLoading: false }));
+          }
         }
       } catch {
         if (cancelled) return;
         if (genAtStart === cacheGeneration) {
           setState({ profilePictureUrl: null, displayName: null, isLoading: false });
-        } else if (memoryCache) {
-          setState({ ...memoryCache, isLoading: false });
         } else {
-          setState((p) => ({ ...p, isLoading: false }));
+          const snap = memoryCache;
+          if (snap) {
+            setState({ ...snap, isLoading: false });
+          } else {
+            setState((p) => ({ ...p, isLoading: false }));
+          }
         }
       }
     })();
