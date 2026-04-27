@@ -256,41 +256,44 @@ export default function OffersPage() {
   }
 
   return (
-    <ProtectedShell activeNav="dashboard">
-      <section className="space-y-8">
-        <header className="space-y-4">
-          <Link
-            href="/dashboard"
-            className="inline-flex items-center gap-2 text-sm font-semibold text-zinc-600 transition-colors hover:text-zinc-900"
-          >
-            <ChevronLeft size={16} />
-            Back to dashboard
-          </Link>
-          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-            <div>
-              <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-zinc-900">
-                Pending Offers
-              </h1>
-              <p className="text-zinc-500 text-lg">
-                Review every outstanding offer you have sent or received.
-              </p>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-2xl border border-zinc-200 bg-white px-5 py-4 shadow-sm">
-                <p className="text-sm font-medium text-zinc-500">Sent</p>
-                <p className="text-3xl font-bold tracking-tight text-zinc-900">
+    <ProtectedShell
+      activeNav="dashboard"
+      layout="topnav"
+      topNavActive="dashboard"
+    >
+      <section className="space-y-6 md:space-y-8">
+        <Link
+          href="/dashboard"
+          className="inline-flex items-center gap-2 text-sm font-semibold text-zinc-600 transition-colors hover:text-zinc-900"
+        >
+          <ChevronLeft size={16} />
+          Back to dashboard
+        </Link>
+
+        <div className="overflow-hidden rounded-3xl bg-[#006837] shadow-sm">
+          <div className="px-5 py-7 md:px-8 md:py-9">
+            <h1 className="text-2xl font-bold tracking-tight text-white md:text-3xl">
+              Pending Offers
+            </h1>
+            <p className="mt-1 text-sm text-white/90">
+              Review every outstanding offer you have sent or received.
+            </p>
+            <div className="mt-5 grid max-w-md grid-cols-2 gap-3">
+              <div className="rounded-2xl border border-white/20 bg-white/10 px-4 py-3 text-white backdrop-blur-sm">
+                <p className="text-sm font-medium text-white/80">Sent</p>
+                <p className="text-2xl font-bold tracking-tight md:text-3xl">
                   {sentOffers.length}
                 </p>
               </div>
-              <div className="rounded-2xl border border-zinc-200 bg-white px-5 py-4 shadow-sm">
-                <p className="text-sm font-medium text-zinc-500">Received</p>
-                <p className="text-3xl font-bold tracking-tight text-zinc-900">
+              <div className="rounded-2xl border border-white/20 bg-white/10 px-4 py-3 text-white backdrop-blur-sm">
+                <p className="text-sm font-medium text-white/80">Received</p>
+                <p className="text-2xl font-bold tracking-tight md:text-3xl">
                   {receivedOffers.length}
                 </p>
               </div>
             </div>
           </div>
-        </header>
+        </div>
 
         {actionNotice ? (
           <div
