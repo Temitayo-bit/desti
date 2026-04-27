@@ -199,11 +199,9 @@ export function StaticRouteMap({
   const [mapStatus, setMapStatus] = useState<MapLoadingStatus>("loading");
 
   const mapboxToken = getMapboxPublicAccessToken();
-  const hasCoordinates =
-    originLatitude !== null &&
-    originLongitude !== null &&
-    destinationLatitude !== null &&
-    destinationLongitude !== null;
+  const hasOriginCoordinates = originLatitude !== null && originLongitude !== null;
+  const hasDestinationCoordinates = destinationLatitude !== null && destinationLongitude !== null;
+  const hasCoordinates = hasOriginCoordinates || hasDestinationCoordinates;
 
   const initialCenter = useMemo<CoordinateTuple | null>(() => {
     if (originLatitude !== null && originLongitude !== null) {

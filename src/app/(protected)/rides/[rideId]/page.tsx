@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { requireStetsonAuth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { RideDetailClient } from "./RideDetailClient";
@@ -14,7 +14,7 @@ export default async function RideDetailPage({ params }: PageProps) {
   const auth = await requireStetsonAuth();
 
   if (auth.error) {
-    throw new Error("Unauthorized");
+    redirect("/sign-in");
   }
 
   const currentUserClerkId = auth.user.clerkUserId;
@@ -29,24 +29,12 @@ export default async function RideDetailPage({ params }: PageProps) {
         },
       },
       rideOffers: {
-        where: {
-          OR: [
-            { driverUserId: currentUserClerkId },
-            { riderUserId: currentUserClerkId }
-          ]
-        },
         include: {
           rider: { select: { name: true, profilePictureUrl: true } },
         },
         orderBy: { createdAt: "desc" },
       },
       stopRequests: {
-        where: {
-          OR: [
-            { driverUserId: currentUserClerkId },
-            { riderUserId: currentUserClerkId }
-          ]
-        },
         include: {
           rider: { select: { name: true, profilePictureUrl: true } },
         },
@@ -63,9 +51,7 @@ export default async function RideDetailPage({ params }: PageProps) {
         },
         orderBy: { scoreSnapshot: "desc" },
       },
-      bookings: {
-        where: { riderUserId: currentUserClerkId },
-      }
+      bookings: true
     },
   });
 

@@ -47,14 +47,16 @@ export function TripRequestDetailClient({ tripRequest, currentUserClerkId }: Tri
     dropoffInstructions: tripRequest.dropoffInstructions ?? "",
   });
 
-  const hasConfirmedBooking = tripRequest.bookings && tripRequest.bookings.length > 0;
+  const hasConfirmedBooking =
+    tripRequest.bookings &&
+    tripRequest.bookings.some((b: any) => b.status === "CONFIRMED" || b.status === "COMPLETED");
 
   const handleSendOffer = async () => {
     const priceCents = Math.round(Number(offerData.priceDollars) * 100);
     const seatsOffered = parseInt(offerData.seatsOffered, 10);
 
-    if (!offerData.priceDollars || isNaN(priceCents) || priceCents < 0) {
-      setOfferError("Please enter a valid price.");
+    if (!offerData.priceDollars || isNaN(priceCents) || priceCents < 1) {
+      setOfferError("Please enter a valid price (minimum $0.01).");
       return;
     }
     if (!seatsOffered || seatsOffered < 1 || seatsOffered > 8) {
@@ -83,8 +85,10 @@ export function TripRequestDetailClient({ tripRequest, currentUserClerkId }: Tri
         setOfferSuccess(true);
         router.refresh();
       } else {
-        const data = await res.json();
-        setOfferError(data.message || "Failed to send offer.");
+        const text = await res.text();
+        let message = "Failed to send offer.";
+        try { message = (JSON.parse(text) as any).message || message; } catch { message = text || message; }
+        setOfferError(message);
       }
     } catch {
       setOfferError("Network error. Please try again.");
@@ -164,7 +168,13 @@ export function TripRequestDetailClient({ tripRequest, currentUserClerkId }: Tri
     <ProtectedShell activeNav="browse" layout="topnav" topNavActive="browse">
       <div className="max-w-5xl mx-auto px-4 py-8 md:px-8">
         <div className="mb-6 flex items-center justify-between">
-          <button onClick={() => router.back()} className="text-sm font-semibold text-[#006837] hover:underline">
+          <button
+            onClick={() => {
+              if (window.history.length > 1) router.back();
+              else router.push("/browse-trip-requests");
+            }}
+            className="text-sm font-semibold text-[#006837] hover:underline"
+          >
             &larr; Back
           </button>
           {isCancelled && <span className="bg-red-100 text-red-800 text-xs font-bold px-3 py-1 rounded-full">CANCELLED</span>}
@@ -285,14 +295,38 @@ export function TripRequestDetailClient({ tripRequest, currentUserClerkId }: Tri
               <div className="space-y-6">
                 <div className="bg-white rounded-3xl p-6 shadow-sm border border-zinc-100">
                   <h3 className="font-bold text-zinc-900 mb-4">Offers Received</h3>
-                  {tripRequest.offers?.filter((o: any) => o.state === "PENDING").length > 0 ? (
+                  {tripRequest.offers?.filter((o: any) => o.status === "PENDING").length > 0 ? (
                     <div className="space-y-4">
-                      {tripRequest.offers.filter((o: any) => o.state === "PENDING").map((offer: any) => (
+                      {tripRequest.offers.filter((o: any) => o.status === "PENDING").map((offer: any) => (
                         <div key={offer.id} className="border border-zinc-100 rounded-xl p-4 bg-zinc-50">
-                          <p className="font-medium text-sm text-zinc-900 mb-1">{offer.driver.name} offered a ride for ${(offer.offeredPriceCents / 100).toFixed(0)}</p>
+                          <p className="font-medium text-sm text-zinc-900 mb-1">
+                            {offer.driver?.name} offered a ride for ${(offer.priceCents / 100).toFixed(2)}
+                          </p>
                           <div className="flex gap-2 mt-3">
-                            <button className="flex-1 bg-amber-600 text-white text-xs font-bold py-2 rounded-lg">Accept</button>
-                            <button className="flex-1 bg-zinc-200 text-zinc-700 text-xs font-bold py-2 rounded-lg">Decline</button>
+                            <button
+                              onClick={async () => {
+                                try {
+                                  const res = await fetch(`/api/offers/${offer.id}/accept`, { method: "POST" });
+                                  if (res.ok) router.refresh();
+                                  else { const d = await res.json(); alert(d.message || "Failed to accept."); }
+                                } catch { alert("Network error."); }
+                              }}
+                              className="flex-1 bg-amber-600 text-white text-xs font-bold py-2 rounded-lg"
+                            >
+                              Accept
+                            </button>
+                            <button
+                              onClick={async () => {
+                                try {
+                                  const res = await fetch(`/api/offers/${offer.id}/cancel`, { method: "POST" });
+                                  if (res.ok) router.refresh();
+                                  else { const d = await res.json(); alert(d.message || "Failed to decline."); }
+                                } catch { alert("Network error."); }
+                              }}
+                              className="flex-1 bg-zinc-200 text-zinc-700 text-xs font-bold py-2 rounded-lg"
+                            >
+                              Decline
+                            </button>
                           </div>
                         </div>
                       ))}
@@ -311,7 +345,7 @@ export function TripRequestDetailClient({ tripRequest, currentUserClerkId }: Tri
                           <p className="font-medium text-sm text-zinc-900 mb-1">Match with {match.ride?.driver?.name}</p>
                           <p className="text-xs text-zinc-500">From: {match.ride?.originText}</p>
                           <p className="text-xs text-zinc-500">To: {match.ride?.destinationText}</p>
-                          <p className="text-xs font-semibold text-amber-700 mt-1">Score: {Math.round(match.scoreSnapshot)}%</p>
+                          <p className="text-xs font-semibold text-amber-700 mt-1">Score: {Math.round(match.scoreSnapshot * 100)}%</p>
                           <div className="flex gap-2 mt-3">
                             <button className="w-full bg-amber-600 text-white text-xs font-bold py-2 rounded-lg" onClick={() => router.push(`/rides/${match.rideId}`)}>View Ride</button>
                           </div>

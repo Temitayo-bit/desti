@@ -52,6 +52,9 @@ export function RideDetailClient({ ride, currentUserClerkId }: RideDetailClientP
   const [quoteSubmitting, setQuoteSubmitting] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [stopActionPending, setStopActionPending] = useState<Record<string, boolean>>({});
+  const [offerActionPending, setOfferActionPending] = useState<Record<string, boolean>>({});
+  const [offerActionNotice, setOfferActionNotice] = useState<string | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
 
   // Edit Modal State
   const [editFormData, setEditFormData] = useState({
@@ -69,7 +72,9 @@ export function RideDetailClient({ ride, currentUserClerkId }: RideDetailClientP
     dropoffInstructions: ride.dropoffInstructions ?? "",
   });
 
-  const hasConfirmedBooking = ride.bookings && ride.bookings.length > 0;
+  const hasConfirmedBooking =
+    ride.bookings &&
+    ride.bookings.some((b: any) => b.status === "CONFIRMED" || b.status === "COMPLETED");
 
   const handleBookRide = async () => {
     if (bookingInProgress || ride.seatsAvailable <= 0 || isOwner) return;
@@ -170,9 +175,14 @@ export function RideDetailClient({ ride, currentUserClerkId }: RideDetailClientP
   };
 
   const handleEditSubmit = async () => {
+    const parsedPriceCents = Math.round(Number(editFormData.priceDollars) * 100);
+    if (!editFormData.priceDollars || isNaN(parsedPriceCents) || parsedPriceCents < 1) {
+      setEditError("Please enter a valid price greater than $0.");
+      return;
+    }
+    setEditError(null);
     try {
       setSubmitting(true);
-      const parsedPriceCents = Math.round(Number(editFormData.priceDollars) * 100);
       const res = await fetch(`/api/rides/${ride.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -193,15 +203,16 @@ export function RideDetailClient({ ride, currentUserClerkId }: RideDetailClientP
       });
 
       if (res.ok) {
-        alert("Ride updated!");
         setIsEditing(false);
         router.refresh();
       } else {
-        const data = await res.json();
-        alert(data.message || "Failed to update ride");
+        const text = await res.text();
+        let message = "Failed to update ride";
+        try { message = (JSON.parse(text) as any).message || message; } catch { message = text || message; }
+        setEditError(message);
       }
-    } catch (err) {
-      alert("Error updating ride.");
+    } catch {
+      setEditError("Network error updating ride.");
     } finally {
       setSubmitting(false);
     }
@@ -415,17 +426,55 @@ export function RideDetailClient({ ride, currentUserClerkId }: RideDetailClientP
               <div className="space-y-6">
                 <div className="bg-white rounded-3xl p-6 shadow-sm border border-zinc-100">
                   <h3 className="font-bold text-zinc-900 mb-4">Pending Offers</h3>
+                  {offerActionNotice && (
+                    <p className="mb-3 text-xs text-emerald-700 font-medium">{offerActionNotice}</p>
+                  )}
                   {ride.rideOffers?.filter((o: any) => o.state === "PENDING").length > 0 ? (
                     <div className="space-y-4">
-                      {ride.rideOffers.filter((o: any) => o.state === "PENDING").map((offer: any) => (
-                        <div key={offer.id} className="border border-zinc-100 rounded-xl p-4 bg-zinc-50">
-                          <p className="font-medium text-sm text-zinc-900 mb-1">{offer.rider.name} offered ${(offer.offeredPriceCents / 100).toFixed(0)}</p>
-                          <div className="flex gap-2 mt-3">
-                            <button className="flex-1 bg-[#006837] text-white text-xs font-bold py-2 rounded-lg" onClick={() => alert("Accept flow from existing MVP2")}>Accept</button>
-                            <button className="flex-1 bg-zinc-200 text-zinc-700 text-xs font-bold py-2 rounded-lg" onClick={() => alert("Reject flow from existing MVP2")}>Decline</button>
+                      {ride.rideOffers.filter((o: any) => o.state === "PENDING").map((offer: any) => {
+                        const busy = !!offerActionPending[offer.id];
+                        return (
+                          <div key={offer.id} className="border border-zinc-100 rounded-xl p-4 bg-zinc-50">
+                            <p className="font-medium text-sm text-zinc-900 mb-1">
+                              {offer.rider.name} offered ${(offer.offeredPriceCents / 100).toFixed(2)}
+                            </p>
+                            <div className="flex gap-2 mt-3">
+                              <button
+                                disabled={busy}
+                                onClick={async () => {
+                                  setOfferActionPending(p => ({ ...p, [offer.id]: true }));
+                                  setOfferActionNotice(null);
+                                  try {
+                                    const res = await fetch(`/api/ride-offers/${offer.id}/accept`, { method: "POST" });
+                                    if (res.ok) { setOfferActionNotice("Offer accepted!"); router.refresh(); }
+                                    else { const d = await res.json(); setOfferActionNotice(d.message || "Failed to accept."); }
+                                  } catch { setOfferActionNotice("Network error."); }
+                                  finally { setOfferActionPending(p => { const n = {...p}; delete n[offer.id]; return n; }); }
+                                }}
+                                className="flex-1 bg-[#006837] text-white text-xs font-bold py-2 rounded-lg disabled:opacity-50"
+                              >
+                                {busy ? "..." : "Accept"}
+                              </button>
+                              <button
+                                disabled={busy}
+                                onClick={async () => {
+                                  setOfferActionPending(p => ({ ...p, [offer.id]: true }));
+                                  setOfferActionNotice(null);
+                                  try {
+                                    const res = await fetch(`/api/ride-offers/${offer.id}/reject`, { method: "POST" });
+                                    if (res.ok) { setOfferActionNotice("Offer declined."); router.refresh(); }
+                                    else { const d = await res.json(); setOfferActionNotice(d.message || "Failed to decline."); }
+                                  } catch { setOfferActionNotice("Network error."); }
+                                  finally { setOfferActionPending(p => { const n = {...p}; delete n[offer.id]; return n; }); }
+                                }}
+                                className="flex-1 bg-zinc-200 text-zinc-700 text-xs font-bold py-2 rounded-lg disabled:opacity-50"
+                              >
+                                {busy ? "..." : "Decline"}
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   ) : (
                     <p className="text-sm text-zinc-500">No pending offers.</p>
@@ -527,7 +576,7 @@ export function RideDetailClient({ ride, currentUserClerkId }: RideDetailClientP
                           <p className="font-medium text-sm text-zinc-900 mb-1">Match with {match.tripRequest?.rider?.name}</p>
                           <p className="text-xs text-zinc-500">From: {match.tripRequest?.originText}</p>
                           <p className="text-xs text-zinc-500">To: {match.tripRequest?.destinationText}</p>
-                          <p className="text-xs font-semibold text-[#006837] mt-1">Score: {Math.round(match.scoreSnapshot)}%</p>
+                          <p className="text-xs font-semibold text-[#006837] mt-1">Score: {Math.round(match.scoreSnapshot * 100)}%</p>
                           <div className="flex gap-2 mt-3">
                             <button className="w-full bg-[#006837] text-white text-xs font-bold py-2 rounded-lg" onClick={() => router.push(`/trip-requests/${match.tripRequestId}`)}>View Request</button>
                           </div>
@@ -566,7 +615,7 @@ export function RideDetailClient({ ride, currentUserClerkId }: RideDetailClientP
                   </div>
                   <div>
                     <label className="block text-sm font-semibold mb-1">Price per Seat ($)</label>
-                    <input type="number" value={editFormData.priceDollars} onChange={e => setEditFormData({...editFormData, priceDollars: e.target.value})} className="w-full border rounded-xl p-3" />
+                    <input type="number" min="0.01" step="0.01" value={editFormData.priceDollars} onChange={e => setEditFormData({...editFormData, priceDollars: e.target.value})} className="w-full border rounded-xl p-3" />
                   </div>
                 </div>
                 <div>
@@ -577,6 +626,7 @@ export function RideDetailClient({ ride, currentUserClerkId }: RideDetailClientP
                   <label className="block text-sm font-semibold mb-1">Dropoff Instructions</label>
                   <textarea value={editFormData.dropoffInstructions} onChange={e => setEditFormData({...editFormData, dropoffInstructions: e.target.value})} className="w-full border rounded-xl p-3" />
                 </div>
+                {editError && <p className="text-sm text-red-600">{editError}</p>}
                 <button onClick={handleEditSubmit} disabled={submitting} className="w-full bg-[#006837] text-white font-bold py-3 rounded-xl mt-4">
                   {submitting ? "Saving..." : "Save Changes"}
                 </button>
