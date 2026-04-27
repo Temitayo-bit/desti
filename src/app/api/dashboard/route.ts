@@ -17,6 +17,10 @@ const rideSummarySelect = {
   seatsTotal: true,
   seatsAvailable: true,
   status: true,
+  hasAc: true,
+  hasTrunkSpace: true,
+  musicPreference: true,
+  vehicleType: true,
 } satisfies Prisma.RideSelect;
 
 const rideInBookingSelect = {
@@ -32,6 +36,7 @@ const rideInBookingSelect = {
   seatsTotal: true,
   seatsAvailable: true,
   status: true,
+  vehicleType: true,
   driver: {
     select: {
       name: true,
@@ -62,6 +67,11 @@ const offerSummarySelect = {
   status: true,
   createdAt: true,
   tripRequest: { select: tripRequestSummarySelect },
+  driver: {
+    select: {
+      name: true,
+    },
+  },
 } satisfies Prisma.OfferSelect;
 
 /* ── GET /api/dashboard ───────────────────────────────────────────────────── */
@@ -95,6 +105,7 @@ export async function GET(request?: NextRequest) {
       rideBookings,
       tripRequestBookingsCount,
       tripRequestBookings,
+      passengerBookingsCount,
       pendingOffersSentCount,
       offersSent,
       pendingOffersReceivedCount,
@@ -177,6 +188,23 @@ export async function GET(request?: NextRequest) {
         },
         orderBy: [{ tripRequest: { earliestDesiredAt: "asc" } }, { id: "asc" }],
         take: 5,
+      }),
+
+      prisma.booking.count({
+        where: {
+          status: "CONFIRMED",
+          riderUserId: userId,
+          OR: [
+            {
+              rideId: { not: null },
+              ride: { latestDepartAt: { gt: now } },
+            },
+            {
+              tripRequestId: { not: null },
+              tripRequest: { latestDesiredAt: { gt: now } },
+            },
+          ],
+        },
       }),
 
       prisma.offer.count({
@@ -269,6 +297,7 @@ export async function GET(request?: NextRequest) {
         seatsAvailable: booking.ride.seatsAvailable,
         status: booking.ride.status,
         driverName: booking.ride.driver?.name ?? null,
+        vehicleType: booking.ride.vehicleType,
       },
     }));
 
@@ -336,6 +365,7 @@ export async function GET(request?: NextRequest) {
       summary: {
         activeRidesDrivingCount,
         confirmedBookingsCount,
+        passengerBookingsCount,
         pendingOffersSentCount,
         pendingOffersReceivedCount,
       },

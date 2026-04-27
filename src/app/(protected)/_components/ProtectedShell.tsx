@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { UserButton } from "@clerk/nextjs";
 import {
   CarFront,
   LayoutDashboard,
@@ -20,9 +21,15 @@ type ProtectedNavKey =
   | "messages"
   | "profile";
 
+type TopNavKey = "browse" | "postRide" | "requests" | "messages" | "profile";
+
 interface ProtectedShellProps {
   activeNav: ProtectedNavKey;
   children: React.ReactNode;
+  /** Default: sidebar. Use `topnav` for the home dashboard to match the marketing-style top bar. */
+  layout?: "sidebar" | "topnav";
+  /** Active item when `layout` is `topnav` (e.g. highlight Profile). */
+  topNavActive?: TopNavKey | null;
 }
 
 function navLinkClass(isActive: boolean): string {
@@ -41,8 +48,109 @@ function navIconWrapClass(isActive: boolean): string {
   return "flex h-10 w-10 items-center justify-center rounded-xl bg-white text-zinc-500 ring-1 ring-zinc-200 transition-colors group-hover:bg-zinc-50 group-hover:text-zinc-700";
 }
 
-export function ProtectedShell({ activeNav, children }: ProtectedShellProps) {
+function topNavLinkClass(isActive: boolean): string {
+  if (isActive) {
+    return "text-sm font-medium text-[#0d3d2e] border-b-2 border-[#0d3d2e] pb-0.5 -mb-0.5";
+  }
+  return "text-sm font-medium text-zinc-600 hover:text-zinc-900 transition-colors";
+}
+
+export function ProtectedShell({
+  activeNav,
+  children,
+  layout = "sidebar",
+  topNavActive = null,
+}: ProtectedShellProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  if (layout === "topnav") {
+    return (
+      <div className="min-h-screen flex flex-col bg-zinc-100 font-sans text-zinc-900">
+        <header className="sticky top-0 z-30 border-b border-zinc-200 bg-white/95 backdrop-blur-sm">
+          <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 md:px-6">
+            <Link href="/dashboard" className="shrink-0 text-lg font-extrabold tracking-tight text-[#0d3d2e]">
+              Destination
+            </Link>
+            <nav className="hidden flex-1 items-center justify-center gap-5 lg:gap-8 md:flex" aria-label="Main">
+              <Link className={topNavLinkClass(topNavActive === "browse")} href="/browse">
+                Browse Rides
+              </Link>
+              <Link className={topNavLinkClass(topNavActive === "postRide")} href="/post-ride">
+                Post Ride
+              </Link>
+              <Link
+                className={topNavLinkClass(topNavActive === "requests")}
+                href="/browse-trip-requests"
+              >
+                Requests
+              </Link>
+              <Link className={topNavLinkClass(topNavActive === "messages")} href="/messages">
+                Messages
+              </Link>
+              <Link className={topNavLinkClass(topNavActive === "profile")} href="/profile">
+                Profile
+              </Link>
+            </nav>
+            <div className="flex items-center gap-2 md:gap-3">
+              <div className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-[#0d3d2e]/20 bg-white px-2.5 py-1.5 text-xs font-semibold text-[#0d3d2e]">
+                <span className="text-[#0d3d2e]">&#10003;</span>
+                STETSON VERIFIED
+              </div>
+              <div className="h-8 w-8 shrink-0">
+                <UserButton />
+              </div>
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen((o) => !o)}
+                aria-label="Menu"
+                className="p-2 text-zinc-600 md:hidden"
+              >
+                {mobileMenuOpen ? <X size={22} /> : <Menu size={22} />}
+              </button>
+            </div>
+          </div>
+          {mobileMenuOpen ? (
+            <div className="border-t border-zinc-200 px-4 py-3 md:hidden">
+              <div className="mb-2 flex sm:hidden">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-[#0d3d2e]/20 bg-white px-2.5 py-1.5 text-xs font-semibold text-[#0d3d2e]">
+                  <span className="text-[#0d3d2e]">&#10003;</span>
+                  STETSON VERIFIED
+                </span>
+              </div>
+              <div className="flex flex-col gap-2">
+                <Link className="py-1 text-sm font-medium" href="/browse" onClick={() => setMobileMenuOpen(false)}>
+                  Browse Rides
+                </Link>
+                <Link
+                  className="py-1 text-sm font-medium"
+                  href="/post-ride"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  Post Ride
+                </Link>
+                <Link
+                  className="py-1 text-sm font-medium"
+                  href="/browse-trip-requests"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  Requests
+                </Link>
+                <Link className="py-1 text-sm font-medium" href="/messages" onClick={() => setMobileMenuOpen(false)}>
+                  Messages
+                </Link>
+                <Link className="py-1 text-sm font-medium" href="/profile" onClick={() => setMobileMenuOpen(false)}>
+                  Profile
+                </Link>
+              </div>
+            </div>
+          ) : null}
+        </header>
+        <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 md:px-6 md:py-8 min-w-0">
+          {children}
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-zinc-50 font-sans text-zinc-900 flex flex-col md:flex-row">
