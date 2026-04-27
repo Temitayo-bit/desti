@@ -13,11 +13,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ProtectedShell } from "../_components/ProtectedShell";
 import {
+  type DashboardOfferSummary,
   type DashboardRideSummary,
   type DashboardResponse,
+  dedupeBookingsById,
+  filterOffersSentForDashboard,
   formatRelativeTime,
   getSeatDisplayText,
   normalizeDashboardBooking,
+  offerOutcomeLabel,
 } from "@/lib/dashboard";
 import { openBookingConversationThread } from "@/lib/booking-conversation";
 
@@ -351,6 +355,8 @@ export default function DashboardPage() {
   const [openingConversationBookingId, setOpeningConversationBookingId] = useState<string | null>(
     null
   );
+  /** Curated sent-offer rows (pending / accepted / recent rejected) from GET /api/offers/mine */
+  const [sentOffersWidget, setSentOffersWidget] = useState<DashboardOfferSummary[]>([]);
 
   const refreshDashboard = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent ?? false;
@@ -364,7 +370,11 @@ export default function DashboardPage() {
     setError(null);
 
     try {
-      const response = await fetch("/api/dashboard");
+      const [response, sentMineResponse] = await Promise.all([
+        fetch("/api/dashboard"),
+        fetch("/api/offers/mine?role=driver&limit=30"),
+      ]);
+
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
         const message = payload?.message ?? payload?.error ?? "Failed to load dashboard.";
@@ -373,10 +383,27 @@ export default function DashboardPage() {
 
       const payload = (await response.json()) as DashboardResponse;
       setDashboard(payload);
+      const now = new Date(payload.now);
+
+      if (sentMineResponse.ok) {
+        const sentPayload = (await sentMineResponse.json()) as {
+          items?: DashboardOfferSummary[];
+        };
+        setSentOffersWidget(
+          filterOffersSentForDashboard(sentPayload.items ?? [], now)
+        );
+      } else {
+        setSentOffersWidget(
+          filterOffersSentForDashboard(payload.upcoming.offers.sent ?? [], now)
+        );
+      }
     } catch (fetchError: unknown) {
       const message =
         fetchError instanceof Error ? fetchError.message : "Failed to load dashboard.";
       setError(message);
+      if (!silent) {
+        setSentOffersWidget([]);
+      }
     } finally {
       if (silent) {
         setRefreshing(false);
@@ -472,7 +499,6 @@ export default function DashboardPage() {
 
   const summary = dashboard?.summary;
   const ridesDriving = dashboard?.upcoming.ridesDriving ?? [];
-  const sentOffers = dashboard?.upcoming.offers.sent ?? [];
   const receivedOffers = dashboard?.upcoming.offers.received ?? [];
 
   const normalizedBookings = useMemo(() => {
@@ -485,10 +511,19 @@ export default function DashboardPage() {
   );
 
   const sortedUpcomingConfirmed = useMemo(() => {
-    return [...confirmedBookings].sort(
+    const unique = dedupeBookingsById(confirmedBookings);
+    return unique.sort(
       (a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()
     );
   }, [confirmedBookings]);
+
+  /** Bookings as a passenger (rider) only */
+  const riderUpcomingBookings = useMemo(() => {
+    if (!viewerUserId) {
+      return sortedUpcomingConfirmed;
+    }
+    return sortedUpcomingConfirmed.filter((b) => b.riderUserId === viewerUserId);
+  }, [viewerUserId, sortedUpcomingConfirmed]);
 
   const welcome = userFirstName
     ? `Welcome back, ${userFirstName}`
@@ -602,7 +637,7 @@ export default function DashboardPage() {
                     <div
                       className={`${PAGE_CARD} p-6 text-sm leading-relaxed text-zinc-500`}
                     >
-                      You have no upcoming rides as a driver.{" "}
+                      You haven&apos;t posted any rides yet.{" "}
                       <Link className="font-semibold text-[#0d3d2e] hover:underline" href="/post-ride">
                         Post a ride
                       </Link>{" "}
@@ -693,7 +728,7 @@ export default function DashboardPage() {
                         className="h-2 w-1.5 rounded-full bg-[#0d3d2e] shadow-sm shadow-[#0d3d2e]/30"
                         aria-hidden
                       />
-                      Your Upcoming Confirmed Trips
+                      Your Upcoming Bookings
                     </h2>
                     <Link
                       href="/bookings"
@@ -705,9 +740,9 @@ export default function DashboardPage() {
 
                   {!meLoaded ? (
                     <div className={`${PAGE_CARD} p-5 text-sm text-zinc-500`}>Loading trips&hellip;</div>
-                  ) : sortedUpcomingConfirmed.length === 0 ? (
+                  ) : riderUpcomingBookings.length === 0 ? (
                     <div className={`${PAGE_CARD} p-5 text-sm text-zinc-500`}>
-                      No upcoming confirmed trips.{" "}
+                      No confirmed trips yet.{" "}
                       <Link href="/browse" className="font-medium text-[#0d3d2e] hover:underline">
                         Find a ride
                       </Link>{" "}
@@ -719,7 +754,7 @@ export default function DashboardPage() {
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                      {sortedUpcomingConfirmed.map((booking) => {
+                      {riderUpcomingBookings.map((booking) => {
                         const { date, time } = formatRiderTime(booking.startsAt);
                         const vLabel = formatVehicleType(booking.vehicleType);
                         const openingConversation = openingConversationBookingId === booking.id;
@@ -825,14 +860,15 @@ export default function DashboardPage() {
                 >
                   <div className="mb-3 flex items-center justify-between">
                     <h2 className="text-base font-bold tracking-tight text-zinc-900">
-                      Pending Offers ({receivedOffers.length})
+                      Pending Offers (
+                      {summary?.pendingOffersReceivedCount ?? receivedOffers.length})
                     </h2>
                     <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#0d3d2e]/8 ring-1 ring-[#0d3d2e]/10">
                       <Bell className="h-4 w-4 text-[#0d3d2e]" aria-hidden />
                     </span>
                   </div>
                   {receivedOffers.length === 0 ? (
-                    <p className="text-sm text-zinc-500">You have no pending offers to review.</p>
+                    <p className="text-sm text-zinc-500">No pending offers</p>
                   ) : (
                     <ul className="space-y-4">
                       {receivedOffers.map((offer) => {
@@ -904,13 +940,26 @@ export default function DashboardPage() {
                   <h2 className="mb-3 text-base font-bold tracking-tight text-zinc-900">
                     Offers sent
                   </h2>
-                  {sentOffers.length === 0 ? (
-                    <p className="text-sm text-zinc-500">No pending offers you&apos;ve sent.</p>
+                  {sentOffersWidget.length === 0 ? (
+                    <p className="text-sm text-zinc-500">No offers to show</p>
                   ) : (
                     <ul className="space-y-3">
-                      {sentOffers.map((offer) => {
+                      {sentOffersWidget.map((offer) => {
                         const isBusy = Boolean(pendingActions[offer.id]);
                         const line = `${offer.tripRequest.originText} → ${offer.tripRequest.destinationText}`;
+                        const label = offerOutcomeLabel(offer.status);
+                        const statusTone: "green" | "blue" | "yellow" | "pink" =
+                          offer.status === "ACCEPTED"
+                            ? "green"
+                            : offer.status === "CANCELLED"
+                              ? "pink"
+                              : "yellow";
+                        const subline =
+                          offer.status === "PENDING"
+                            ? "Waiting for response"
+                            : offer.status === "ACCEPTED"
+                              ? "Offer accepted"
+                              : "Offer declined";
                         return (
                           <li
                             key={offer.id}
@@ -918,25 +967,27 @@ export default function DashboardPage() {
                           >
                             <div className="min-w-0">
                               <p className="text-sm font-medium text-zinc-900 line-clamp-2">{line}</p>
-                              <p className="text-xs text-zinc-500">Waiting for response</p>
+                              <p className="text-xs text-zinc-500">{subline}</p>
                             </div>
                             <div className="flex shrink-0 flex-col items-end gap-1">
-                              <span className={statusPill("pink")}>Pending</span>
-                              <button
-                                type="button"
-                                disabled={isBusy}
-                                onClick={() =>
-                                  void runOfferAction(
-                                    offer.id,
-                                    `/api/offers/${offer.id}/cancel`,
-                                    "cancel",
-                                    "Offer cancelled."
-                                  )
-                                }
-                                className="text-xs font-semibold text-zinc-500 hover:text-zinc-800 disabled:opacity-50"
-                              >
-                                {isBusy ? "Cancelling…" : "Cancel"}
-                              </button>
+                              <span className={statusPill(statusTone)}>{label}</span>
+                              {offer.status === "PENDING" ? (
+                                <button
+                                  type="button"
+                                  disabled={isBusy}
+                                  onClick={() =>
+                                    void runOfferAction(
+                                      offer.id,
+                                      `/api/offers/${offer.id}/cancel`,
+                                      "cancel",
+                                      "Offer cancelled."
+                                    )
+                                  }
+                                  className="text-xs font-semibold text-zinc-500 hover:text-zinc-800 disabled:opacity-50"
+                                >
+                                  {isBusy ? "Cancelling…" : "Cancel"}
+                                </button>
+                              ) : null}
                             </div>
                           </li>
                         );
