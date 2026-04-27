@@ -14,6 +14,7 @@ import {
     type OnboardingGenderValue,
     type OnboardingYearValue,
 } from "@/lib/onboarding-form";
+import { DestiLogo } from "@/components/DestiLogo";
 
 interface OnboardingClientPageProps {
     verifiedEmail: string;
@@ -216,7 +217,8 @@ export function OnboardingClientPage({
         return "Continue \u2192";
     }, [isSubmitting]);
 
-    const canSubmit = !isSubmitting && !isUploading;
+    const canSubmit =
+        !isSubmitting && !isUploading && Boolean(profilePictureUrl?.trim());
 
     const handleFileSelect = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
@@ -281,13 +283,18 @@ export function OnboardingClientPage({
 
         setSubmitError(null);
         const buildResult = buildOnboardingPayload(formValues);
-        
-        // Profile picture is no longer strictly required for submission
-        setFieldErrors(buildResult.fieldErrors);
 
-        if (!buildResult.payload) {
+        const nextFieldErrors = { ...buildResult.fieldErrors };
+        if (!profilePictureUrl?.trim()) {
+            nextFieldErrors.profilePicture =
+                "A profile photo is required. Upload a clear picture of yourself.";
+        }
+        setFieldErrors(nextFieldErrors);
+
+        if (!buildResult.payload || Object.keys(nextFieldErrors).length > 0) {
             setSubmitError(
-                buildResult.submitError ?? "Please fix the highlighted fields and try again."
+                buildResult.submitError ??
+                    "Please fix the highlighted fields and try again."
             );
             return;
         }
@@ -333,18 +340,10 @@ export function OnboardingClientPage({
                 
                 {/* Logo Section */}
                 <div className="mb-8 flex flex-col items-center text-center">
-                    <div className="w-14 h-14 bg-[#146c43] rounded-2xl flex items-center justify-center mb-4 shadow-sm">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2" />
-                            <circle cx="7" cy="17" r="2" />
-                            <path d="M9 17h6" />
-                            <circle cx="17" cy="17" r="2" />
-                        </svg>
+                    <div className="mb-3 flex justify-center">
+                        <DestiLogo size="lg" variant="moss" />
                     </div>
-                    <h1 className="text-3xl font-bold tracking-tight text-[#146c43]">
-                        Destination
-                    </h1>
-                    <p className="mt-1 text-xs font-semibold tracking-widest text-zinc-600 uppercase">
+                    <p className="mt-1 text-xs font-semibold uppercase tracking-widest text-zinc-600">
                         Stetson University Ride-Share
                     </p>
                 </div>
@@ -427,7 +426,7 @@ export function OnboardingClientPage({
                                     </div>
                                 ) : null}
 
-                                {/* Optional Profile Picture Upload */}
+                                {/* Profile photo — required */}
                                 <div className="flex flex-col items-center pb-2">
                                     <button
                                         type="button"
@@ -464,8 +463,12 @@ export function OnboardingClientPage({
                                             </div>
                                         ) : null}
                                     </button>
-                                    <span className="text-xs text-zinc-400 mt-2 font-medium uppercase tracking-wider">
-                                        Upload Photo (Optional)
+                                    <span className="mt-2 text-xs font-medium uppercase tracking-wider text-zinc-600">
+                                        Profile photo — required
+                                    </span>
+                                    <span className="mt-1 max-w-[260px] text-center text-[0.7rem] leading-snug text-zinc-500">
+                                        Other students see this on rides and messages. Use a clear,
+                                        recent photo.
                                     </span>
                                     <input
                                         ref={fileInputRef}

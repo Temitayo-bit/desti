@@ -66,11 +66,10 @@ export function EditProfileButton({ user, variant = "icon" }: { user: any; varia
         try {
             const payload = {
                 name: formValues.name,
-                bio: formValues.bio,
+                bio: formValues.bio.trim() || null,
                 yearAtStetson: formValues.yearAtStetson,
                 age: parseInt(formValues.age, 10),
                 gender: formValues.gender,
-                profilePictureUrl: profilePictureUrl,
             };
 
             const response = await fetch("/api/user/profile", {
