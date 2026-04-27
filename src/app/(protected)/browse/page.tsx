@@ -171,6 +171,8 @@ export default function BrowseRidesPage() {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadMoreLoading, setLoadMoreLoading] = useState(false);
   const [browseError, setBrowseError] = useState<string | null>(null);
+  /** Incremented to re-run the browse `useEffect` fetch with a fresh AbortController (e.g. Retry). */
+  const [browseRefetchKey, setBrowseRefetchKey] = useState(0);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [bookingInProgress, setBookingInProgress] = useState(false);
@@ -242,6 +244,7 @@ export default function BrowseRidesPage() {
       try {
         setLoading(true);
         setBrowseError(null);
+        setRides([]);
         setNextCursor(null);
         await fetchRidesList({ cursor: null, append: false, signal: controller.signal });
       } catch (err) {
@@ -265,7 +268,7 @@ export default function BrowseRidesPage() {
     return () => {
       controller.abort();
     };
-  }, [currentView, fetchRidesList]);
+  }, [currentView, fetchRidesList, browseRefetchKey]);
 
   useEffect(() => {
     if (currentView !== "browse") {
@@ -520,7 +523,7 @@ export default function BrowseRidesPage() {
         setTimeout(() => {
           closeRideModal();
         }, 2500);
-        // In a real app we'd refresh the rides list here
+        // Seat counts for this ride are updated in place via setRides / setSelectedRide above.
       } else {
         const data = await res.json();
         alert(`Failed to book: ${data.message || data.error}`);
@@ -773,16 +776,20 @@ export default function BrowseRidesPage() {
               <MyRidesView
                 embedded
                 hubMode
-                hubSearchQuery={searchQuery}
-                departDate={departDate}
-                distShort={distShort}
-                distMedium={distMedium}
-                distLong={distLong}
-                timeWindow={timeWindow}
-                sidebarApi={sidebarApi}
-                sortBy={sortBy}
-                setSortBy={setSortBy}
-                onClearHubFilters={clearBrowseFilters}
+                hubFilters={{
+                  hubSearchQuery: searchQuery,
+                  departDate,
+                  distShort,
+                  distMedium,
+                  distLong,
+                  timeWindow,
+                  sidebarApi,
+                }}
+                hubControls={{
+                  sortBy,
+                  setSortBy,
+                  onClearHubFilters: clearBrowseFilters,
+                }}
               />
             ) : null}
             {!isMy && (
@@ -797,23 +804,7 @@ export default function BrowseRidesPage() {
                   type="button"
                   onClick={() => {
                     setBrowseError(null);
-                    void (async () => {
-                      setLoading(true);
-                      try {
-                        const ac = new AbortController();
-                        await fetchRidesList({
-                          cursor: null,
-                          append: false,
-                          signal: ac.signal,
-                        });
-                      } catch (e) {
-                        setBrowseError(
-                          e instanceof Error ? e.message : "Failed to load rides.",
-                        );
-                      } finally {
-                        setLoading(false);
-                      }
-                    })();
+                    setBrowseRefetchKey((k) => k + 1);
                   }}
                   className="ml-2 font-semibold text-red-900 underline"
                 >

@@ -55,7 +55,7 @@ describe("browse rides hub page", () => {
         expect(markup).not.toContain("data-testid=\"my-rides-view\"");
     });
 
-    it("renders distance filter controls", async () => {
+    it("renders sidebar filter controls (distance and time window)", async () => {
         mockUseSearchParams.mockReturnValue(new URLSearchParams());
 
         vi.resetModules();

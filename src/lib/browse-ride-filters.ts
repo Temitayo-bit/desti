@@ -11,9 +11,12 @@ export type BrowseTimeWindow =
   | "EVENING"
   | "LATE_NIGHT";
 
+/** Returned when `iso` is not a valid date; never matches a time window. */
+export const INVALID_LOCAL_HOUR = -1;
+
 export function getLocalHour(iso: string): number {
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return 12;
+  if (Number.isNaN(d.getTime())) return INVALID_LOCAL_HOUR;
   return d.getHours();
 }
 
@@ -22,6 +25,7 @@ export function hourMatchesTimeWindow(
   window: BrowseTimeWindow | null,
 ): boolean {
   if (window == null) return true;
+  if (hour < 0) return false;
   if (window === "MORNING") return hour >= 5 && hour < 12;
   if (window === "AFTERNOON") return hour >= 12 && hour < 17;
   if (window === "EVENING") return hour >= 17 && hour < 21;
@@ -48,7 +52,7 @@ export function buildActiveDistanceSet(filter: {
   if (filter.short) s.add("SHORT");
   if (filter.medium) s.add("MEDIUM");
   if (filter.long) s.add("LONG");
-  if (s.size === 0) return "all";
+  if (s.size === 0) return s;
   if (s.size === 3) return "all";
   return s;
 }

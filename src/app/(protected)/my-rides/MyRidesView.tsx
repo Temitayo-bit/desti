@@ -4,9 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
-import { MapPin, MessageCircle, User, X } from "lucide-react";
+import { MapPin, User, X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { RidesViewToggle } from "../_components/RidesViewToggle";
+import { ConfirmedBookingsList } from "./ConfirmedBookingsList";
 import { filterMyRides, type MyRidesQuickFilter } from "@/lib/my-rides";
 import { openBookingConversationThread } from "@/lib/booking-conversation";
 import type { ManagedRideSummary } from "@/types/ride";
@@ -93,6 +94,22 @@ const UsersIcon = () => (
   </svg>
 );
 
+export type MyRidesHubFilters = {
+  hubSearchQuery?: string;
+  departDate?: string;
+  distShort?: boolean;
+  distMedium?: boolean;
+  distLong?: boolean;
+  timeWindow?: BrowseTimeWindow | null;
+  sidebarApi?: SidebarApiFilters;
+};
+
+export type MyRidesHubControls = {
+  sortBy?: "earliest" | "price";
+  setSortBy?: (v: "earliest" | "price") => void;
+  onClearHubFilters?: () => void;
+};
+
 interface MyRidesViewProps {
   /**
    * When true, the view is shown inside the browse hub (shared hero/toggle in parent).
@@ -101,32 +118,26 @@ interface MyRidesViewProps {
   embedded?: boolean;
   /** Same hub layout as Browse Rides: shared filters + sort from parent */
   hubMode?: boolean;
-  hubSearchQuery?: string;
-  departDate?: string;
-  distShort?: boolean;
-  distMedium?: boolean;
-  distLong?: boolean;
-  timeWindow?: BrowseTimeWindow | null;
-  sidebarApi?: SidebarApiFilters;
-  sortBy?: "earliest" | "price";
-  setSortBy?: (v: "earliest" | "price") => void;
-  onClearHubFilters?: () => void;
+  hubFilters?: MyRidesHubFilters;
+  hubControls?: MyRidesHubControls;
 }
 
 export function MyRidesView({
   embedded = false,
   hubMode = false,
-  hubSearchQuery = "",
-  departDate = "",
-  distShort = true,
-  distMedium = true,
-  distLong = true,
-  timeWindow = null,
-  sidebarApi,
-  sortBy = "earliest",
-  setSortBy,
-  onClearHubFilters,
+  hubFilters,
+  hubControls,
 }: MyRidesViewProps) {
+  const hubSearchQuery = hubFilters?.hubSearchQuery ?? "";
+  const departDate = hubFilters?.departDate ?? "";
+  const distShort = hubFilters?.distShort ?? true;
+  const distMedium = hubFilters?.distMedium ?? true;
+  const distLong = hubFilters?.distLong ?? true;
+  const timeWindow = hubFilters?.timeWindow ?? null;
+  const sidebarApi = hubFilters?.sidebarApi;
+  const sortBy = hubControls?.sortBy ?? "earliest";
+  const setSortBy = hubControls?.setSortBy;
+  const onClearHubFilters = hubControls?.onClearHubFilters;
   const router = useRouter();
   const [rides, setRides] = useState<ManagedRideSummary[]>([]);
   const [selectedRide, setSelectedRide] = useState<ManagedRideSummary | null>(
@@ -276,20 +287,7 @@ export function MyRidesView({
       );
     }
     return list;
-  }, [
-    rides,
-    hubMode,
-    hubSearchQuery,
-    searchQuery,
-    activeFilter,
-    departDate,
-    distShort,
-    distMedium,
-    distLong,
-    timeWindow,
-    mvp2Bar,
-    sortBy,
-  ]);
+  }, [rides, hubMode, hubFilters, hubControls, searchQuery, activeFilter]);
   const quickFilters = [
     "All",
     "Today",
@@ -886,57 +884,12 @@ export function MyRidesView({
                             Manage Ride
                           </button>
                         </div>
-                        {ride.confirmedBookings.length > 0 ? (
-                          <div className="mt-4 border-t border-zinc-200 pt-4">
-                            <p className="mb-3 text-sm font-semibold text-zinc-900">
-                              Confirmed bookings ({ride.confirmedBookings.length})
-                            </p>
-                            <div className="space-y-2">
-                              {ride.confirmedBookings.map((booking) => {
-                                const openingConversation =
-                                  openingConversationBookingId === booking.id;
-                                return (
-                                  <div
-                                    key={booking.id}
-                                    className="rounded-xl border border-zinc-200 bg-zinc-50 p-3"
-                                  >
-                                    <div className="flex items-center justify-between gap-3">
-                                      <div className="space-y-1">
-                                        <p className="text-sm font-semibold text-zinc-900">
-                                          Booking #{booking.id.slice(0, 8)}
-                                        </p>
-                                        <p className="text-xs text-zinc-600">
-                                          {booking.seatsBooked}{" "}
-                                          {booking.seatsBooked === 1
-                                            ? "seat"
-                                            : "seats"}{" "}
-                                          ·{" "}
-                                          {formatTimeRange(
-                                            booking.startsAt,
-                                            booking.endsAt,
-                                          )}
-                                        </p>
-                                      </div>
-                                      <button
-                                        type="button"
-                                        disabled={openingConversation}
-                                        onClick={() =>
-                                          void openBookingMessages(booking.id)
-                                        }
-                                        className="inline-flex items-center gap-1 rounded-lg border border-zinc-300 px-2.5 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
-                                      >
-                                        <MessageCircle size={14} />
-                                        {openingConversation
-                                          ? "Opening..."
-                                          : "Message"}
-                                      </button>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        ) : null}
+                        <ConfirmedBookingsList
+                          bookings={ride.confirmedBookings}
+                          openingConversationBookingId={openingConversationBookingId}
+                          onMessage={(id) => void openBookingMessages(id)}
+                          formatTimeRange={formatTimeRange}
+                        />
                       </div>
                     </article>
                   );
@@ -1017,50 +970,12 @@ export function MyRidesView({
                       </div>
                     </div>
 
-                    {ride.confirmedBookings.length > 0 ? (
-                      <div className="mt-4 border-t border-zinc-200 pt-4">
-                        <p className="mb-3 text-sm font-semibold text-zinc-900">
-                          Confirmed bookings ({ride.confirmedBookings.length})
-                        </p>
-                        <div className="space-y-2">
-                          {ride.confirmedBookings.map((booking) => {
-                            const openingConversation =
-                              openingConversationBookingId === booking.id;
-                            return (
-                              <div
-                                key={booking.id}
-                                className="rounded-xl border border-zinc-200 bg-zinc-50 p-3"
-                              >
-                                <div className="flex items-center justify-between gap-3">
-                                  <div className="space-y-1">
-                                    <p className="text-sm font-semibold text-zinc-900">
-                                      Booking #{booking.id.slice(0, 8)}
-                                    </p>
-                                    <p className="text-xs text-zinc-600">
-                                      {booking.seatsBooked}{" "}
-                                      {booking.seatsBooked === 1 ? "seat" : "seats"}{" "}
-                                      ·{" "}
-                                      {formatTimeRange(booking.startsAt, booking.endsAt)}
-                                    </p>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    disabled={openingConversation}
-                                    onClick={() =>
-                                      void openBookingMessages(booking.id)
-                                    }
-                                    className="inline-flex items-center gap-1 rounded-lg border border-zinc-300 px-2.5 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
-                                  >
-                                    <MessageCircle size={14} />
-                                    {openingConversation ? "Opening..." : "Message"}
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ) : null}
+                    <ConfirmedBookingsList
+                      bookings={ride.confirmedBookings}
+                      openingConversationBookingId={openingConversationBookingId}
+                      onMessage={(id) => void openBookingMessages(id)}
+                      formatTimeRange={formatTimeRange}
+                    />
                   </article>
                 );
               })}

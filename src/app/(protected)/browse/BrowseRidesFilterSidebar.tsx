@@ -91,6 +91,7 @@ export function BrowseRidesFilterSidebar({
             <button
               key={tw.id}
               type="button"
+              aria-pressed={timeWindow === tw.id}
               onClick={() => setTimeWindow((t) => (t === tw.id ? null : tw.id))}
               className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
                 timeWindow === tw.id
@@ -110,8 +111,11 @@ export function BrowseRidesFilterSidebar({
         </p>
         <div className="mt-2 space-y-2">
           <div>
-            <label className="text-xs text-zinc-600">AC</label>
+            <label htmlFor="browse-filter-hasAc" className="text-xs text-zinc-600">
+              AC
+            </label>
             <select
+              id="browse-filter-hasAc"
               value={sidebarApi.hasAc}
               onChange={(e) =>
                 setSidebarApi((p) => ({ ...p, hasAc: e.target.value }))
@@ -124,8 +128,11 @@ export function BrowseRidesFilterSidebar({
             </select>
           </div>
           <div>
-            <label className="text-xs text-zinc-600">Trunk space</label>
+            <label htmlFor="browse-filter-hasTrunkSpace" className="text-xs text-zinc-600">
+              Trunk space
+            </label>
             <select
+              id="browse-filter-hasTrunkSpace"
               value={sidebarApi.hasTrunkSpace}
               onChange={(e) =>
                 setSidebarApi((p) => ({ ...p, hasTrunkSpace: e.target.value }))
@@ -138,8 +145,11 @@ export function BrowseRidesFilterSidebar({
             </select>
           </div>
           <div>
-            <label className="text-xs text-zinc-600">Music</label>
+            <label htmlFor="browse-filter-musicPreference" className="text-xs text-zinc-600">
+              Music
+            </label>
             <select
+              id="browse-filter-musicPreference"
               value={sidebarApi.musicPreference}
               onChange={(e) =>
                 setSidebarApi((p) => ({ ...p, musicPreference: e.target.value }))
@@ -152,8 +162,11 @@ export function BrowseRidesFilterSidebar({
             </select>
           </div>
           <div>
-            <label className="text-xs text-zinc-600">Vehicle</label>
+            <label htmlFor="browse-filter-vehicleType" className="text-xs text-zinc-600">
+              Vehicle
+            </label>
             <select
+              id="browse-filter-vehicleType"
               value={sidebarApi.vehicleType}
               onChange={(e) =>
                 setSidebarApi((p) => ({ ...p, vehicleType: e.target.value }))
