@@ -29,10 +29,10 @@ export function BrowseTripRequestsFilterSidebar({
 }: BrowseTripRequestsFilterSidebarProps) {
   return (
     <aside className="min-w-0 space-y-5 lg:col-span-4 xl:col-span-3">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+      <fieldset className="min-w-0 border-0 p-0">
+        <legend className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
           Distance
-        </p>
+        </legend>
         <ul className="mt-2 space-y-2">
           {(
             [
@@ -70,12 +70,12 @@ export function BrowseTripRequestsFilterSidebar({
             </li>
           ))}
         </ul>
-      </div>
+      </fieldset>
 
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+      <fieldset className="min-w-0 border-0 p-0">
+        <legend className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
           Time window
-        </p>
+        </legend>
         <div className="mt-2 flex flex-wrap gap-2">
           {(
             [
@@ -100,7 +100,7 @@ export function BrowseTripRequestsFilterSidebar({
             </button>
           ))}
         </div>
-      </div>
+      </fieldset>
 
       <div className="rounded-2xl border border-[#006837]/20 bg-[#C4E5D4]/50 p-4 text-sm text-[#0d3d2e]">
         <p className="font-semibold">Pro tip</p>

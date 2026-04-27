@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { format } from "date-fns";
 import { useRouter } from "next/navigation";
 import { User, Calendar, Check, X } from "lucide-react";
@@ -30,17 +30,9 @@ export function TripRequestDetailClient({ tripRequest, currentUserClerkId }: Tri
   });
   const [offerSubmitting, setOfferSubmitting] = useState(false);
   const [offerError, setOfferError] = useState<string | null>(null);
-  const [offerJustSent, setOfferJustSent] = useState(false);
-
   const myPendingOffer =
     !isOwner &&
     tripRequest.offers?.some((o: any) => o.driverUserId === currentUserClerkId);
-
-  useEffect(() => {
-    if (myPendingOffer) {
-      setOfferJustSent(false);
-    }
-  }, [myPendingOffer]);
 
   // Edit Modal State — only the fields exposed in the UI
   const [editFormData, setEditFormData] = useState({
@@ -87,7 +79,6 @@ export function TripRequestDetailClient({ tripRequest, currentUserClerkId }: Tri
       });
 
       if (res.ok) {
-        setOfferJustSent(true);
         router.refresh();
       } else {
         const text = await res.text();
@@ -291,7 +282,7 @@ export function TripRequestDetailClient({ tripRequest, currentUserClerkId }: Tri
 
               {!isOwner && !isCancelled && (
                 <div className="mt-2 border-t border-white/25 pt-5">
-                  {myPendingOffer || offerJustSent ? (
+                  {myPendingOffer ? (
                     <div className="rounded-2xl bg-white/15 p-4 text-center">
                       <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-white/20">
                         <Check className="h-6 w-6 text-white" strokeWidth={2.5} aria-hidden />

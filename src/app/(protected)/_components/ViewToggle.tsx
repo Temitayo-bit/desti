@@ -33,25 +33,23 @@ export function ViewToggle<T extends string>({
   options,
 }: ViewToggleProps<T>) {
   return (
-    <div className="mb-5 -mx-1 px-1 overflow-x-auto">
-      <div
-        className="inline-flex min-w-max gap-1 rounded-2xl border border-zinc-200 bg-zinc-50 p-1 shadow-sm"
-        role="tablist"
-        aria-label="View"
-      >
+    <nav
+      className="mb-5 -mx-1 px-1 overflow-x-auto"
+      role="navigation"
+      aria-label="View"
+    >
+      <div className="inline-flex min-w-max gap-1 rounded-2xl border border-zinc-200 bg-zinc-50 p-1 shadow-sm">
         {options.map((option) => (
           <Link
             key={option.value}
             href={option.href}
             className={toggleLinkClass(activeView === option.value)}
             aria-current={activeView === option.value ? "page" : undefined}
-            role="tab"
-            aria-selected={activeView === option.value}
           >
             {option.label}
           </Link>
         ))}
       </div>
-    </div>
+    </nav>
   );
 }

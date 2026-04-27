@@ -35,6 +35,10 @@ export interface RiderIncomingOfferRow {
   status: string;
   createdAt: string;
   tripRequest: OfferTripRequestSnippet;
+  driver?: {
+    name: string | null;
+    profilePictureUrl: string | null;
+  } | null;
 }
 
 interface TripRequestMine {
@@ -589,8 +593,15 @@ export function TripRequestOffersView({ initialRequestId }: TripRequestOffersVie
           <ul className="flex flex-col gap-4">
             {offersForSelected.map((offer) => {
               const rating = driverRatings[offer.driverUserId];
-              const showStars = rating && rating.ratingCount > 0 && rating.averageRating != null;
+              const showStars =
+                Boolean(rating) &&
+                (rating?.ratingCount ?? 0) > 0 &&
+                rating?.averageRating != null;
               const busy = Boolean(pendingActions[offer.id]);
+              const driverName = offer.driver?.name?.trim() || "Driver";
+              const driverSubtitle = offer.driver?.name?.trim()
+                ? "Verified Stetson student"
+                : "Student driver on Desti";
 
               return (
                 <li
@@ -599,20 +610,24 @@ export function TripRequestOffersView({ initialRequestId }: TripRequestOffersVie
                 >
                   <div className="flex flex-col gap-4 md:flex-row md:justify-between">
                     <div className="flex min-w-0 gap-3">
-                      <UserAvatar size="lg" name="Driver" />
+                      <UserAvatar
+                        size="lg"
+                        name={driverName}
+                        src={offer.driver?.profilePictureUrl ?? null}
+                      />
                       <div className="min-w-0">
-                        <p className="font-bold text-zinc-900">Driver</p>
-                        <p className="text-sm text-zinc-500">Verified Stetson rider</p>
-                        {showStars ? (
+                        <p className="font-bold text-zinc-900">{driverName}</p>
+                        <p className="text-sm text-zinc-500">{driverSubtitle}</p>
+                        {showStars && rating && rating.averageRating != null ? (
                           <p className="mt-1 text-sm font-semibold text-amber-700">
-                            {rating!.averageRating!.toFixed(1)} ★
+                            {rating.averageRating.toFixed(1)} ★
                             <span className="ml-1 font-normal text-zinc-500">
-                              ({rating!.ratingCount})
+                              ({rating.ratingCount})
                             </span>
                           </p>
                         ) : (
                           <span className="mt-2 inline-block rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-semibold text-zinc-600">
-                            New Driver
+                            New driver
                           </span>
                         )}
                       </div>

@@ -466,7 +466,7 @@ export default function BrowseTripRequestsPage() {
     setHubSearchQuery(heroDestinationDraft.trim());
   }, [heroDestinationDraft]);
 
-  const clearHubFilters = useCallback(() => {
+  const clearHubFilters = () => {
     setDistShort(true);
     setDistMedium(true);
     setDistLong(true);
@@ -474,7 +474,7 @@ export default function BrowseTripRequestsPage() {
     setDepartDate("");
     setHubSearchQuery("");
     setHeroDestinationDraft("");
-  }, []);
+  };
 
   const hubBrowseProps: BrowseTripRequestsHubProps = {
     hubSearchQuery,

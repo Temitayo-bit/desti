@@ -445,26 +445,30 @@ export function MyTripRequestsView({
       return;
     }
     const ac = new AbortController();
-    (async () => {
-      try {
-        const results = await Promise.all(
-          tripRequests.map(async (tr) => {
-            const res = await fetch(`/api/trip-requests/${tr.id}/matches`, {
-              signal: ac.signal,
-            });
-            if (!res.ok) return [tr.id, 0] as const;
-            const data = (await res.json()) as { items?: unknown[] };
-            return [tr.id, Array.isArray(data.items) ? data.items.length : 0] as const;
-          }),
-        );
-        if (!ac.signal.aborted) {
-          setMatchCountByRequestId(Object.fromEntries(results));
+    void (async () => {
+      const settled = await Promise.allSettled(
+        tripRequests.map(async (tr) => {
+          const res = await fetch(`/api/trip-requests/${tr.id}/matches`, {
+            signal: ac.signal,
+          });
+          if (!res.ok) return [tr.id, 0] as const;
+          const data = (await res.json()) as { items?: unknown[] };
+          return [tr.id, Array.isArray(data.items) ? data.items.length : 0] as const;
+        }),
+      );
+      if (ac.signal.aborted) return;
+      const entries = settled.map((result, index) => {
+        const tr = tripRequests[index]!;
+        if (result.status === "fulfilled") {
+          return result.value;
         }
-      } catch (e) {
-        if (e instanceof Error && e.name === "AbortError") return;
-        console.error("Failed to load match counts:", e);
-      }
-    })();
+        return [tr.id, 0] as const;
+      });
+      setMatchCountByRequestId(Object.fromEntries(entries));
+    })().catch((e) => {
+      if (e instanceof Error && e.name === "AbortError") return;
+      console.error("Failed to load match counts:", e);
+    });
     return () => ac.abort();
   }, [tripRequests]);
 

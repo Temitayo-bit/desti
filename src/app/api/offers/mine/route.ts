@@ -21,6 +21,12 @@ const offerMineSelect = {
     message: true,
     status: true,
     createdAt: true,
+    driver: {
+        select: {
+            name: true,
+            profilePictureUrl: true,
+        },
+    },
     tripRequest: {
         select: {
             id: true,

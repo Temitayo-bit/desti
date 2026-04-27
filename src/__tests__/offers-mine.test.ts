@@ -57,6 +57,10 @@ function fakeOffer(overrides: Record<string, unknown> = {}) {
         message: null,
         status: "PENDING",
         createdAt: new Date("2030-01-02T10:00:00.000Z"),
+        driver: {
+            name: "Test Driver",
+            profilePictureUrl: null,
+        },
         tripRequest: {
             id: "11111111-1111-4111-8111-111111111111",
             originText: "Stetson University",
@@ -241,6 +245,10 @@ describe("GET /api/offers/mine", () => {
                 message: offer.message,
                 status: offer.status,
                 createdAt: offer.createdAt.toISOString(),
+                driver: expect.objectContaining({
+                    name: "Test Driver",
+                    profilePictureUrl: null,
+                }),
                 tripRequest: expect.objectContaining({
                     id: offer.tripRequest.id,
                     originText: offer.tripRequest.originText,

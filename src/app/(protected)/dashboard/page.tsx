@@ -346,6 +346,7 @@ export default function DashboardPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [viewerUserId, setViewerUserId] = useState<string | null>(null);
+  const [meLoaded, setMeLoaded] = useState(false);
   const [userFirstName, setUserFirstName] = useState<string | null>(null);
   const [selectedTrip, setSelectedTrip] = useState<NormalizedDashboardBooking | null>(null);
   const [actionNotice, setActionNotice] = useState<ActionNotice>(null);
@@ -400,7 +401,9 @@ export default function DashboardPage() {
     async function fetchMe() {
       try {
         const response = await fetch("/api/me", { signal: controller.signal });
-        if (!response.ok) return;
+        if (!response.ok) {
+          return;
+        }
         const payload = (await response.json()) as {
           clerkUserId?: string;
           localUser?: { name?: string | null } | null;
@@ -415,6 +418,10 @@ export default function DashboardPage() {
         }
       } catch {
         // best-effort
+      } finally {
+        if (!controller.signal.aborted) {
+          setMeLoaded(true);
+        }
       }
     }
 
@@ -709,7 +716,7 @@ export default function DashboardPage() {
                     </Link>
                   </div>
 
-                  {viewerUserId === null ? (
+                  {!meLoaded ? (
                     <div className={`${PAGE_CARD} p-5 text-sm text-zinc-500`}>Loading trips&hellip;</div>
                   ) : sortedUpcomingConfirmed.length === 0 ? (
                     <div className={`${PAGE_CARD} p-5 text-sm text-zinc-500`}>
@@ -733,8 +740,16 @@ export default function DashboardPage() {
                           Boolean(viewerUserId) && booking.driverUserId === viewerUserId;
                         const viewerIsRider =
                           Boolean(viewerUserId) && booking.riderUserId === viewerUserId;
-                        const roleLabel = viewerIsDriver ? "You are driving" : "You are a passenger";
-                        const rolePill = viewerIsDriver ? statusPill("green") : statusPill("blue");
+                        const roleLabel = !viewerUserId
+                          ? "Confirmed trip"
+                          : viewerIsDriver
+                            ? "You are driving"
+                            : "You are a passenger";
+                        const rolePill = !viewerUserId
+                          ? statusPill("blue")
+                          : viewerIsDriver
+                            ? statusPill("green")
+                            : statusPill("blue");
                         return (
                           <div
                             key={booking.id}
