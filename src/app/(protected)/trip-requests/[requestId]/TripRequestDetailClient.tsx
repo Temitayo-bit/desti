@@ -1,14 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { format } from "date-fns";
 import { useRouter } from "next/navigation";
-import { User, MapPin, Calendar, Check, X } from "lucide-react";
+import { User, Calendar, Check, X } from "lucide-react";
 import { ProtectedShell } from "../../_components/ProtectedShell";
 import { StaticRouteMap } from "@/components/StaticRouteMap";
 import { UserAvatar } from "@/components/UserAvatar";
-import { distanceCategoryLabel, formatDistanceMilesLabel } from "@/lib/browse-ride-filters";
-import type { DistanceCategory } from "@prisma/client";
 
 interface TripRequestDetailClientProps {
   tripRequest: any;
@@ -25,16 +23,24 @@ export function TripRequestDetailClient({ tripRequest, currentUserClerkId }: Tri
   const [isCancelling, setIsCancelling] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  // Offer Modal
-  const [isOfferModalOpen, setIsOfferModalOpen] = useState(false);
   const [offerData, setOfferData] = useState({
     priceDollars: "",
-    seatsOffered: "1",
+    seatsOffered: String(tripRequest.seatsNeeded ?? 1),
     message: "",
   });
   const [offerSubmitting, setOfferSubmitting] = useState(false);
   const [offerError, setOfferError] = useState<string | null>(null);
-  const [offerSuccess, setOfferSuccess] = useState(false);
+  const [offerJustSent, setOfferJustSent] = useState(false);
+
+  const myPendingOffer =
+    !isOwner &&
+    tripRequest.offers?.some((o: any) => o.driverUserId === currentUserClerkId);
+
+  useEffect(() => {
+    if (myPendingOffer) {
+      setOfferJustSent(false);
+    }
+  }, [myPendingOffer]);
 
   // Edit Modal State — only the fields exposed in the UI
   const [editFormData, setEditFormData] = useState({
@@ -81,7 +87,7 @@ export function TripRequestDetailClient({ tripRequest, currentUserClerkId }: Tri
       });
 
       if (res.ok) {
-        setOfferSuccess(true);
+        setOfferJustSent(true);
         router.refresh();
       } else {
         const text = await res.text();
@@ -188,7 +194,12 @@ export function TripRequestDetailClient({ tripRequest, currentUserClerkId }: Tri
   };
 
   return (
-    <ProtectedShell activeNav="browse" layout="topnav" topNavActive="browse">
+    <ProtectedShell
+      activeNav="browseTripRequests"
+      layout="topnav"
+      topNavActive="requests"
+      topNavPrimaryAction={{ label: "Create Trip Request", href: "/post-trip-request" }}
+    >
       <div className="max-w-5xl mx-auto px-4 py-8 md:px-8">
         <div className="mb-6 flex items-center justify-between">
           <button
@@ -279,13 +290,93 @@ export function TripRequestDetailClient({ tripRequest, currentUserClerkId }: Tri
               </div>
 
               {!isOwner && !isCancelled && (
-                <div className="space-y-3">
-                  <button
-                    onClick={() => { setIsOfferModalOpen(true); setOfferSuccess(false); setOfferError(null); }}
-                    className="w-full bg-white text-amber-700 hover:bg-zinc-50 font-bold py-4 rounded-xl transition shadow-sm"
-                  >
-                    Offer a Ride
-                  </button>
+                <div className="mt-2 border-t border-white/25 pt-5">
+                  {myPendingOffer || offerJustSent ? (
+                    <div className="rounded-2xl bg-white/15 p-4 text-center">
+                      <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-white/20">
+                        <Check className="h-6 w-6 text-white" strokeWidth={2.5} aria-hidden />
+                      </div>
+                      <p className="font-bold text-white">Offer sent</p>
+                      <p className="mt-1 text-sm text-white/85">
+                        The rider will review your offer and get back to you.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div>
+                        <h3 className="text-base font-bold text-white">Offer a ride</h3>
+                        <p className="mt-0.5 text-sm text-white/80">
+                          Propose your ride to this requester. They&apos;ll accept if it&apos;s a
+                          good fit.
+                        </p>
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-xs font-semibold text-white/90">
+                          Price per seat ($)
+                        </label>
+                        <div className="flex items-center gap-0 overflow-hidden rounded-xl bg-white ring-2 ring-white/30 focus-within:ring-white/60">
+                          <span className="pl-3 text-sm text-zinc-500">$</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            placeholder="0.00"
+                            value={offerData.priceDollars}
+                            onChange={(e) =>
+                              setOfferData({ ...offerData, priceDollars: e.target.value })
+                            }
+                            className="min-w-0 flex-1 border-0 bg-transparent py-2.5 pr-3 text-sm text-zinc-900 outline-none"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-xs font-semibold text-white/90">
+                          Seats offered
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="8"
+                          step="1"
+                          value={offerData.seatsOffered}
+                          onChange={(e) =>
+                            setOfferData({ ...offerData, seatsOffered: e.target.value })
+                          }
+                          className="w-full rounded-xl border-0 bg-white px-3 py-2.5 text-sm text-zinc-900 ring-2 ring-white/30 outline-none focus:ring-white/60"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-xs font-semibold text-white/90">
+                          Message (optional)
+                        </label>
+                        <textarea
+                          placeholder="Any details for the rider..."
+                          value={offerData.message}
+                          onChange={(e) =>
+                            setOfferData({ ...offerData, message: e.target.value })
+                          }
+                          className="w-full resize-y rounded-xl border-0 bg-white px-3 py-2.5 text-sm text-zinc-900 ring-2 ring-white/30 outline-none focus:ring-white/60"
+                          rows={3}
+                        />
+                      </div>
+
+                      {offerError ? (
+                        <p className="text-sm font-medium text-amber-100">{offerError}</p>
+                      ) : null}
+
+                      <button
+                        type="button"
+                        onClick={() => void handleSendOffer()}
+                        disabled={offerSubmitting}
+                        className="w-full rounded-xl bg-white py-3 text-sm font-bold text-amber-700 shadow-sm transition hover:bg-zinc-50 disabled:opacity-60"
+                      >
+                        {offerSubmitting ? "Sending…" : "Send offer"}
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -358,7 +449,10 @@ export function TripRequestDetailClient({ tripRequest, currentUserClerkId }: Tri
                   })()}
                 </div>
 
-                <div className="bg-white rounded-3xl p-6 shadow-sm border border-zinc-100">
+                <div
+                  id="matching-rides"
+                  className="bg-white rounded-3xl p-6 shadow-sm border border-zinc-100 scroll-mt-24"
+                >
                   <h3 className="font-bold text-zinc-900 mb-4">Matches Found</h3>
                   {tripRequest.matches?.length > 0 ? (
                     <div className="space-y-4">
@@ -444,86 +538,6 @@ export function TripRequestDetailClient({ tripRequest, currentUserClerkId }: Tri
         </div>
       )}
 
-      {/* Offer Modal */}
-      {isOfferModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/40 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 relative">
-            <button
-              onClick={() => { setIsOfferModalOpen(false); setOfferSuccess(false); setOfferError(null); }}
-              className="absolute top-4 right-4 p-2 text-zinc-400 hover:text-zinc-600"
-            >
-              <X size={20} />
-            </button>
-
-            {offerSuccess ? (
-              <div className="flex flex-col items-center justify-center py-6 text-center">
-                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-amber-100 mb-4">
-                  <Check className="h-8 w-8 text-amber-600" strokeWidth={2.5} />
-                </div>
-                <h2 className="text-xl font-bold text-zinc-900 mb-2">Offer Sent!</h2>
-                <p className="text-sm text-zinc-500 mb-6">The rider will review your offer and get back to you.</p>
-                <button
-                  onClick={() => { setIsOfferModalOpen(false); setOfferSuccess(false); }}
-                  className="w-full bg-amber-600 text-white font-bold py-3 rounded-xl"
-                >
-                  Done
-                </button>
-              </div>
-            ) : (
-              <>
-                <h2 className="text-xl font-bold mb-1 text-zinc-900">Offer a Ride</h2>
-                <p className="text-zinc-500 text-sm mb-4">Propose your ride to this requester. They&apos;ll accept if it&apos;s a good fit.</p>
-
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-semibold mb-1">Price per Seat ($)</label>
-                    <div className="flex items-center gap-0 rounded-xl bg-zinc-100 ring-1 ring-inset ring-zinc-200 focus-within:ring-2 focus-within:ring-amber-500/40">
-                      <span className="pl-3 text-sm text-zinc-500">$</span>
-                      <input
-                        type="number" min="0" step="0.01" placeholder="0.00"
-                        value={offerData.priceDollars}
-                        onChange={e => setOfferData({ ...offerData, priceDollars: e.target.value })}
-                        className="min-w-0 flex-1 border-0 bg-transparent py-3 pr-3 text-sm text-zinc-900 outline-none"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold mb-1">Seats Offered</label>
-                    <input
-                      type="number" min="1" max="8" step="1"
-                      value={offerData.seatsOffered}
-                      onChange={e => setOfferData({ ...offerData, seatsOffered: e.target.value })}
-                      className="w-full rounded-xl bg-zinc-100 px-3 py-3 text-sm text-zinc-900 ring-1 ring-inset ring-zinc-200 outline-none focus:ring-2 focus:ring-amber-500/40"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold mb-1">Message (Optional)</label>
-                    <textarea
-                      placeholder="Any details for the rider..."
-                      value={offerData.message}
-                      onChange={e => setOfferData({ ...offerData, message: e.target.value })}
-                      className="w-full rounded-xl border border-zinc-200 p-3 text-sm outline-none focus:ring-2 focus:ring-amber-500/40"
-                      rows={3}
-                    />
-                  </div>
-
-                  {offerError && <p className="text-sm text-red-600">{offerError}</p>}
-
-                  <button
-                    onClick={handleSendOffer}
-                    disabled={offerSubmitting}
-                    className="w-full bg-amber-600 text-white font-bold py-3 rounded-xl disabled:opacity-50"
-                  >
-                    {offerSubmitting ? "Sending..." : "Send Offer"}
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
     </ProtectedShell>
   );
 }

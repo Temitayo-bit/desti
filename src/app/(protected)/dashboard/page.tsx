@@ -490,19 +490,18 @@ export default function DashboardPage() {
     [normalizedBookings]
   );
 
-  const sortedRiderBookings = useMemo(() => {
-    if (!viewerUserId) return [] as NormalizedDashboardBooking[];
-    return [...confirmedBookings]
-      .filter((b) => b.riderUserId === viewerUserId)
-      .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
-  }, [confirmedBookings, viewerUserId]);
+  const sortedUpcomingConfirmed = useMemo(() => {
+    return [...confirmedBookings].sort(
+      (a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()
+    );
+  }, [confirmedBookings]);
 
   const welcome = userFirstName
     ? `Welcome back, ${userFirstName}`
     : "Welcome back";
 
   return (
-    <ProtectedShell activeNav="dashboard" layout="topnav" topNavActive={null}>
+    <ProtectedShell activeNav="dashboard" layout="topnav" topNavActive="dashboard">
       <div className="space-y-8">
         {loading ? (
           <div className="space-y-6">
@@ -557,13 +556,13 @@ export default function DashboardPage() {
               <StatCard
                 title="Active Rides"
                 value={summary?.activeRidesDrivingCount ?? 0}
-                subtitle="Driving this week"
+                subtitle="Upcoming rides you are hosting"
                 icon={<CarIcon />}
               />
               <StatCard
                 title="Confirmed"
-                value={summary?.passengerBookingsCount ?? 0}
-                subtitle="Passenger bookings"
+                value={summary?.confirmedBookingsCount ?? 0}
+                subtitle="Upcoming trips (rider or driver)"
                 icon={<CheckCircleIcon />}
               />
               <StatCard
@@ -609,7 +608,7 @@ export default function DashboardPage() {
                     <div
                       className={`${PAGE_CARD} p-6 text-sm leading-relaxed text-zinc-500`}
                     >
-                      You have no active upcoming rides as a driver.{" "}
+                      You have no upcoming rides as a driver.{" "}
                       <Link className="font-semibold text-[#0d3d2e] hover:underline" href="/post-ride">
                         Post a ride
                       </Link>{" "}
@@ -700,42 +699,50 @@ export default function DashboardPage() {
                         className="h-2 w-1.5 rounded-full bg-[#0d3d2e] shadow-sm shadow-[#0d3d2e]/30"
                         aria-hidden
                       />
-                      Your Bookings (Rider)
+                      Your Upcoming Confirmed Trips
                     </h2>
                     <Link
                       href="/bookings"
-                      className="text-sm font-semibold text-[#0d3d2e] hover:underline"
+                      className={`text-sm font-semibold ${MOSS_CLASS} transition hover:underline`}
                     >
-                      History
+                      View all
                     </Link>
                   </div>
 
                   {viewerUserId === null ? (
-                    <div className={`${PAGE_CARD} p-5 text-sm text-zinc-500`}>Loading bookings&hellip;</div>
-                  ) : sortedRiderBookings.length === 0 ? (
+                    <div className={`${PAGE_CARD} p-5 text-sm text-zinc-500`}>Loading trips&hellip;</div>
+                  ) : sortedUpcomingConfirmed.length === 0 ? (
                     <div className={`${PAGE_CARD} p-5 text-sm text-zinc-500`}>
-                      No upcoming confirmed passenger bookings.{" "}
+                      No upcoming confirmed trips.{" "}
                       <Link href="/browse" className="font-medium text-[#0d3d2e] hover:underline">
                         Find a ride
+                      </Link>{" "}
+                      or{" "}
+                      <Link href="/post-ride" className="font-medium text-[#0d3d2e] hover:underline">
+                        post one
                       </Link>
                       .
                     </div>
                   ) : (
-                    <div
-                      className="grid grid-cols-1 gap-4 sm:grid-cols-2"
-                    >
-                      {sortedRiderBookings.map((booking) => {
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      {sortedUpcomingConfirmed.map((booking) => {
                         const { date, time } = formatRiderTime(booking.startsAt);
                         const vLabel = formatVehicleType(booking.vehicleType);
                         const openingConversation = openingConversationBookingId === booking.id;
+                        const viewerIsDriver =
+                          Boolean(viewerUserId) && booking.driverUserId === viewerUserId;
+                        const viewerIsRider =
+                          Boolean(viewerUserId) && booking.riderUserId === viewerUserId;
+                        const roleLabel = viewerIsDriver ? "You are driving" : "You are a passenger";
+                        const rolePill = viewerIsDriver ? statusPill("green") : statusPill("blue");
                         return (
                           <div
                             key={booking.id}
                             className={`${PAGE_CARD} group/card overflow-hidden shadow-md shadow-zinc-900/5 transition-shadow duration-300 hover:shadow-lg hover:shadow-zinc-900/8`}
                           >
-                            <div className="h-1.5 w-full bg-gradient-to-r from-[#0d3d2e]/0 via-[#0d3d2e]/25 to-sky-500/20" />
+                            <div className="h-1.5 w-full bg-gradient-to-r from-[#0d3d2e]/0 via-[#0d3d2e]/20 to-sky-500/25" />
                             <div
-                              className="cursor-pointer p-4 transition hover:bg-sky-50/30"
+                              className="cursor-pointer p-4 transition hover:bg-sky-50/25"
                               onClick={() => setSelectedTrip(booking)}
                               onKeyDown={(e) => {
                                 if (e.key === "Enter" || e.key === " ") {
@@ -748,62 +755,69 @@ export default function DashboardPage() {
                             >
                               <div className="mb-1 flex items-start justify-between gap-2">
                                 <p className="text-[0.7rem] font-bold uppercase tracking-wide text-zinc-400">
-                                  Destination
+                                  {roleLabel}
                                 </p>
-                                <span className={statusPill("blue")}>Confirmed</span>
+                                <span className={rolePill}>Confirmed</span>
                               </div>
                               <h3 className="text-balance text-lg font-bold leading-snug tracking-tight text-zinc-900 line-clamp-2">
+                                {booking.originText}{" "}
+                                <span className="whitespace-nowrap text-[#0d3d2e]/90">→</span>{" "}
                                 {booking.destinationText}
                               </h3>
                               <div className="mt-2 space-y-1.5 text-sm text-zinc-600">
-                                <p className="inline-flex items-center gap-1.5">
-                                  <MapPinIcon /> Pickup: {booking.originText}
-                                </p>
                                 <p className="inline-flex items-center gap-1.5">
                                   <CalendarIcon />
                                   {date}
                                   {time ? ` · ${time}` : ""}
                                 </p>
+                                {viewerIsDriver ? (
+                                  <p className="inline-flex items-center gap-1.5">
+                                    <UsersIcon />
+                                    {getSeatDisplayText(booking, viewerUserId)}
+                                  </p>
+                                ) : (
+                                  <p className="inline-flex items-center gap-1.5">
+                                    <MapPinIcon /> Pickup: {booking.originText}
+                                  </p>
+                                )}
                               </div>
                             </div>
                             <div
                               className="border-t border-zinc-100 bg-zinc-50/80 px-4 py-3"
                               onClick={(e) => e.stopPropagation()}
                             >
-                              <p className="text-sm text-zinc-800">
-                                <span className="text-zinc-500">Driver </span>
-                                {booking.driverName ?? "—"}
-                                {vLabel ? (
-                                  <>
-                                    <span className="text-zinc-400"> &middot; </span>
-                                    {vLabel}
-                                  </>
-                                ) : null}
-                              </p>
+                              {viewerIsDriver ? (
+                                <p className="text-sm text-zinc-600">
+                                  Manage pickups and messages from your ride detail page.
+                                </p>
+                              ) : viewerIsRider ? (
+                                <p className="text-sm text-zinc-800">
+                                  <span className="text-zinc-500">Driver </span>
+                                  {booking.driverName ?? "—"}
+                                  {vLabel ? (
+                                    <>
+                                      <span className="text-zinc-400"> &middot; </span>
+                                      {vLabel}
+                                    </>
+                                  ) : null}
+                                </p>
+                              ) : null}
                               <div className="mt-2 flex items-center justify-between">
                                 <Link
                                   href="/bookings"
                                   className="text-xs font-semibold text-[#0d3d2e] hover:underline"
                                 >
-                                  View trip
+                                  Trip details
                                 </Link>
-                                <div className="flex items-center gap-1">
-                                  <Link
-                                    href="/bookings"
-                                    className="text-xs font-semibold text-zinc-500 hover:underline"
-                                  >
-                                    Track ride
-                                  </Link>
-                                  <button
-                                    type="button"
-                                    onClick={() => void openBookingMessages(booking.id)}
-                                    disabled={openingConversation}
-                                    className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-zinc-200 bg-white text-[#0d3d2e] hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                    aria-label="Message"
-                                  >
-                                    {openingConversation ? "…" : <MessageCircle size={16} />}
-                                  </button>
-                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => void openBookingMessages(booking.id)}
+                                  disabled={openingConversation}
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-zinc-200 bg-white text-[#0d3d2e] hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                  aria-label="Message"
+                                >
+                                  {openingConversation ? "…" : <MessageCircle size={16} />}
+                                </button>
                               </div>
                             </div>
                           </div>

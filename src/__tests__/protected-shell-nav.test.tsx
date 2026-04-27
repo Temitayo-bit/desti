@@ -33,7 +33,7 @@ describe("protected shell trip request navigation", () => {
         expect(markup).not.toContain("Browse Rides");
         expect(markup).not.toContain(">My Rides<");
         expect(markup).toContain('href="/browse"');
-        expect(markup).toContain("Trip Requests");
+        expect(markup).toContain(">Requests<");
         expect(markup).not.toContain("Browse TripRequests");
         expect(markup).not.toContain(">My Trip Requests<");
         expect(markup).toContain('href="/browse-trip-requests"');

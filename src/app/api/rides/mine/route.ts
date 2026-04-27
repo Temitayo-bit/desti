@@ -71,7 +71,6 @@ export async function GET(request: NextRequest) {
       select: rideSummarySelect,
     });
 
-    const now = new Date();
     const rideIds = items.map((ride) => ride.id);
     const confirmedBookings: ConfirmedRideBookingItem[] =
       rideIds.length === 0
@@ -81,11 +80,6 @@ export async function GET(request: NextRequest) {
               status: "CONFIRMED",
               rideId: {
                 in: rideIds,
-              },
-              ride: {
-                latestDepartAt: {
-                  gt: now,
-                },
               },
             },
             orderBy: [{ createdAt: "asc" }, { id: "asc" }],

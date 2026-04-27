@@ -356,7 +356,12 @@ export default function PostTripRequestPage() {
   }
 
   return (
-    <ProtectedShell activeNav="browseTripRequests" layout="topnav" topNavActive="requests">
+    <ProtectedShell
+      activeNav="browseTripRequests"
+      layout="topnav"
+      topNavActive="requests"
+      topNavPrimaryAction={{ label: "Create Trip Request", href: "/post-trip-request" }}
+    >
       <div className="min-h-[calc(100vh-4rem)] flex flex-col bg-[#f3f4f6]">
         <div className="mx-auto w-full max-w-5xl flex-1 px-4 py-8 md:px-6 md:py-10">
           <div className="mb-8">

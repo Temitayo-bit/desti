@@ -112,7 +112,6 @@ export interface DashboardResponse {
   summary: {
     activeRidesDrivingCount: number;
     confirmedBookingsCount: number;
-    passengerBookingsCount: number;
     pendingOffersSentCount: number;
     pendingOffersReceivedCount: number;
   };

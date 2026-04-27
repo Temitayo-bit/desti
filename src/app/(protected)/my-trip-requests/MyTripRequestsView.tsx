@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import type { DistanceCategory } from "@prisma/client";
-import { MessageCircle, X } from "lucide-react";
+import { MapPin, MessageCircle, X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { TripRequestsViewToggle } from "../_components/TripRequestsViewToggle";
 import {
@@ -18,6 +18,14 @@ import {
 } from "@/lib/my-trip-requests";
 import { formatRelativeTime } from "@/lib/dashboard";
 import { openBookingConversationThread } from "@/lib/booking-conversation";
+import {
+  type BrowseTimeWindow,
+  buildActiveDistanceSet,
+  distanceCategoryLabel,
+  formatDistanceMilesLabel,
+  matchesLocalDepartDate,
+  rideDepartureTimeMatchesWindow,
+} from "@/lib/browse-ride-filters";
 
 type TripRequestStatus = "ACTIVE" | "CLOSED";
 
@@ -170,7 +178,7 @@ const ArrowRightIcon = () => (
     strokeWidth="2"
     strokeLinecap="round"
     strokeLinejoin="round"
-    className="text-zinc-400 group-hover:text-emerald-600 transition-colors"
+    className="text-zinc-400 transition-colors group-hover:text-emerald-600"
   >
     <line x1="5" y1="12" x2="19" y2="12"></line>
     <polyline points="12 5 19 12 12 19"></polyline>
@@ -299,7 +307,46 @@ async function fetchPendingIncomingOffers(
   return allOffers;
 }
 
-export function MyTripRequestsView() {
+export type MyTripRequestsHubFilters = {
+  hubSearchQuery?: string;
+  departDate?: string;
+  distShort?: boolean;
+  distMedium?: boolean;
+  distLong?: boolean;
+  timeWindow?: BrowseTimeWindow | null;
+};
+
+export type MyTripRequestsHubControls = {
+  sortBy?: "earliest" | "seats";
+  setSortBy?: (v: "earliest" | "seats") => void;
+  onClearHubFilters?: () => void;
+};
+
+interface MyTripRequestsViewProps {
+  /** When true, hides the page title, create CTA, and tab toggle (parent hub provides them). */
+  hubLayout?: boolean;
+  /** Shared hub filters + sort from parent (rides-style browse hub). */
+  hubMode?: boolean;
+  hubFilters?: MyTripRequestsHubFilters;
+  hubControls?: MyTripRequestsHubControls;
+}
+
+export function MyTripRequestsView({
+  hubLayout = false,
+  hubMode = false,
+  hubFilters,
+  hubControls,
+}: MyTripRequestsViewProps) {
+  const hubSearchQuery = hubFilters?.hubSearchQuery ?? "";
+  const departDate = hubFilters?.departDate ?? "";
+  const distShort = hubFilters?.distShort ?? true;
+  const distMedium = hubFilters?.distMedium ?? true;
+  const distLong = hubFilters?.distLong ?? true;
+  const timeWindow = hubFilters?.timeWindow ?? null;
+  const sortBy = hubControls?.sortBy ?? "earliest";
+  const setSortBy = hubControls?.setSortBy;
+  const onClearHubFilters = hubControls?.onClearHubFilters;
+
   const router = useRouter();
   const [tripRequests, setTripRequests] = useState<TripRequestSummary[]>([]);
   const [pendingOffers, setPendingOffers] = useState<PendingIncomingOffer[]>([]);
@@ -322,6 +369,9 @@ export function MyTripRequestsView() {
     useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<ActionNotice>(null);
   const [successState, setSuccessState] = useState<"edit" | null>(null);
+  const [matchCountByRequestId, setMatchCountByRequestId] = useState<
+    Record<string, number>
+  >({});
   const closeTripRequestDialogButtonRef = useRef<HTMLButtonElement | null>(null);
   const tripRequestDialogRef = useRef<HTMLDivElement | null>(null);
   const lastFocusedElementRef = useRef<HTMLElement | null>(null);
@@ -390,6 +440,35 @@ export function MyTripRequestsView() {
   }, [loadPageData]);
 
   useEffect(() => {
+    if (tripRequests.length === 0) {
+      setMatchCountByRequestId({});
+      return;
+    }
+    const ac = new AbortController();
+    (async () => {
+      try {
+        const results = await Promise.all(
+          tripRequests.map(async (tr) => {
+            const res = await fetch(`/api/trip-requests/${tr.id}/matches`, {
+              signal: ac.signal,
+            });
+            if (!res.ok) return [tr.id, 0] as const;
+            const data = (await res.json()) as { items?: unknown[] };
+            return [tr.id, Array.isArray(data.items) ? data.items.length : 0] as const;
+          }),
+        );
+        if (!ac.signal.aborted) {
+          setMatchCountByRequestId(Object.fromEntries(results));
+        }
+      } catch (e) {
+        if (e instanceof Error && e.name === "AbortError") return;
+        console.error("Failed to load match counts:", e);
+      }
+    })();
+    return () => ac.abort();
+  }, [tripRequests]);
+
+  useEffect(() => {
     if (!actionNotice) {
       return;
     }
@@ -401,12 +480,56 @@ export function MyTripRequestsView() {
     return () => window.clearTimeout(timeoutId);
   }, [actionNotice]);
 
-  const filteredTripRequests = filterMyTripRequests({
+  const filteredTripRequests = useMemo(() => {
+    const base = filterMyTripRequests({
+      tripRequests,
+      searchQuery: hubMode ? hubSearchQuery : searchQuery,
+      activeFilter: hubMode ? "All" : activeFilter,
+      pendingOfferTripRequestIds: new Set(
+        pendingOffers.map((offer) => offer.tripRequestId),
+      ),
+    });
+    if (!hubMode) {
+      return base;
+    }
+    let list = base.filter((tr) =>
+      matchesLocalDepartDate(tr.earliestDesiredAt, departDate),
+    );
+    const dist = buildActiveDistanceSet({
+      short: distShort,
+      medium: distMedium,
+      long: distLong,
+    });
+    if (dist !== "all") {
+      list = list.filter((tr) => dist.has(tr.distanceCategory));
+    }
+    list = list.filter((tr) =>
+      rideDepartureTimeMatchesWindow(tr.earliestDesiredAt, timeWindow),
+    );
+    if (sortBy === "seats") {
+      list = [...list].sort((a, b) => b.seatsNeeded - a.seatsNeeded);
+    } else {
+      list = [...list].sort(
+        (a, b) =>
+          new Date(a.earliestDesiredAt).getTime() -
+          new Date(b.earliestDesiredAt).getTime(),
+      );
+    }
+    return list;
+  }, [
     tripRequests,
+    hubMode,
+    hubSearchQuery,
     searchQuery,
     activeFilter,
-    pendingOfferTripRequestIds: new Set(pendingOffers.map((offer) => offer.tripRequestId)),
-  });
+    pendingOffers,
+    departDate,
+    distShort,
+    distMedium,
+    distLong,
+    timeWindow,
+    sortBy,
+  ]);
   const pendingOffersByTripRequestId = useMemo(
     () => groupPendingOffersByTripRequestId(pendingOffers),
     [pendingOffers],
@@ -526,35 +649,38 @@ export function MyTripRequestsView() {
     };
   }, [selectedTripRequest, closeTripRequestModal]);
 
-  const startEditing = () => {
-    if (!selectedTripRequest || selectedTripRequest.status !== "ACTIVE") return;
+  const beginEditingTripRequest = (tripRequest: TripRequestSummary) => {
+    if (tripRequest.status !== "ACTIVE") return;
 
+    setSelectedTripRequest(tripRequest);
     setEditFormData({
-      originText: selectedTripRequest.originText,
-      destinationText: selectedTripRequest.destinationText,
+      originText: tripRequest.originText,
+      destinationText: tripRequest.destinationText,
       earliestDesiredAt: format(
-        new Date(selectedTripRequest.earliestDesiredAt),
+        new Date(tripRequest.earliestDesiredAt),
         "yyyy-MM-dd'T'HH:mm",
       ),
       latestDesiredAt: format(
-        new Date(selectedTripRequest.latestDesiredAt),
+        new Date(tripRequest.latestDesiredAt),
         "yyyy-MM-dd'T'HH:mm",
       ),
-      preferredDepartAt: selectedTripRequest.preferredDepartAt
-        ? format(
-            new Date(selectedTripRequest.preferredDepartAt),
-            "yyyy-MM-dd'T'HH:mm",
-          )
+      preferredDepartAt: tripRequest.preferredDepartAt
+        ? format(new Date(tripRequest.preferredDepartAt), "yyyy-MM-dd'T'HH:mm")
         : "",
-      distanceCategory: selectedTripRequest.distanceCategory,
-      seatsNeeded: selectedTripRequest.seatsNeeded,
-      pickupInstructions: selectedTripRequest.pickupInstructions ?? "",
-      dropoffInstructions: selectedTripRequest.dropoffInstructions ?? "",
+      distanceCategory: tripRequest.distanceCategory,
+      seatsNeeded: tripRequest.seatsNeeded,
+      pickupInstructions: tripRequest.pickupInstructions ?? "",
+      dropoffInstructions: tripRequest.dropoffInstructions ?? "",
     });
     setEditFieldErrors({});
     setEditSubmitError(null);
     setActionNotice(null);
     setIsEditing(true);
+  };
+
+  const startEditing = () => {
+    if (!selectedTripRequest || selectedTripRequest.status !== "ACTIVE") return;
+    beginEditingTripRequest(selectedTripRequest);
   };
 
   const handleEditSubmit = async () => {
@@ -695,7 +821,7 @@ export function MyTripRequestsView() {
         ? `/api/offers/${offerId}/accept`
         : `/api/offers/${offerId}/cancel`;
     const successMessage =
-      action === "accept" ? "Offer accepted." : "Offer cancelled.";
+      action === "accept" ? "Offer accepted." : "Offer declined.";
 
     try {
       const response = await fetch(endpoint, {
@@ -741,90 +867,174 @@ export function MyTripRequestsView() {
 
   return (
     <>
-      <div className="bg-white rounded-2xl p-6 md:p-8 shadow-sm border border-zinc-100">
-        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6 md:mb-8">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold tracking-tight mb-2">
-              My Trip Requests
-            </h1>
-            <p className="text-zinc-500">Manage trip requests you have posted</p>
-          </div>
-          <Link
-            href="/post-trip-request"
-            className="bg-emerald-800 hover:bg-emerald-900 text-white px-5 py-2.5 rounded-xl font-medium flex items-center justify-center gap-2 transition-colors whitespace-nowrap shadow-sm"
-          >
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+      {!hubLayout ? (
+        <div className="rounded-2xl border border-zinc-100 bg-white p-6 shadow-sm md:p-8">
+          <div className="mb-6 flex flex-col justify-between gap-4 sm:mb-8 sm:flex-row sm:items-start md:mb-8">
+            <div>
+              <h1 className="mb-2 text-2xl font-bold tracking-tight md:text-3xl">
+                My Trip Requests
+              </h1>
+              <p className="text-zinc-500">Manage trip requests you have posted</p>
+            </div>
+            <Link
+              href="/post-trip-request"
+              className="flex items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-emerald-800 px-5 py-2.5 font-medium text-white shadow-sm transition-colors hover:bg-emerald-900"
             >
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-            Post Trip Request
-          </Link>
-        </div>
-
-        <TripRequestsViewToggle activeView="my" />
-
-        <div className="relative">
-          <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-zinc-400">
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <circle cx="11" cy="11" r="8"></circle>
-              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-            </svg>
-          </div>
-          <input
-            type="text"
-            placeholder="Search destinations..."
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-            className="w-full bg-zinc-50 border border-zinc-200 rounded-xl py-3.5 pl-11 pr-4 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all font-medium placeholder:font-normal"
-          />
-        </div>
-
-        <div className="mt-5 -mx-1 px-1 overflow-x-auto">
-          <div className="flex min-w-max gap-2 pb-1">
-            {quickFilters.map((filterOpt) => (
-              <button
-                key={filterOpt}
-                onClick={() => setActiveFilter(filterOpt)}
-                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all whitespace-nowrap ${
-                  activeFilter === filterOpt
-                    ? "bg-emerald-800 text-white shadow-sm"
-                    : "bg-zinc-50 text-zinc-600 hover:bg-zinc-100 border border-zinc-200"
-                }`}
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
               >
-                {filterOpt}
-              </button>
-            ))}
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+              Post Trip Request
+            </Link>
+          </div>
+
+          <TripRequestsViewToggle activeView="my" />
+
+          <div className="relative mt-6">
+            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-zinc-400">
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+            </div>
+            <input
+              type="text"
+              placeholder="Search destinations..."
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              className="w-full rounded-xl border border-zinc-200 bg-zinc-50 py-3.5 pl-11 pr-4 font-medium placeholder:font-normal transition-all focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+            />
+          </div>
+
+          <div className="mt-5 -mx-1 overflow-x-auto px-1">
+            <div className="flex min-w-max gap-2 pb-1">
+              {quickFilters.map((filterOpt) => (
+                <button
+                  key={filterOpt}
+                  type="button"
+                  onClick={() => setActiveFilter(filterOpt)}
+                  className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-medium transition-all ${
+                    activeFilter === filterOpt
+                      ? "bg-emerald-800 text-white shadow-sm"
+                      : "border border-zinc-200 bg-zinc-50 text-zinc-600 hover:bg-zinc-100"
+                  }`}
+                >
+                  {filterOpt}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
-      </div>
+      ) : !hubMode ? (
+        <div className="rounded-2xl border border-zinc-100 bg-white p-6 shadow-sm md:p-8">
+          <div className="relative">
+            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-zinc-400">
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+            </div>
+            <input
+              type="text"
+              placeholder="Search destinations..."
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              className="w-full rounded-xl border border-zinc-200 bg-zinc-50 py-3.5 pl-11 pr-4 font-medium placeholder:font-normal transition-all focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+            />
+          </div>
 
-      <div className="w-full max-w-5xl mx-auto">
-        <div className="w-full min-w-0 bg-white rounded-2xl p-4 md:p-6 lg:p-8 shadow-sm border border-zinc-100">
-          <p className="text-sm font-medium text-zinc-500 mb-4 md:mb-6 text-center">
-            {filteredTripRequests.length}{" "}
-            {filteredTripRequests.length === 1
-              ? "trip request"
-              : "trip requests"}{" "}
-            posted
-          </p>
+          <div className="mt-5 -mx-1 overflow-x-auto px-1">
+            <div className="flex min-w-max gap-2 pb-1">
+              {quickFilters.map((filterOpt) => (
+                <button
+                  key={filterOpt}
+                  type="button"
+                  onClick={() => setActiveFilter(filterOpt)}
+                  className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-medium transition-all ${
+                    activeFilter === filterOpt
+                      ? "bg-emerald-800 text-white shadow-sm"
+                      : "border border-zinc-200 bg-zinc-50 text-zinc-600 hover:bg-zinc-100"
+                  }`}
+                >
+                  {filterOpt}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <div
+        className={`w-full min-w-0 ${hubMode ? "" : "mx-auto max-w-5xl"}`}
+      >
+        <div
+          className={
+            hubMode
+              ? "w-full min-w-0"
+              : "w-full min-w-0 rounded-2xl border border-zinc-100 bg-white p-4 shadow-sm md:p-6 lg:p-8"
+          }
+        >
+          {hubMode ? (
+            <div className="mb-1 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+              <h2 className="text-lg font-bold text-zinc-900">
+                My Trip Requests (
+                {loading && tripRequests.length === 0
+                  ? "…"
+                  : filteredTripRequests.length}
+                )
+              </h2>
+              {setSortBy ? (
+                <div className="flex w-full items-center justify-end gap-2 sm:w-auto">
+                  <span className="text-sm text-zinc-500">Sort by:</span>
+                  <select
+                    value={sortBy}
+                    onChange={(e) =>
+                      setSortBy(e.target.value as "earliest" | "seats")
+                    }
+                    className="rounded-xl border border-zinc-200 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800"
+                  >
+                    <option value="earliest">Earliest desired departure</option>
+                    <option value="seats">Seats needed (high to low)</option>
+                  </select>
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <p className="mb-4 text-center text-sm font-medium text-zinc-500 md:mb-6">
+              {filteredTripRequests.length}{" "}
+              {filteredTripRequests.length === 1
+                ? "trip request"
+                : "trip requests"}{" "}
+              posted
+            </p>
+          )}
           {actionNotice ? (
             <div
               className={`mb-4 rounded-xl border px-4 py-3 text-sm font-medium ${
@@ -842,11 +1052,13 @@ export function MyTripRequestsView() {
 
           {loading ? (
             <div className="flex flex-col gap-4">
-              {[1, 2, 3].map((index) => (
+              {(hubMode ? [1, 2, 3, 4] : [1, 2, 3]).map((index) => (
                 <div
                   key={index}
-                  className="h-32 bg-zinc-100 animate-pulse rounded-2xl"
-                ></div>
+                  className={`${
+                    hubMode ? "h-36" : "h-32"
+                  } animate-pulse rounded-2xl bg-zinc-100`}
+                />
               ))}
             </div>
           ) : loadError ? (
@@ -883,39 +1095,61 @@ export function MyTripRequestsView() {
               </button>
             </div>
           ) : filteredTripRequests.length === 0 ? (
-            <div className="text-center py-16 px-4">
-              <div className="w-16 h-16 bg-zinc-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <svg
-                  width="24"
-                  height="24"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="text-zinc-400"
-                >
-                  <circle cx="11" cy="11" r="8"></circle>
-                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                </svg>
+            hubMode ? (
+              <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50/80 py-16 text-center">
+                <h3 className="text-lg font-bold text-zinc-900">
+                  No trip requests found
+                </h3>
+                <p className="mx-auto mt-2 max-w-sm text-sm text-zinc-500">
+                  We couldn&apos;t find any of your trip requests matching your search and
+                  filters. Try a different date or clear optional filters.
+                </p>
+                {onClearHubFilters ? (
+                  <button
+                    type="button"
+                    onClick={onClearHubFilters}
+                    className="mt-4 text-sm font-semibold text-[#006837] hover:underline"
+                  >
+                    Clear search &amp; filters
+                  </button>
+                ) : null}
               </div>
-              <h3 className="text-lg font-bold text-zinc-900 mb-1">
-                No trip requests found
-              </h3>
-              <p className="text-zinc-500 max-w-sm mx-auto">
-                We couldn&apos;t find any of your trip requests matching your
-                current search and filter criteria.
-              </p>
-              {activeFilter !== "All" && (
-                <button
-                  onClick={() => setActiveFilter("All")}
-                  className="mt-4 text-emerald-700 font-medium hover:underline"
-                >
-                  Clear filters
-                </button>
-              )}
-            </div>
+            ) : (
+              <div className="px-4 py-16 text-center">
+                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-zinc-100">
+                  <svg
+                    width="24"
+                    height="24"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="text-zinc-400"
+                  >
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                  </svg>
+                </div>
+                <h3 className="mb-1 text-lg font-bold text-zinc-900">
+                  No trip requests found
+                </h3>
+                <p className="mx-auto max-w-sm text-zinc-500">
+                  We couldn&apos;t find any of your trip requests matching your current
+                  search and filter criteria.
+                </p>
+                {activeFilter !== "All" ? (
+                  <button
+                    type="button"
+                    onClick={() => setActiveFilter("All")}
+                    className="mt-4 font-medium text-emerald-700 hover:underline"
+                  >
+                    Clear filters
+                  </button>
+                ) : null}
+              </div>
+            )
           ) : (
             <div className="flex flex-col gap-4">
               {filteredTripRequests.map((tripRequest) => {
@@ -923,12 +1157,155 @@ export function MyTripRequestsView() {
                   pendingOffersByTripRequestId,
                   tripRequest.id,
                 );
-                const primaryOffer = cardOffers[0] ?? null;
+                const matchCount = matchCountByRequestId[tripRequest.id];
+                const showOfferBadge = hasPendingOffersForTripRequest(
+                  pendingOffersByTripRequestId,
+                  tripRequest.id,
+                );
+
+                if (hubMode) {
+                  return (
+                    <article
+                      key={tripRequest.id}
+                      className="relative w-full overflow-hidden rounded-2xl border border-zinc-200 bg-white pl-1 text-left shadow-sm transition-all hover:border-[#006837]/50 hover:shadow-md"
+                    >
+                      <div
+                        className="absolute bottom-0 left-0 top-0 w-1 bg-[#006837]"
+                        aria-hidden
+                      />
+                      <div className="p-4 pl-5 sm:p-5 sm:pl-6">
+                        <div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-start">
+                          <div>
+                            <div className="flex gap-2">
+                              <div className="mt-0.5 flex w-2 flex-col items-center pt-0.5">
+                                <span className="h-2.5 w-2.5 rounded-full border-2 border-[#006837] bg-white" />
+                                <span className="my-0.5 min-h-[1.5rem] w-px flex-1 bg-zinc-200" />
+                                <span className="h-2.5 w-2.5 rounded-full bg-[#006837]" />
+                              </div>
+                              <div className="min-w-0 space-y-1">
+                                <p className="text-[0.65rem] font-bold uppercase tracking-wide text-zinc-400">
+                                  Origin
+                                </p>
+                                <p className="text-sm font-semibold text-zinc-900">
+                                  {tripRequest.originText}
+                                </p>
+                                <p className="pt-2 text-[0.65rem] font-bold uppercase tracking-wide text-zinc-400">
+                                  Destination
+                                </p>
+                                <p className="text-sm font-semibold text-zinc-900">
+                                  {tripRequest.destinationText}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-right sm:pl-4">
+                            <p className="text-2xl font-bold text-[#006837]">
+                              {tripRequest.seatsNeeded}
+                            </p>
+                            <p className="text-xs text-zinc-500">seats needed</p>
+                            <p className="mt-2 text-xs font-medium uppercase tracking-wide text-zinc-400">
+                              Status
+                            </p>
+                            <p className="text-sm font-semibold text-zinc-800">
+                              {toTitleCase(tripRequest.status)}
+                            </p>
+                            {showOfferBadge ? (
+                              <p className="mt-1 text-xs font-semibold text-blue-700">
+                                Offer received
+                              </p>
+                            ) : null}
+                          </div>
+                        </div>
+
+                        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                          <div className="flex flex-wrap gap-2">
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs text-zinc-600">
+                              <ClockIcon />
+                              {formatTimeRange(
+                                tripRequest.earliestDesiredAt,
+                                tripRequest.latestDesiredAt,
+                              )}
+                            </span>
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs text-zinc-600">
+                              <MapPin
+                                className="h-3.5 w-3.5 shrink-0 text-zinc-500"
+                                strokeWidth={2}
+                                aria-hidden
+                              />
+                              {distanceCategoryLabel(tripRequest.distanceCategory)} ·{" "}
+                              {formatDistanceMilesLabel(tripRequest.distanceCategory)}
+                            </span>
+                          </div>
+                        </div>
+
+                        <p className="mt-3 text-xs font-medium text-zinc-500">
+                          {cardOffers.length} offer{cardOffers.length === 1 ? "" : "s"} received ·{" "}
+                          {matchCount === undefined
+                            ? "Loading matches…"
+                            : `${matchCount} suggested matching ride${matchCount === 1 ? "" : "s"}`}
+                        </p>
+
+                        <div className="mt-4 flex border-t border-zinc-100 pt-4">
+                          <Link
+                            href={`/trip-requests/${tripRequest.id}`}
+                            className="inline-flex items-center justify-center rounded-xl border-2 border-[#006837] bg-white px-4 py-2 text-sm font-semibold text-[#006837] transition hover:bg-[#006837] hover:text-white"
+                          >
+                            View Request
+                          </Link>
+                        </div>
+
+                        {tripRequest.confirmedBookings.length > 0 ? (
+                          <div className="mt-4 border-t border-zinc-200 pt-4">
+                            <p className="mb-3 text-sm font-semibold text-zinc-900">
+                              Confirmed bookings ({tripRequest.confirmedBookings.length})
+                            </p>
+                            <div className="space-y-2">
+                              {tripRequest.confirmedBookings.map((booking) => {
+                                const openingConversation =
+                                  openingConversationBookingId === booking.id;
+                                return (
+                                  <div
+                                    key={booking.id}
+                                    className="rounded-xl border border-zinc-200 bg-zinc-50 p-3"
+                                  >
+                                    <div className="flex items-center justify-between gap-3">
+                                      <div className="space-y-1">
+                                        <p className="text-sm font-semibold text-zinc-900">
+                                          Booking #{booking.id.slice(0, 8)}
+                                        </p>
+                                        <p className="text-xs text-zinc-600">
+                                          {booking.seatsBooked}{" "}
+                                          {booking.seatsBooked === 1 ? "seat" : "seats"} ·{" "}
+                                          {formatTimeRange(booking.startsAt, booking.endsAt)}
+                                        </p>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        disabled={openingConversation}
+                                        onClick={() =>
+                                          void openBookingMessages(booking.id)
+                                        }
+                                        className="inline-flex items-center gap-1 rounded-lg border border-zinc-300 px-2.5 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+                                      >
+                                        <MessageCircle size={14} />
+                                        {openingConversation ? "Opening..." : "Message"}
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    </article>
+                  );
+                }
 
                 return (
                   <article
                     key={tripRequest.id}
-                    className="w-full text-left bg-white border border-zinc-200 rounded-2xl p-5 transition-all overflow-hidden hover:border-emerald-500/50 hover:shadow-md"
+                    className="w-full overflow-hidden rounded-2xl border border-zinc-200 bg-white p-5 text-left transition-all hover:border-emerald-500/50 hover:shadow-md"
                   >
                     <Link
                       href={`/trip-requests/${tripRequest.id}`}
@@ -992,7 +1369,22 @@ export function MyTripRequestsView() {
                           <ArrowRightIcon />
                         </div>
                       </div>
+                      <p className="mt-3 text-xs font-medium text-zinc-500">
+                        {cardOffers.length} offer{cardOffers.length === 1 ? "" : "s"} received ·{" "}
+                        {matchCount === undefined
+                          ? "Loading matches…"
+                          : `${matchCount} suggested matching ride${matchCount === 1 ? "" : "s"}`}
+                      </p>
                     </Link>
+
+                    <div className="mt-4 flex border-t border-zinc-100 pt-4">
+                      <Link
+                        href={`/trip-requests/${tripRequest.id}`}
+                        className="inline-flex items-center justify-center rounded-xl border-2 border-[#006837] bg-white px-4 py-2 text-sm font-semibold text-[#006837] transition hover:bg-[#006837] hover:text-white"
+                      >
+                        View Request
+                      </Link>
+                    </div>
 
                     {tripRequest.confirmedBookings.length > 0 ? (
                       <div className="mt-4 border-t border-zinc-200 pt-4">
@@ -1037,62 +1429,6 @@ export function MyTripRequestsView() {
                               </div>
                             );
                           })}
-                        </div>
-                      </div>
-                    ) : null}
-
-                    {primaryOffer ? (
-                      <div className="mt-4 pt-4 border-t border-zinc-200">
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                          <div className="space-y-1">
-                            <p className="text-sm font-semibold text-zinc-900">
-                              Incoming offer
-                              {cardOffers.length > 1 ? ` (${cardOffers.length})` : ""}
-                            </p>
-                            <p className="text-xs text-zinc-600">
-                              {primaryOffer.seatsOffered}{" "}
-                              {primaryOffer.seatsOffered === 1 ? "seat" : "seats"}{" "}
-                              offered · {formatPrice(primaryOffer.priceCents)} ·{" "}
-                              {formatRelativeTime(primaryOffer.createdAt)}
-                            </p>
-                            {primaryOffer.message ? (
-                              <p className="text-xs text-zinc-500 line-clamp-2">
-                                {primaryOffer.message}
-                              </p>
-                            ) : null}
-                          </div>
-                          <div className="grid grid-cols-2 gap-2 sm:w-[280px]">
-                              <button
-                                type="button"
-                                disabled={
-                                  Boolean(pendingOfferActions[primaryOffer.id]) ||
-                                  tripRequest.status !== "ACTIVE"
-                              }
-                              onClick={() =>
-                                void runOfferAction(primaryOffer.id, "accept")
-                              }
-                              className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
-                            >
-                              {pendingOfferActions[primaryOffer.id]?.action === "accept"
-                                ? "Accepting..."
-                                : "Accept"}
-                            </button>
-                            <button
-                              type="button"
-                              disabled={
-                                Boolean(pendingOfferActions[primaryOffer.id]) ||
-                                tripRequest.status !== "ACTIVE"
-                              }
-                              onClick={() =>
-                                void runOfferAction(primaryOffer.id, "cancel")
-                              }
-                              className="rounded-xl border border-zinc-300 px-4 py-2.5 text-sm font-semibold text-zinc-800 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
-                            >
-                              {pendingOfferActions[primaryOffer.id]?.action === "cancel"
-                                ? "Cancelling..."
-                                : "Cancel"}
-                            </button>
-                          </div>
                         </div>
                       </div>
                     ) : null}
@@ -1646,8 +1982,8 @@ export function MyTripRequestsView() {
                                       className="w-full rounded-xl border border-zinc-300 px-4 py-2.5 text-sm font-semibold text-zinc-800 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
                                     >
                                       {busyAction === "cancel"
-                                        ? "Cancelling..."
-                                        : "Cancel"}
+                                        ? "Declining..."
+                                        : "Decline"}
                                     </button>
                                   </div>
                                 </div>

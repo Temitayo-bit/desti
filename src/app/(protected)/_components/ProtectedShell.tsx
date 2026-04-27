@@ -21,7 +21,7 @@ type ProtectedNavKey =
   | "messages"
   | "profile";
 
-type TopNavKey = "browse" | "postRide" | "requests" | "messages" | "profile";
+type TopNavKey = "dashboard" | "rides" | "requests" | "messages" | "profile";
 
 interface ProtectedShellProps {
   activeNav: ProtectedNavKey;
@@ -30,6 +30,8 @@ interface ProtectedShellProps {
   layout?: "sidebar" | "topnav";
   /** Active item when `layout` is `topnav` (e.g. highlight Profile). */
   topNavActive?: TopNavKey | null;
+  /** Optional CTA on the right (before the Stetson badge), e.g. Create Ride / Create Trip Request. */
+  topNavPrimaryAction?: { label: string; href: string } | null;
 }
 
 function navLinkClass(isActive: boolean): string {
@@ -60,6 +62,7 @@ export function ProtectedShell({
   children,
   layout = "sidebar",
   topNavActive = null,
+  topNavPrimaryAction = null,
 }: ProtectedShellProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -72,11 +75,11 @@ export function ProtectedShell({
               Destination
             </Link>
             <nav className="hidden flex-1 items-center justify-center gap-5 lg:gap-8 md:flex" aria-label="Main">
-              <Link className={topNavLinkClass(topNavActive === "browse")} href="/browse">
-                Browse Rides
+              <Link className={topNavLinkClass(topNavActive === "dashboard")} href="/dashboard">
+                Dashboard
               </Link>
-              <Link className={topNavLinkClass(topNavActive === "postRide")} href="/post-ride">
-                Post Ride
+              <Link className={topNavLinkClass(topNavActive === "rides")} href="/browse">
+                Rides
               </Link>
               <Link
                 className={topNavLinkClass(topNavActive === "requests")}
@@ -92,6 +95,14 @@ export function ProtectedShell({
               </Link>
             </nav>
             <div className="flex items-center gap-2 md:gap-3">
+              {topNavPrimaryAction ? (
+                <Link
+                  href={topNavPrimaryAction.href}
+                  className="hidden sm:inline-flex shrink-0 items-center justify-center rounded-xl bg-[#0d3d2e] px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-[#0a3026] md:px-4 md:text-sm"
+                >
+                  {topNavPrimaryAction.label}
+                </Link>
+              ) : null}
               <div className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-[#0d3d2e]/20 bg-white px-2.5 py-1.5 text-xs font-semibold text-[#0d3d2e]">
                 <span className="text-[#0d3d2e]">&#10003;</span>
                 STETSON VERIFIED
@@ -118,15 +129,24 @@ export function ProtectedShell({
                 </span>
               </div>
               <div className="flex flex-col gap-2">
-                <Link className="py-1 text-sm font-medium" href="/browse" onClick={() => setMobileMenuOpen(false)}>
-                  Browse Rides
-                </Link>
+                {topNavPrimaryAction ? (
+                  <Link
+                    className="py-2 text-center text-sm font-semibold rounded-xl bg-[#0d3d2e] text-white"
+                    href={topNavPrimaryAction.href}
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    {topNavPrimaryAction.label}
+                  </Link>
+                ) : null}
                 <Link
                   className="py-1 text-sm font-medium"
-                  href="/post-ride"
+                  href="/dashboard"
                   onClick={() => setMobileMenuOpen(false)}
                 >
-                  Post Ride
+                  Dashboard
+                </Link>
+                <Link className="py-1 text-sm font-medium" href="/browse" onClick={() => setMobileMenuOpen(false)}>
+                  Rides
                 </Link>
                 <Link
                   className="py-1 text-sm font-medium"
@@ -209,7 +229,7 @@ export function ProtectedShell({
               <span className={navIconWrapClass(activeNav === "browseTripRequests")}>
                 <Route size={20} strokeWidth={2.1} />
               </span>
-              Trip Requests
+              Requests
             </Link>
             <Link
               href="/messages"

@@ -98,7 +98,7 @@ describe("GET /api/dashboard/bookings", () => {
         expect(mockPrisma.booking.findMany).not.toHaveBeenCalled();
     });
 
-    it("applies upcoming rider/driver filters to both booking queries", async () => {
+    it("applies upcoming ride-window filter to ride bookings query", async () => {
         await GET();
 
         const rideBookingWhere = mockPrisma.booking.findMany.mock.calls[0][0].where;
