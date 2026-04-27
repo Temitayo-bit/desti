@@ -5,10 +5,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const {
     mockCurrentUser,
     mockFindUnique,
+    mockBookingCount,
     mockRedirect,
 } = vi.hoisted(() => ({
     mockCurrentUser: vi.fn(),
     mockFindUnique: vi.fn(),
+    mockBookingCount: vi.fn(),
     mockRedirect: vi.fn((path: string) => {
         throw new Error(`REDIRECT:${path}`);
     }),
@@ -26,6 +28,7 @@ vi.mock("@clerk/nextjs", () => ({
         children: ReactNode;
         redirectUrl?: string;
     }) => <div data-redirect-url={redirectUrl}>{children}</div>,
+    UserButton: () => <div data-testid="user-button" />,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -58,15 +61,33 @@ vi.mock("@/lib/prisma", () => ({
         user: {
             findUnique: mockFindUnique,
         },
+        booking: {
+            count: mockBookingCount,
+        },
     },
+}));
+
+vi.mock("@/services/trust-service", () => ({
+    getDriverRatingSummary: vi.fn().mockResolvedValue({
+        userId: "user_123",
+        averageRating: 4.9,
+        ratingCount: 3,
+    }),
 }));
 
 function makeVerifiedUser() {
     return {
         id: "user_123",
+        primaryEmailAddress: {
+            emailAddress: "alex.johnson@stetson.edu",
+            verification: {
+                status: "verified",
+            },
+        },
+        primaryPhoneNumber: null,
         emailAddresses: [
             {
-                emailAddress: "student@stetson.edu",
+                emailAddress: "alex.johnson@stetson.edu",
                 verification: {
                     status: "verified",
                 },
@@ -91,6 +112,7 @@ describe("protected profile page", () => {
             onboardingComplete: true,
             profilePictureUrl: null,
         });
+        mockBookingCount.mockResolvedValueOnce(2).mockResolvedValueOnce(5);
 
         vi.resetModules();
         const ProfilePage = (await import("@/app/(protected)/profile/page")).default;
@@ -98,12 +120,12 @@ describe("protected profile page", () => {
         const markup = renderToStaticMarkup(output as ReactNode);
 
         expect(markup).toContain("Alex Johnson");
-        expect(markup).toContain("Sophomore at Stetson");
+        expect(markup).toContain("Sophomore");
+        expect(markup).toContain("Stetson University");
         expect(markup).toContain("alex.johnson@stetson.edu");
         expect(markup).toContain('href="/user-profile"');
-        expect(markup).toContain('href="/#faq"');
-        expect(markup).toContain('href="mailto:support@desti.app"');
         expect(markup).toContain('data-redirect-url="/"');
-        expect(markup).toContain('href="/profile"');
+        expect(markup).toContain("Rides given");
+        expect(markup).toContain("Rides taken");
     });
 });

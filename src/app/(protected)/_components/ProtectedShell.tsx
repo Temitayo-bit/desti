@@ -71,8 +71,8 @@ export function ProtectedShell({
       <div className="min-h-screen flex flex-col bg-zinc-100 font-sans text-zinc-900">
         <header className="sticky top-0 z-30 border-b border-zinc-200 bg-white/95 backdrop-blur-sm">
           <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 md:px-6">
-            <Link href="/dashboard" className="shrink-0 text-lg font-extrabold tracking-tight text-[#0d3d2e]">
-              Destination
+            <Link href="/dashboard" className="shrink-0">
+              <DestiLogo size="sm" variant="moss" />
             </Link>
             <nav className="hidden flex-1 items-center justify-center gap-5 lg:gap-8 md:flex" aria-label="Main">
               <Link className={topNavLinkClass(topNavActive === "dashboard")} href="/dashboard">

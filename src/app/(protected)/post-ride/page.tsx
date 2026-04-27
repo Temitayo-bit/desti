@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeftRight, Calendar, Car, Check, ChevronDown, Info, MapPin, Flag, X } from "lucide-react";
 import { ProtectedShell } from "../_components/ProtectedShell";
+import { DestiLogo } from "@/components/DestiLogo";
 import {
   buildOfferPayload,
   type OfferFieldErrors,
@@ -1098,9 +1099,9 @@ export default function PostRidePage() {
         <footer className="mt-auto border-t border-zinc-200/80 bg-[#f3f4f6] py-6">
           <div className="mx-auto flex max-w-4xl flex-col items-start justify-between gap-4 px-4 text-sm text-zinc-500 md:flex-row md:items-center md:px-6">
             <div>
-              <span className="text-base font-extrabold text-[#0d3d2e]">Destination</span>
+              <DestiLogo size="sm" variant="moss" />
               <p className="mt-1 text-zinc-500">
-                &copy; {year} Destination Stetson University. All rights reserved.
+                &copy; {year} Desti · Stetson University. All rights reserved.
               </p>
             </div>
             <div className="flex flex-wrap gap-6">
