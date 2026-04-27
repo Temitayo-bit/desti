@@ -107,6 +107,12 @@ function getGeminiUpstreamHttpStatus(err: unknown): number | undefined {
     if (/"code"\s*:\s*429/.test(errMsg) || /\bRESOURCE_EXHAUSTED\b/i.test(errMsg)) {
         return 429;
     }
+    if (/"code"\s*:\s*502/.test(errMsg) || /\bBAD_GATEWAY\b/i.test(errMsg)) {
+        return 502;
+    }
+    if (/"code"\s*:\s*504/.test(errMsg) || /\bDEADLINE_EXCEEDED\b/i.test(errMsg)) {
+        return 504;
+    }
     return undefined;
 }
 
@@ -314,16 +320,21 @@ export async function POST(request: NextRequest) {
                 { status: 429 }
             );
         }
-        if (upstreamStatus === 502 || upstreamStatus === 504) {
+        if (
+            upstreamStatus === 500 ||
+            upstreamStatus === 502 ||
+            upstreamStatus === 504
+        ) {
             console.error(
                 "[POST /api/chat]",
                 upstreamStatus,
-                "— Gemini bad gateway / upstream timeout:",
+                "— Gemini upstream error / bad gateway / timeout:",
                 err
             );
+            const responseStatus = upstreamStatus === 500 ? 502 : upstreamStatus;
             return NextResponse.json(
                 { error: "The AI service returned an error. Please try again later." },
-                { status: upstreamStatus }
+                { status: responseStatus }
             );
         }
 

@@ -10,6 +10,8 @@ export type DestiProfileState = {
 };
 
 let memoryCache: DestiProfileState | null = null;
+/** Monotonic; increment on invalidate so stale fetches do not update cache or UI. */
+let cacheGeneration = 0;
 let inflight: Promise<DestiProfileState> | null = null;
 
 async function fetchDestiProfile(): Promise<DestiProfileState> {
@@ -27,8 +29,34 @@ async function fetchDestiProfile(): Promise<DestiProfileState> {
   };
 }
 
-/** Clears cached profile and notifies mounted `useDestiProfile` consumers to refetch. */
+/**
+ * Single-flight load: shares one in-flight request. Only writes `memoryCache` when the
+ * fetch’s start generation still matches `cacheGeneration` (not invalidated mid-flight).
+ * Clears `inflight` in `finally` only for that same promise so newer requests are not nulled.
+ */
+function getOrFetchDestiProfile(): Promise<DestiProfileState> {
+  if (!inflight) {
+    const genWhenFetchStarted = cacheGeneration;
+    const p: Promise<DestiProfileState> = fetchDestiProfile()
+      .then((r) => {
+        if (genWhenFetchStarted === cacheGeneration) {
+          memoryCache = r;
+        }
+        return r;
+      })
+      .finally(() => {
+        if (inflight === p) {
+          inflight = null;
+        }
+      });
+    inflight = p;
+  }
+  return inflight;
+}
+
+/** Clears cached profile and bumps generation so stale in-flight work is ignored. */
 export function invalidateDestiProfileCache(): void {
+  cacheGeneration += 1;
   memoryCache = null;
   inflight = null;
   if (typeof window !== "undefined") {
@@ -43,48 +71,54 @@ export function useDestiProfile(): DestiProfileState & { isLoading: boolean } {
   });
 
   const refetch = useCallback(async () => {
+    const genAtStart = cacheGeneration;
     setState((prev) => ({ ...prev, isLoading: true }));
     try {
-      if (!inflight) {
-        inflight = fetchDestiProfile()
-          .then((r) => {
-            memoryCache = r;
-            return r;
-          })
-          .finally(() => {
-            inflight = null;
-          });
+      const r = await getOrFetchDestiProfile();
+      if (genAtStart === cacheGeneration) {
+        setState({ ...r, isLoading: false });
+      } else if (memoryCache) {
+        setState({ ...memoryCache, isLoading: false });
+      } else {
+        setState((p) => ({ ...p, isLoading: false }));
       }
-      const r = await inflight;
-      setState({ ...r, isLoading: false });
     } catch {
-      setState({ profilePictureUrl: null, displayName: null, isLoading: false });
+      if (genAtStart === cacheGeneration) {
+        setState({ profilePictureUrl: null, displayName: null, isLoading: false });
+      } else if (memoryCache) {
+        setState({ ...memoryCache, isLoading: false });
+      } else {
+        setState((p) => ({ ...p, isLoading: false }));
+      }
     }
   }, []);
 
   useEffect(() => {
     let cancelled = false;
+    const genAtStart = cacheGeneration;
     (async () => {
       if (memoryCache) {
         setState({ ...memoryCache, isLoading: false });
         return;
       }
-      if (!inflight) {
-        inflight = fetchDestiProfile()
-          .then((r) => {
-            memoryCache = r;
-            return r;
-          })
-          .finally(() => {
-            inflight = null;
-          });
-      }
       try {
-        const r = await inflight;
-        if (!cancelled) setState({ ...r, isLoading: false });
+        const r = await getOrFetchDestiProfile();
+        if (cancelled) return;
+        if (genAtStart === cacheGeneration) {
+          setState({ ...r, isLoading: false });
+        } else if (memoryCache) {
+          setState({ ...memoryCache, isLoading: false });
+        } else {
+          setState((p) => ({ ...p, isLoading: false }));
+        }
       } catch {
-        if (!cancelled) {
+        if (cancelled) return;
+        if (genAtStart === cacheGeneration) {
           setState({ profilePictureUrl: null, displayName: null, isLoading: false });
+        } else if (memoryCache) {
+          setState({ ...memoryCache, isLoading: false });
+        } else {
+          setState((p) => ({ ...p, isLoading: false }));
         }
       }
     })();

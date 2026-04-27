@@ -214,6 +214,38 @@ describe("Chat Gateway", () => {
         );
     });
 
+    it("returns 429 when Gemini error is JSON with code 429 and no err.status", async () => {
+        const err = new Error(`{"error":{"code":429,"message":"Too many requests"}}`);
+        mockSendMessage.mockRejectedValue(err);
+
+        vi.resetModules();
+        const { POST } = await import("@/app/api/chat/route");
+
+        const res = await POST(makeRequest({ message: "Hi" }));
+        const json = await res.json() as { error?: string };
+
+        expect(res.status).toBe(429);
+        expect(json.error).toBe(
+            "Too many requests right now. Please wait a moment and try again."
+        );
+    });
+
+    it("returns 429 when error message contains RESOURCE_EXHAUSTED (regex fallback)", async () => {
+        const err = new Error("Upstream: RESOURCE_EXHAUSTED; quota");
+        mockSendMessage.mockRejectedValue(err);
+
+        vi.resetModules();
+        const { POST } = await import("@/app/api/chat/route");
+
+        const res = await POST(makeRequest({ message: "Hi" }));
+        const json = await res.json() as { error?: string };
+
+        expect(res.status).toBe(429);
+        expect(json.error).toBe(
+            "Too many requests right now. Please wait a moment and try again."
+        );
+    });
+
     // ── 5. Validation: missing message → 400 ─────────────────────────────
 
     it("returns 400 when message is missing or empty", async () => {

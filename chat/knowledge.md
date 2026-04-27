@@ -118,9 +118,9 @@ Desti is a campus **ride-sharing marketplace** for **Stetson University** studen
 
 ## Safety
 
-- Users should **confirm driver identity and vehicle details** before entering a car.
-- Users should **communicate through Desti messages** when possible.
-- Users should **not** share **passwords, banking, or other sensitive** information in chat.
+- **Before entering a car,** confirm **driver identity and vehicle details**.
+- **When possible,** use **Desti messages to communicate** with your match.
+- **Avoid sharing** passwords, banking, or other **sensitive information** in chat.
 - Desti does **not** support **arbitrary direct messages**—messaging is tied to valid relationships in the app.
 
 ---
