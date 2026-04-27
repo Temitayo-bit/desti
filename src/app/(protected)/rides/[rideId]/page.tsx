@@ -59,9 +59,15 @@ export default async function RideDetailPage({ params }: PageProps) {
     notFound();
   }
 
+  const isDriver = ride.driverUserId === currentUserClerkId;
+  // Non-drivers only see their own stop requests on this ride (participants only).
+  const stopRequestsForViewer = isDriver
+    ? ride.stopRequests
+    : ride.stopRequests.filter((s) => s.riderUserId === currentUserClerkId);
+
   return (
     <RideDetailClient
-      ride={ride}
+      ride={{ ...ride, stopRequests: stopRequestsForViewer }}
       currentUserClerkId={currentUserClerkId}
     />
   );
