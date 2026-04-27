@@ -15,8 +15,18 @@ import {
     isTomorrow,
     isYesterday,
 } from "date-fns";
-import { ArrowLeft, SendHorizontal } from "lucide-react";
+import { useAuth } from "@clerk/nextjs";
+import {
+    ArrowLeft,
+    Car,
+    Info,
+    Loader2,
+    SendHorizontal,
+    Shield,
+} from "lucide-react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { UserAvatar } from "@/components/UserAvatar";
 import { ProtectedShell } from "../_components/ProtectedShell";
 import {
     appendUniqueMessages,
@@ -92,12 +102,6 @@ async function readApiErrorMessage(
     return fallbackMessage;
 }
 
-function formatUpdatedAt(value: string): string {
-    const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) return "Just now";
-    return formatDistanceToNow(parsed, { addSuffix: true });
-}
-
 function formatMessageTime(value: string): string {
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) return "";
@@ -138,7 +142,97 @@ function formatTripContext(
     return destination ?? relativeDate;
 }
 
+function formatRideRequestLine(
+    destinationText: string | null,
+    startsAt: string | null
+): string {
+    const destination = destinationText?.trim() || "Trip";
+    const datePart = formatRelativeTripDate(startsAt);
+    if (datePart) {
+        return `${destination} · ${datePart}`;
+    }
+    return destination;
+}
+
+function conversationStatusMeta(
+    conversation: ConversationListItem
+): { label: string; tone: "ride" | "offer" | "done" } {
+    if (conversation.type === "OFFER") {
+        return { label: "Offer Pending", tone: "offer" };
+    }
+
+    const start = conversation.tripStartsAt
+        ? new Date(conversation.tripStartsAt)
+        : null;
+    if (start && !Number.isNaN(start.getTime())) {
+        if (start.getTime() > Date.now()) {
+            return { label: "Active Ride", tone: "ride" };
+        }
+        return { label: "Completed", tone: "done" };
+    }
+
+    return { label: "Confirmed Trip", tone: "ride" };
+}
+
+function conversationDetailHref(
+    conversation: ConversationListItem
+): { href: string; label: string } | null {
+    if (conversation.bookingId) {
+        return {
+            href: `/confirmed/${conversation.bookingId}`,
+            label: "View Trip",
+        };
+    }
+    if (conversation.offerId) {
+        return { href: "/offers", label: "View Offer" };
+    }
+    return null;
+}
+
+function formatListTime(iso: string): string {
+    const parsed = new Date(iso);
+    if (Number.isNaN(parsed.getTime())) return "";
+    if (isToday(parsed)) {
+        return format(parsed, "h:mm a");
+    }
+    if (isYesterday(parsed)) {
+        return "Yesterday";
+    }
+    return formatDistanceToNow(parsed, { addSuffix: true });
+}
+
+function messageDayLabel(iso: string): string {
+    const parsed = new Date(iso);
+    if (Number.isNaN(parsed.getTime())) return "";
+    if (isToday(parsed)) return "Today";
+    if (isYesterday(parsed)) return "Yesterday";
+    return format(parsed, "EEEE, MMM d");
+}
+
+type ThreadRow =
+    | { kind: "divider"; label: string; key: string }
+    | { kind: "message"; message: ConversationMessageItem; key: string };
+
+function buildThreadRows(messages: ConversationMessageItem[]): ThreadRow[] {
+    const rows: ThreadRow[] = [];
+    let lastDay: string | null = null;
+    for (const message of messages) {
+        const day = format(new Date(message.createdAt), "yyyy-MM-dd");
+        if (day !== lastDay) {
+            lastDay = day;
+            rows.push({
+                kind: "divider",
+                label: messageDayLabel(message.createdAt),
+                key: `d-${day}`,
+            });
+        }
+        rows.push({ kind: "message", message, key: message.id });
+    }
+    return rows;
+}
+
 export default function MessagesPage() {
+    const { userId } = useAuth();
     const searchParams = useSearchParams();
     const requestedConversationId = searchParams.get("conversationId");
     const [conversations, setConversations] = useState<ConversationListItem[]>(
@@ -186,6 +280,33 @@ export default function MessagesPage() {
             selectedConversation.tripStartsAt
         );
     }, [selectedConversation]);
+
+    const activeTripConversations = useMemo(
+        () => conversations.filter((c) => c.type === "BOOKING"),
+        [conversations]
+    );
+    const offerConversations = useMemo(
+        () => conversations.filter((c) => c.type === "OFFER"),
+        [conversations]
+    );
+
+    const threadRows = useMemo(() => buildThreadRows(messages), [messages]);
+
+    const selectedStatus = useMemo(
+        () =>
+            selectedConversation
+                ? conversationStatusMeta(selectedConversation)
+                : null,
+        [selectedConversation]
+    );
+
+    const selectedDetailLink = useMemo(
+        () =>
+            selectedConversation
+                ? conversationDetailHref(selectedConversation)
+                : null,
+        [selectedConversation]
+    );
 
     const currentUserId = useMemo(() => {
         if (!selectedConversation) return null;
@@ -541,36 +662,125 @@ export default function MessagesPage() {
     const showListOnMobile = mobileView === "list";
     const showThreadOnMobile = mobileView === "thread";
 
+    const composerDisabled =
+        sendingMessage ||
+        !selectedConversationId ||
+        !composerText.trim();
+
+    function renderConversationButton(conversation: ConversationListItem) {
+        const isActive = conversation.id === selectedConversationId;
+        const tripContext = formatTripContext(
+            conversation.tripDestinationText,
+            conversation.tripStartsAt
+        );
+        const previewTimeIso =
+            conversation.latestMessage?.createdAt ?? conversation.updatedAt;
+        const showUnreadDot =
+            Boolean(userId) &&
+            Boolean(conversation.latestMessage) &&
+            conversation.latestMessage!.senderUserId !== userId;
+
+        return (
+            <li key={conversation.id}>
+                <button
+                    type="button"
+                    onClick={() => onSelectConversation(conversation.id)}
+                    className={`flex w-full gap-3 rounded-xl px-3 py-3 text-left transition-colors ${
+                        isActive
+                            ? "bg-emerald-50 ring-1 ring-emerald-200/80"
+                            : "hover:bg-zinc-50"
+                    }`}
+                >
+                    <UserAvatar
+                        name={conversation.counterpartDisplayName}
+                        size="md"
+                        className="shrink-0"
+                    />
+                    <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                            <p className="truncate font-semibold text-zinc-900">
+                                {conversation.counterpartDisplayName}
+                            </p>
+                            <span className="shrink-0 text-[0.7rem] text-zinc-400 tabular-nums">
+                                {formatListTime(previewTimeIso)}
+                            </span>
+                        </div>
+                        {tripContext ? (
+                            <p className="mt-0.5 truncate text-xs text-zinc-500">
+                                {tripContext}
+                            </p>
+                        ) : null}
+                        <p
+                            className={`line-clamp-2 text-sm text-zinc-600 ${
+                                tripContext ? "mt-1" : "mt-1.5"
+                            }`}
+                        >
+                            {conversation.latestMessage?.body ?? "No messages yet."}
+                        </p>
+                    </div>
+                    {showUnreadDot ? (
+                        <span
+                            className="mt-2 h-2 w-2 shrink-0 rounded-full bg-emerald-600"
+                            aria-label="Unread"
+                        />
+                    ) : (
+                        <span className="w-2 shrink-0" aria-hidden />
+                    )}
+                </button>
+            </li>
+        );
+    }
+
     return (
-        <ProtectedShell activeNav="messages">
+        <ProtectedShell
+            activeNav="messages"
+            layout="topnav"
+            topNavActive="messages"
+        >
             <section className="space-y-4">
                 <header>
-                    <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-zinc-900">
+                    <h1 className="text-2xl font-bold tracking-tight text-zinc-900 md:text-3xl">
                         Messages
                     </h1>
-                    <p className="mt-1 text-zinc-500">
-                        Chat with your riders and drivers.
+                    <p className="mt-1 text-sm text-zinc-600">
+                        Chat with people you are matched with on rides and trip requests.
                     </p>
                 </header>
 
-                <div className="h-[72vh] overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
+                <div
+                    className="flex gap-2 rounded-xl border border-emerald-100/90 bg-white/80 px-3 py-2.5 text-sm text-zinc-600 shadow-sm md:px-4 md:py-3"
+                    role="note"
+                >
+                    <Shield
+                        className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700/90"
+                        strokeWidth={2}
+                        aria-hidden
+                    />
+                    <p className="leading-snug">
+                        Only communicate with verified students. Do not share sensitive
+                        information like passwords or bank details.
+                    </p>
+                </div>
+
+                <div className="h-[min(72vh,calc(100vh-12rem))] min-h-[420px] overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
                     <div className="flex h-full min-h-0">
                         <aside
                             className={`${
                                 showListOnMobile ? "flex" : "hidden"
-                            } w-full min-h-0 flex-col border-r border-zinc-200 md:flex md:w-[340px]`}
+                            } w-full min-h-0 flex-col border-r border-zinc-100 md:flex md:w-[min(100%,380px)] md:max-w-[380px]`}
                         >
-                            <div className="border-b border-zinc-100 px-4 py-4">
-                                <h2 className="text-lg font-semibold tracking-tight text-zinc-900">
-                                    All Conversations
+                            <div className="border-b border-zinc-100 px-4 py-3">
+                                <h2 className="text-base font-semibold tracking-tight text-zinc-900">
+                                    Chats
                                 </h2>
                             </div>
 
                             <div className="min-h-0 flex-1 overflow-y-auto">
                                 {loadingConversations ? (
                                     <div className="space-y-3 p-4">
-                                        <div className="h-20 animate-pulse rounded-xl bg-zinc-100" />
-                                        <div className="h-20 animate-pulse rounded-xl bg-zinc-100" />
+                                        <div className="h-16 animate-pulse rounded-xl bg-zinc-100" />
+                                        <div className="h-16 animate-pulse rounded-xl bg-zinc-100" />
+                                        <div className="h-16 animate-pulse rounded-xl bg-zinc-100" />
                                     </div>
                                 ) : conversationsError ? (
                                     <div className="p-4">
@@ -580,75 +790,48 @@ export default function MessagesPage() {
                                         <button
                                             type="button"
                                             onClick={() => void refreshConversations(false)}
-                                            className="mt-3 rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800"
+                                            className="mt-3 rounded-lg bg-[#0d3d2e] px-3 py-2 text-sm font-medium text-white hover:bg-[#0a3026]"
                                         >
                                             Retry
                                         </button>
                                     </div>
                                 ) : conversations.length === 0 ? (
-                                    <div className="p-4 text-sm text-zinc-500">
-                                        No conversations yet.
+                                    <div className="flex flex-col items-center justify-center gap-2 px-6 py-16 text-center">
+                                        <p className="text-sm font-medium text-zinc-800">
+                                            No conversations yet
+                                        </p>
+                                        <p className="max-w-xs text-sm text-zinc-500">
+                                            When you confirm a booking or message someone about
+                                            an offer, the thread will show up here.
+                                        </p>
                                     </div>
                                 ) : (
-                                    <ul className="p-2">
-                                        {conversations.map((conversation) => {
-                                            const isActive =
-                                                conversation.id ===
-                                                selectedConversationId;
-                                            const tripContext = formatTripContext(
-                                                conversation.tripDestinationText,
-                                                conversation.tripStartsAt
-                                            );
-                                            return (
-                                                <li key={conversation.id}>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() =>
-                                                            onSelectConversation(
-                                                                conversation.id
-                                                            )
-                                                        }
-                                                        className={`w-full rounded-xl border px-3 py-3 text-left transition-colors ${
-                                                            isActive
-                                                                ? "border-emerald-200 bg-emerald-50"
-                                                                : "border-transparent hover:bg-zinc-50"
-                                                        }`}
-                                                    >
-                                                        <div className="flex items-start justify-between gap-3">
-                                                            <div className="min-w-0">
-                                                                <p className="truncate font-semibold text-zinc-900">
-                                                                    {
-                                                                        conversation.counterpartDisplayName
-                                                                    }
-                                                                </p>
-                                                                {tripContext ? (
-                                                                    <p className="mt-0.5 truncate text-sm text-zinc-500">
-                                                                        {tripContext}
-                                                                    </p>
-                                                                ) : null}
-                                                            </div>
-                                                            <span className="shrink-0 text-xs text-zinc-400">
-                                                                {formatUpdatedAt(
-                                                                    conversation.updatedAt
-                                                                )}
-                                                            </span>
-                                                        </div>
-
-                                                        <p
-                                                            className={`truncate text-sm text-zinc-600 ${
-                                                                tripContext
-                                                                    ? "mt-1.5"
-                                                                    : "mt-2"
-                                                            }`}
-                                                        >
-                                                            {conversation.latestMessage?.body ??
-                                                                "No messages yet."}
-                                                        </p>
-                                                    </button>
-                                                </li>
-                                            );
-                                        })}
-                                    </ul>
+                                    <div className="pb-3">
+                                        {activeTripConversations.length > 0 ? (
+                                            <div className="px-3 pt-2">
+                                                <p className="px-1 pb-1 text-[0.65rem] font-bold uppercase tracking-wider text-zinc-400">
+                                                    Active trips
+                                                </p>
+                                                <ul className="space-y-0.5">
+                                                    {activeTripConversations.map(
+                                                        renderConversationButton
+                                                    )}
+                                                </ul>
+                                            </div>
+                                        ) : null}
+                                        {offerConversations.length > 0 ? (
+                                            <div className="px-3 pt-3">
+                                                <p className="px-1 pb-1 text-[0.65rem] font-bold uppercase tracking-wider text-zinc-400">
+                                                    Offers / inquiries
+                                                </p>
+                                                <ul className="space-y-0.5">
+                                                    {offerConversations.map(
+                                                        renderConversationButton
+                                                    )}
+                                                </ul>
+                                            </div>
+                                        ) : null}
+                                    </div>
                                 )}
                             </div>
                         </aside>
@@ -656,96 +839,217 @@ export default function MessagesPage() {
                         <section
                             className={`${
                                 showThreadOnMobile ? "flex" : "hidden"
-                            } min-h-0 flex-1 flex-col md:flex`}
+                            } min-h-0 flex-1 flex-col bg-zinc-50/80 md:flex`}
                         >
                             {!selectedConversation ? (
-                                <div className="flex h-full items-center justify-center p-6 text-sm text-zinc-500">
-                                    Select a conversation to view messages.
+                                <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center">
+                                    <p className="text-sm font-medium text-zinc-700">
+                                        Select a conversation
+                                    </p>
+                                    <p className="max-w-sm text-sm text-zinc-500">
+                                        Choose a chat on the left to view your message history.
+                                    </p>
                                 </div>
                             ) : (
                                 <>
-                                    <header className="flex items-center gap-3 border-b border-zinc-100 px-4 py-4">
+                                    <header className="flex items-start gap-3 border-b border-zinc-100 bg-white px-3 py-3 md:px-4">
                                         <button
                                             type="button"
                                             onClick={() => setMobileView("list")}
-                                            className="rounded-lg p-1 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 md:hidden"
+                                            className="rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 md:hidden"
                                             aria-label="Back to conversations"
                                         >
                                             <ArrowLeft size={18} />
                                         </button>
-
-                                        <div className="min-w-0">
-                                            <p className="truncate font-semibold text-zinc-900">
-                                                {
-                                                    selectedConversation.counterpartDisplayName
-                                                }
-                                            </p>
+                                        <UserAvatar
+                                            name={selectedConversation.counterpartDisplayName}
+                                            size="md"
+                                            className="shrink-0"
+                                        />
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <p className="truncate font-semibold text-zinc-900">
+                                                    {selectedConversation.counterpartDisplayName}
+                                                </p>
+                                                {selectedStatus ? (
+                                                    <span
+                                                        className={`shrink-0 rounded-full px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide ${
+                                                            selectedStatus.tone === "offer"
+                                                                ? "bg-amber-50 text-amber-900 ring-1 ring-amber-200/80"
+                                                                : selectedStatus.tone === "done"
+                                                                  ? "bg-zinc-100 text-zinc-700 ring-1 ring-zinc-200"
+                                                                  : "bg-emerald-50 text-emerald-900 ring-1 ring-emerald-200/80"
+                                                        }`}
+                                                    >
+                                                        {selectedStatus.label}
+                                                    </span>
+                                                ) : null}
+                                            </div>
                                             {selectedTripContext ? (
-                                                <p className="truncate text-sm text-zinc-500">
+                                                <p className="mt-0.5 truncate text-sm text-zinc-500">
                                                     {selectedTripContext}
                                                 </p>
                                             ) : null}
                                         </div>
+                                        <div className="hidden shrink-0 items-center gap-1 sm:flex">
+                                            {selectedDetailLink ? (
+                                                <Link
+                                                    href={selectedDetailLink.href}
+                                                    className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-[#0d3d2e] hover:bg-emerald-50"
+                                                >
+                                                    {selectedDetailLink.label}
+                                                </Link>
+                                            ) : null}
+                                            <button
+                                                type="button"
+                                                className="rounded-lg p-2 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600"
+                                                title={
+                                                    selectedTripContext
+                                                        ? selectedTripContext
+                                                        : "Conversation details"
+                                                }
+                                                aria-label="Conversation details"
+                                            >
+                                                <Info size={18} />
+                                            </button>
+                                        </div>
                                     </header>
 
-                                    <div className="min-h-0 flex-1 overflow-y-auto bg-zinc-50 px-4 py-4">
+                                    {selectedConversation.type === "BOOKING" &&
+                                    selectedTripContext ? (
+                                        <div className="border-b border-emerald-100/80 bg-emerald-50/35 px-4 py-3">
+                                            <div className="flex items-start gap-3">
+                                                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800">
+                                                    <Car size={18} strokeWidth={2} />
+                                                </div>
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="text-[0.65rem] font-bold uppercase tracking-wider text-emerald-800/90">
+                                                        Trip summary
+                                                    </p>
+                                                    <p className="mt-0.5 text-sm text-zinc-800">
+                                                        {formatRideRequestLine(
+                                                            selectedConversation.tripDestinationText,
+                                                            selectedConversation.tripStartsAt
+                                                        )}
+                                                    </p>
+                                                    {selectedDetailLink ? (
+                                                        <Link
+                                                            href={selectedDetailLink.href}
+                                                            className="mt-2 inline-flex text-xs font-semibold text-emerald-900 underline decoration-emerald-900/30 underline-offset-2 hover:decoration-emerald-900"
+                                                        >
+                                                            {selectedDetailLink.label}
+                                                        </Link>
+                                                    ) : null}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ) : null}
+
+                                    {selectedConversation.type === "OFFER" ? (
+                                        <div className="border-b border-amber-100/80 bg-amber-50/40 px-4 py-3">
+                                            <p className="text-[0.65rem] font-bold uppercase tracking-wider text-amber-900/90">
+                                                Offer status
+                                            </p>
+                                            <p className="mt-1 text-sm text-zinc-800">
+                                                {formatRideRequestLine(
+                                                    selectedConversation.tripDestinationText,
+                                                    selectedConversation.tripStartsAt
+                                                )}
+                                            </p>
+                                            <p className="mt-1 text-xs text-zinc-600">
+                                                Messages are tied to this trip request offer.
+                                            </p>
+                                            {selectedDetailLink ? (
+                                                <Link
+                                                    href={selectedDetailLink.href}
+                                                    className="mt-2 inline-flex text-xs font-semibold text-amber-950 underline decoration-amber-950/30 underline-offset-2 hover:decoration-amber-950"
+                                                >
+                                                    {selectedDetailLink.label}
+                                                </Link>
+                                            ) : null}
+                                        </div>
+                                    ) : null}
+
+                                    <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4 md:px-4">
                                         {loadingThread ? (
                                             <div className="space-y-3">
-                                                <div className="h-10 w-44 animate-pulse rounded-2xl bg-zinc-200" />
-                                                <div className="ml-auto h-10 w-52 animate-pulse rounded-2xl bg-zinc-200" />
+                                                <div className="h-9 w-40 animate-pulse rounded-2xl bg-zinc-200/90" />
+                                                <div className="ml-auto h-9 w-48 animate-pulse rounded-2xl bg-zinc-200/90" />
                                             </div>
                                         ) : threadError ? (
                                             <div className="space-y-3">
                                                 <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                                                     {threadError}
                                                 </p>
+                                                <p className="text-xs text-zinc-500">
+                                                    We couldn&apos;t load messages for this chat.
+                                                </p>
                                                 <button
                                                     type="button"
                                                     onClick={() =>
-                                                        setThreadReloadToken(
-                                                            (current) =>
-                                                                current + 1
-                                                        )
+                                                        setThreadReloadToken((c) => c + 1)
                                                     }
-                                                    className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800"
+                                                    className="rounded-lg bg-[#0d3d2e] px-3 py-2 text-sm font-medium text-white hover:bg-[#0a3026]"
                                                 >
                                                     Retry
                                                 </button>
                                             </div>
                                         ) : messages.length === 0 ? (
-                                            <p className="text-sm text-zinc-500">
+                                            <p className="text-center text-sm text-zinc-500">
                                                 No messages yet. Send the first message.
                                             </p>
                                         ) : (
-                                            <ul className="space-y-3">
-                                                {messages.map((message) => {
+                                            <ul className="space-y-4">
+                                                {threadRows.map((row) => {
+                                                    if (row.kind === "divider") {
+                                                        return (
+                                                            <li
+                                                                key={row.key}
+                                                                className="flex justify-center"
+                                                            >
+                                                                <span className="rounded-full bg-zinc-200/70 px-3 py-0.5 text-[0.65rem] font-medium uppercase tracking-wide text-zinc-600">
+                                                                    {row.label}
+                                                                </span>
+                                                            </li>
+                                                        );
+                                                    }
+
+                                                    const message = row.message;
                                                     const isCurrentUserMessage =
-                                                        message.senderUserId ===
-                                                        currentUserId;
+                                                        message.senderUserId === currentUserId;
 
                                                     return (
                                                         <li
-                                                            key={message.id}
-                                                            className={`flex ${
+                                                            key={row.key}
+                                                            className={`flex gap-2 ${
                                                                 isCurrentUserMessage
                                                                     ? "justify-end"
                                                                     : "justify-start"
                                                             }`}
                                                         >
+                                                            {!isCurrentUserMessage ? (
+                                                                <UserAvatar
+                                                                    name={
+                                                                        selectedConversation.counterpartDisplayName
+                                                                    }
+                                                                    size="sm"
+                                                                    className="mt-0.5 shrink-0 self-end"
+                                                                />
+                                                            ) : null}
                                                             <div
-                                                                className={`max-w-[85%] rounded-2xl px-4 py-2 shadow-sm ${
+                                                                className={`max-w-[min(100%,20rem)] rounded-2xl px-3.5 py-2 shadow-sm sm:max-w-[75%] ${
                                                                     isCurrentUserMessage
-                                                                        ? "bg-emerald-700 text-white"
-                                                                        : "bg-white text-zinc-900"
+                                                                        ? "rounded-br-md bg-[#0d3d2e] text-white"
+                                                                        : "rounded-bl-md border border-zinc-100 bg-white text-zinc-900"
                                                                 }`}
                                                             >
-                                                                <p className="text-sm">
+                                                                <p className="whitespace-pre-wrap text-sm leading-relaxed">
                                                                     {message.body}
                                                                 </p>
                                                                 <p
-                                                                    className={`mt-1 text-xs ${
+                                                                    className={`mt-1.5 text-[0.65rem] tabular-nums ${
                                                                         isCurrentUserMessage
-                                                                            ? "text-emerald-100"
+                                                                            ? "text-emerald-100/90"
                                                                             : "text-zinc-400"
                                                                     }`}
                                                                 >
@@ -761,56 +1065,53 @@ export default function MessagesPage() {
                                         )}
                                     </div>
 
-                                    <footer className="border-t border-zinc-100 bg-white px-4 py-3">
-                                        <form
-                                            className="space-y-2"
-                                            onSubmit={onSendMessage}
-                                        >
+                                    <footer className="border-t border-zinc-100 bg-white px-3 py-3 md:px-4">
+                                        <form className="space-y-2" onSubmit={onSendMessage}>
                                             <div className="flex items-center gap-2">
                                                 <input
                                                     type="text"
                                                     value={composerText}
                                                     onChange={(event) =>
-                                                        setComposerText(
-                                                            event.target.value
-                                                        )
+                                                        setComposerText(event.target.value)
                                                     }
-                                                    placeholder="Type a message..."
-                                                    className="h-11 flex-1 rounded-xl border border-zinc-200 px-3 text-sm text-zinc-900 outline-none transition focus:border-emerald-500"
-                                                    maxLength={
-                                                        MESSAGE_MAX_LENGTH
-                                                    }
+                                                    placeholder="Type a message…"
+                                                    className="h-11 min-w-0 flex-1 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none transition focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600/30"
+                                                    maxLength={MESSAGE_MAX_LENGTH}
                                                     disabled={sendingMessage}
+                                                    aria-invalid={Boolean(sendError)}
                                                 />
                                                 <button
                                                     type="submit"
-                                                    disabled={
-                                                        sendingMessage ||
-                                                        !selectedConversationId
-                                                    }
-                                                    className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-700 text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
-                                                    aria-label="Send message"
+                                                    disabled={composerDisabled}
+                                                    className="inline-flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-[#0d3d2e] px-4 text-sm font-semibold text-white transition hover:bg-[#0a3026] disabled:cursor-not-allowed disabled:opacity-45"
                                                 >
-                                                    <SendHorizontal size={18} />
+                                                    {sendingMessage ? (
+                                                        <Loader2
+                                                            className="h-4 w-4 animate-spin"
+                                                            aria-hidden
+                                                        />
+                                                    ) : (
+                                                        <SendHorizontal
+                                                            size={17}
+                                                            aria-hidden
+                                                        />
+                                                    )}
+                                                    <span className="hidden sm:inline">
+                                                        {sendingMessage ? "Sending" : "Send"}
+                                                    </span>
                                                 </button>
                                             </div>
-
-                                            <div className="flex items-center justify-between gap-3">
-                                                <p className="text-xs text-zinc-400">
-                                                    {composerText.trim().length}/
-                                                    {MESSAGE_MAX_LENGTH}
+                                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                                <p className="text-[0.65rem] text-zinc-400 tabular-nums">
+                                                    {composerText.trim().length}/{MESSAGE_MAX_LENGTH}
                                                 </p>
                                                 {sendError ? (
-                                                    <p className="text-xs text-red-600">
+                                                    <p className="text-xs font-medium text-red-600">
                                                         {sendError}
                                                     </p>
                                                 ) : null}
                                             </div>
                                         </form>
-                                        <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-center text-xs text-blue-700">
-                                            Keep conversations respectful and related to your
-                                            ride. Report any inappropriate behavior.
-                                        </div>
                                     </footer>
                                 </>
                             )}

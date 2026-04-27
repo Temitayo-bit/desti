@@ -82,19 +82,24 @@ function DestiMark({ className }: { className?: string }) {
 export function DestiLogo({
     size = "md",
     className = "",
+    variant = "default",
     ...props
-}: { size?: LogoSize; className?: string } & ComponentPropsWithoutRef<"span">) {
+}: {
+    size?: LogoSize;
+    className?: string;
+    /** Moss green wordmark for app chrome (nav/footer); default is near-black for marketing. */
+    variant?: "default" | "moss";
+} & ComponentPropsWithoutRef<"span">) {
     const classes = sizeClasses[size];
+    const tone = variant === "moss" ? "text-[#0d3d2e]" : "text-zinc-950";
 
     return (
         <span
-            className={`inline-flex items-center ${classes.container} text-zinc-950 ${className}`.trim()}
+            className={`inline-flex items-center ${classes.container} ${tone} ${className}`.trim()}
             {...props}
         >
             <DestiMark className={`${classes.icon} shrink-0`} />
-            <span className={`${classes.text} font-black tracking-tight text-zinc-950`}>
-                Desti
-            </span>
+            <span className={`${classes.text} font-black tracking-tight`}>Desti</span>
         </span>
     );
 }
