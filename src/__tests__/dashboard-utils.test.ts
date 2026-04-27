@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+    dedupeBookingsById,
+    filterOffersSentForDashboard,
     formatRelativeTime,
     getSeatDisplayText,
     normalizeDashboardBooking,
+    offerOutcomeLabel,
     toDistanceLabel,
     type DashboardBookingItem,
+    type DashboardOfferSummary,
 } from "@/lib/dashboard";
 
 describe("dashboard helpers", () => {
@@ -120,5 +124,84 @@ describe("dashboard helpers", () => {
         expect(toDistanceLabel("SHORT")).toBe("Short Distance");
         expect(toDistanceLabel("MEDIUM")).toBe("Medium Distance");
         expect(toDistanceLabel("LONG")).toBe("Long Distance");
+    });
+
+    it("dedupes normalized bookings by id", () => {
+        const a = {
+            id: "dup-1",
+            riderUserId: "r-1",
+            driverUserId: "d-1",
+            status: "CONFIRMED" as const,
+            seatsBooked: 1,
+            priceCents: 1000,
+            totalSeatsBooked: 1,
+            originText: "A",
+            originLatitude: null,
+            originLongitude: null,
+            destinationText: "B",
+            destinationLatitude: null,
+            destinationLongitude: null,
+            startsAt: "2026-03-10T13:00:00.000Z",
+            endsAt: "2026-03-10T15:00:00.000Z",
+            distanceCategory: "SHORT" as const,
+            driverName: null,
+            vehicleType: null,
+        };
+        const b = { ...a, seatsBooked: 2 };
+        const out = dedupeBookingsById([a, b]);
+        expect(out).toHaveLength(1);
+        expect(out[0]!.id).toBe("dup-1");
+    });
+
+    it("filters and ranks dashboard sent offers", () => {
+        const now = new Date("2026-04-20T12:00:00.000Z");
+        const future = "2026-04-25T12:00:00.000Z";
+        const past = "2026-04-10T12:00:00.000Z";
+
+        const tr = {
+            id: "tr-1",
+            originText: "O1",
+            destinationText: "D1",
+            earliestDesiredAt: "2026-04-24T10:00:00.000Z",
+            latestDesiredAt: future,
+            preferredDepartAt: null,
+            distanceCategory: "MEDIUM" as const,
+            seatsNeeded: 1,
+            status: "ACTIVE" as const,
+        };
+
+        const offer = (
+            id: string,
+            status: DashboardOfferSummary["status"],
+            latest: string,
+            created: string
+        ): DashboardOfferSummary => ({
+            id,
+            tripRequestId: "tr-1",
+            driverUserId: "d1",
+            riderUserId: "r1",
+            seatsOffered: 1,
+            priceCents: 100,
+            message: null,
+            status,
+            createdAt: created,
+            tripRequest: { ...tr, id: "tr-1", latestDesiredAt: latest },
+            driver: { name: "X" },
+        });
+
+        const pendingFuture = offer("o1", "PENDING", future, "2026-04-18T10:00:00.000Z");
+        const acceptedFuture = offer("o2", "ACCEPTED", future, "2026-04-19T10:00:00.000Z");
+        const pendingExpired = offer("o3", "PENDING", past, "2026-04-19T10:00:00.000Z");
+        const cancelled = offer("o4", "CANCELLED", past, "2026-04-19T10:00:00.000Z");
+
+        const mixed = [pendingExpired, acceptedFuture, cancelled, pendingFuture];
+        const out = filterOffersSentForDashboard(mixed, now, { maxItems: 5 });
+        expect(out.map((o) => o.id)).toEqual(["o1", "o2", "o4"]);
+    });
+
+    it("maps offer Prisma status to user-facing label", () => {
+        expect(offerOutcomeLabel("PENDING")).toBe("Pending");
+        expect(offerOutcomeLabel("ACCEPTED")).toBe("Accepted");
+        expect(offerOutcomeLabel("CANCELLED")).toBe("Rejected");
     });
 });

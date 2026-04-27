@@ -249,3 +249,81 @@ export function toDistanceLabel(value: DistanceCategory): string {
 
   return labels[value];
 }
+
+const MS_PER_DAY = 86_400_000;
+
+/**
+ * Deduplicate normalized bookings by id (defensive: API should not repeat ids).
+ */
+export function dedupeBookingsById(
+  bookings: NormalizedDashboardBooking[]
+): NormalizedDashboardBooking[] {
+  const byId = new Map<string, NormalizedDashboardBooking>();
+  for (const b of bookings) {
+    if (!byId.has(b.id)) {
+      byId.set(b.id, b);
+    }
+  }
+  return Array.from(byId.values());
+}
+
+/**
+ * Curates "Offers sent" for the dashboard: pending on future trip windows, upcoming
+ * accepted offers, and recently cancelled (shown as Rejected) — capped at 5. Uses
+ * the same "future trip" rule as GET /api/dashboard for pending offers.
+ */
+export function filterOffersSentForDashboard(
+  offers: DashboardOfferSummary[],
+  now: Date,
+  options?: { maxItems?: number; cancelledRecencyDays?: number }
+): DashboardOfferSummary[] {
+  const maxItems = options?.maxItems ?? 5;
+  const cancelledRecencyDays = options?.cancelledRecencyDays ?? 30;
+  const recencyThreshold = new Date(
+    now.getTime() - cancelledRecencyDays * MS_PER_DAY
+  );
+
+  const candidate = offers.filter((o) => {
+    const end = new Date(o.tripRequest.latestDesiredAt);
+    if (o.status === "PENDING") {
+      return !Number.isNaN(end.getTime()) && end.getTime() > now.getTime();
+    }
+    if (o.status === "ACCEPTED") {
+      return !Number.isNaN(end.getTime()) && end.getTime() > now.getTime();
+    }
+    if (o.status === "CANCELLED") {
+      const created = new Date(o.createdAt);
+      return (
+        !Number.isNaN(created.getTime()) && created.getTime() >= recencyThreshold.getTime()
+      );
+    }
+    return false;
+  });
+
+  const rank = (o: DashboardOfferSummary): number => {
+    if (o.status === "PENDING") return 0;
+    if (o.status === "ACCEPTED") return 1;
+    return 2;
+  };
+
+  return [...candidate]
+    .sort((a, b) => {
+      const r = rank(a) - rank(b);
+      if (r !== 0) return r;
+      return (
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+    })
+    .slice(0, maxItems);
+}
+
+/**
+ * User-facing offer outcome label. Prisma uses CANCELLED (no REJECTED).
+ */
+export function offerOutcomeLabel(
+  status: DashboardOfferSummary["status"]
+): "Pending" | "Accepted" | "Rejected" {
+  if (status === "PENDING") return "Pending";
+  if (status === "ACCEPTED") return "Accepted";
+  return "Rejected";
+}
