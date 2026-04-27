@@ -27,6 +27,7 @@ import {
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { UserAvatar } from "@/components/UserAvatar";
+import { useDestiProfile } from "@/hooks/use-desti-profile";
 import { ProtectedShell } from "../_components/ProtectedShell";
 import {
     appendUniqueMessages,
@@ -231,8 +232,26 @@ function buildThreadRows(messages: ConversationMessageItem[]): ThreadRow[] {
     return rows;
 }
 
+/** Next chat message after this row (skips day dividers); used to stack avatars on sender changes / last bubble. */
+function nextMessageInThread(
+    rows: ThreadRow[],
+    startIndex: number
+): ConversationMessageItem | null {
+    for (let i = startIndex + 1; i < rows.length; i++) {
+        const row = rows[i]!;
+        if (row.kind === "message") {
+            return row.message;
+        }
+    }
+    return null;
+}
+
 export default function MessagesPage() {
     const { userId } = useAuth();
+    const {
+        profilePictureUrl: meProfilePictureUrl,
+        displayName: meDisplayName,
+    } = useDestiProfile();
     const searchParams = useSearchParams();
     const requestedConversationId = searchParams.get("conversationId");
     const [conversations, setConversations] = useState<ConversationListItem[]>(
@@ -1000,7 +1019,7 @@ export default function MessagesPage() {
                                             </p>
                                         ) : (
                                             <ul className="space-y-4">
-                                                {threadRows.map((row) => {
+                                                {threadRows.map((row, rowIndex) => {
                                                     if (row.kind === "divider") {
                                                         return (
                                                             <li
@@ -1017,24 +1036,39 @@ export default function MessagesPage() {
                                                     const message = row.message;
                                                     const isCurrentUserMessage =
                                                         message.senderUserId === currentUserId;
+                                                    const nextMsg = nextMessageInThread(
+                                                        threadRows,
+                                                        rowIndex
+                                                    );
+                                                    const showAvatar =
+                                                        !nextMsg ||
+                                                        nextMsg.senderUserId !==
+                                                            message.senderUserId;
 
                                                     return (
                                                         <li
                                                             key={row.key}
-                                                            className={`flex gap-2 ${
+                                                            className={`flex gap-2 items-end ${
                                                                 isCurrentUserMessage
                                                                     ? "justify-end"
                                                                     : "justify-start"
                                                             }`}
                                                         >
                                                             {!isCurrentUserMessage ? (
-                                                                <UserAvatar
-                                                                    name={
-                                                                        selectedConversation.counterpartDisplayName
-                                                                    }
-                                                                    size="sm"
-                                                                    className="mt-0.5 shrink-0 self-end"
-                                                                />
+                                                                showAvatar ? (
+                                                                    <UserAvatar
+                                                                        name={
+                                                                            selectedConversation.counterpartDisplayName
+                                                                        }
+                                                                        size="sm"
+                                                                        className="mt-0.5 shrink-0 self-end"
+                                                                    />
+                                                                ) : (
+                                                                    <span
+                                                                        className="mt-0.5 h-8 w-8 shrink-0 self-end"
+                                                                        aria-hidden
+                                                                    />
+                                                                )
                                                             ) : null}
                                                             <div
                                                                 className={`max-w-[min(100%,20rem)] rounded-2xl px-3.5 py-2 shadow-sm sm:max-w-[75%] ${
@@ -1058,6 +1092,21 @@ export default function MessagesPage() {
                                                                     )}
                                                                 </p>
                                                             </div>
+                                                            {isCurrentUserMessage ? (
+                                                                showAvatar ? (
+                                                                    <UserAvatar
+                                                                        src={meProfilePictureUrl}
+                                                                        name={meDisplayName}
+                                                                        size="sm"
+                                                                        className="mt-0.5 shrink-0 self-end"
+                                                                    />
+                                                                ) : (
+                                                                    <span
+                                                                        className="mt-0.5 h-8 w-8 shrink-0 self-end"
+                                                                        aria-hidden
+                                                                    />
+                                                                )
+                                                            ) : null}
                                                         </li>
                                                     );
                                                 })}

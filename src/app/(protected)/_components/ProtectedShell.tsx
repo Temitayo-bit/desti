@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { UserButton } from "@clerk/nextjs";
+import { DestiNavProfileMenu } from "@/components/DestiNavProfileMenu";
 import {
   CarFront,
   LayoutDashboard,
@@ -108,7 +108,7 @@ export function ProtectedShell({
                 STETSON VERIFIED
               </div>
               <div className="h-8 w-8 shrink-0">
-                <UserButton />
+                <DestiNavProfileMenu />
               </div>
               <button
                 type="button"

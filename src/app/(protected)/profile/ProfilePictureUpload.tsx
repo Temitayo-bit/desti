@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { invalidateDestiProfileCache } from "@/hooks/use-desti-profile";
 
 interface ProfilePictureUploadProps {
     currentUrl: string | null;
@@ -32,6 +33,7 @@ export function ProfilePictureUpload({ currentUrl }: ProfilePictureUploadProps) 
                 return;
             }
 
+            invalidateDestiProfileCache();
             router.refresh();
         } catch {
             alert("An error occurred while uploading your photo.");
