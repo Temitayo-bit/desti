@@ -275,6 +275,30 @@ export function TripVisualizationMap({
       ? `${destinationLatitude},${destinationLongitude}`
       : "";
 
+  /** Primitives only — do not use `driverMarker` object identity in useEffect deps (HMR + referential churn). */
+  const driverPositionKey =
+    driverLatitude != null && driverLongitude != null
+      ? `${driverLatitude},${driverLongitude}`
+      : "";
+
+  const staticLayerSyncKey = `${originStaticKey}|${destinationStaticKey}`;
+
+  /**
+   * Stable string for the map-creation effect. Do not use `bootstrapCenter` in the dependency
+   * array: it is a tuple and a new `[]` reference can force map teardown+recreate on refetches
+   * (driver view re-renders more; float noise in JSON can also change tuple identity).
+   */
+  const staticRouteMapInitKey = useMemo(() => {
+    const s = (n: number | null) =>
+      n === null || !Number.isFinite(n) ? "x" : n.toFixed(6);
+    return `${s(originLatitude)},${s(originLongitude)}|${s(destinationLatitude)},${s(destinationLongitude)}`;
+  }, [
+    destinationLatitude,
+    destinationLongitude,
+    originLatitude,
+    originLongitude,
+  ]);
+
   const allRelevantPoints = useMemo<CoordinateTuple[]>(() => {
     const points: CoordinateTuple[] = [];
     if (originLatitude !== null && originLongitude !== null) {
@@ -414,6 +438,13 @@ export function TripVisualizationMap({
       return;
     }
 
+    // When this effect re-runs, the previous map is torn down in cleanup. We must go back to
+    // "loading" so `mapStatus` flips again to "ready" when the new map loads — otherwise the
+    // static-marker sync effect (which depends on `mapStatus`) never runs and origin/destination
+    // pins stay missing (often noticed on the driver view when the map instance is recreated).
+    setMapStatus("loading");
+
+    // Use latest center from this render; effect deps are tied to `staticRouteMapInitKey` only.
     const mapInitialCenter = bootstrapCenter ?? FALLBACK_MAP_CENTER;
 
     let disposed = false;
@@ -518,14 +549,16 @@ export function TripVisualizationMap({
       mapboxNamespaceRef.current = null;
     };
   }, [
-    bootstrapCenter,
     clearMarker,
     hasStaticMarkers,
     mapAssetTimeoutMs,
     mapLoadTimeoutMs,
     mapboxToken,
+    staticRouteMapInitKey,
   ]);
 
+  // 3 primitive-ish deps, fixed size forever — avoids parent `detail` refetch churn and HMR
+  // "useEffect changed size" when a prior bundle used a different list (e.g. included marker objects).
   useEffect(() => {
     if (mapStatus !== "ready") {
       return;
@@ -535,14 +568,8 @@ export function TripVisualizationMap({
     syncMarker(destinationMarkerRef.current, destinationMarker, "#1d4ed8");
     // Do not depend on `fitMapToPoints` here — it changes every driver poll and would re-run this effect.
     fitMapToPointsRef.current(false);
-  }, [
-    destinationMarker,
-    destinationStaticKey,
-    mapStatus,
-    originMarker,
-    originStaticKey,
-    syncMarker,
-  ]);
+    // `origin`/`destination` read from the render that last changed `staticLayerSyncKey` or `mapStatus`
+  }, [mapStatus, staticLayerSyncKey, syncMarker]);
 
   useEffect(() => {
     if (mapStatus !== "ready") {
@@ -550,7 +577,7 @@ export function TripVisualizationMap({
     }
 
     syncMarker(driverMarkerRef.current, driverMarker, "#dc2626");
-  }, [driverMarker, mapStatus, syncMarker]);
+  }, [mapStatus, driverPositionKey, syncMarker]);
 
   if (!hasStaticMarkers) {
     return (

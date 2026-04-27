@@ -22,6 +22,25 @@ interface RideDetailClientProps {
   currentUserClerkId: string;
 }
 
+const STOP_REQUEST_STATUS_STYLES: Record<
+  string,
+  { label: string; className: string }
+> = {
+  PENDING: { label: "Pending", className: "bg-amber-100 text-amber-900" },
+  QUOTED: { label: "Quoted", className: "bg-sky-100 text-sky-900" },
+  ACCEPTED: { label: "Accepted", className: "bg-emerald-100 text-emerald-900" },
+  REJECTED: { label: "Rejected", className: "bg-zinc-200 text-zinc-700" },
+};
+
+function StopRequestStatusBadge({ state }: { state: string }) {
+  const s = STOP_REQUEST_STATUS_STYLES[state] ?? STOP_REQUEST_STATUS_STYLES.PENDING;
+  return (
+    <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${s.className}`}>
+      {s.label}
+    </span>
+  );
+}
+
 export function RideDetailClient({ ride, currentUserClerkId }: RideDetailClientProps) {
   const router = useRouter();
   const isOwner = ride.driverUserId === currentUserClerkId;
@@ -46,11 +65,13 @@ export function RideDetailClient({ ride, currentUserClerkId }: RideDetailClientP
   const [isOfferModalOpen, setIsOfferModalOpen] = useState(false);
   const [offerPrice, setOfferPrice] = useState("");
 
-  // Stop Request – Quote / Reject
-  const [quoteTargetId, setQuoteTargetId] = useState<string | null>(null);
-  const [quotePrice, setQuotePrice] = useState("");
-  const [quoteSubmitting, setQuoteSubmitting] = useState(false);
-  const [quoteError, setQuoteError] = useState<string | null>(null);
+  // Stop Request – driver quote modal / reject; rider accept
+  const [quoteModalForId, setQuoteModalForId] = useState<string | null>(null);
+  const [quoteModalPrice, setQuoteModalPrice] = useState("");
+  const [quoteModalSubmitting, setQuoteModalSubmitting] = useState(false);
+  const [quoteModalError, setQuoteModalError] = useState<string | null>(null);
+  const [acceptStopRequestId, setAcceptStopRequestId] = useState<string | null>(null);
+  const [acceptStopError, setAcceptStopError] = useState<string | null>(null);
   const [stopActionPending, setStopActionPending] = useState<Record<string, boolean>>({});
   const [offerActionPending, setOfferActionPending] = useState<Record<string, boolean>>({});
   const [offerActionNotice, setOfferActionNotice] = useState<string | null>(null);
@@ -76,6 +97,17 @@ export function RideDetailClient({ ride, currentUserClerkId }: RideDetailClientP
   const hasConfirmedBooking =
     ride.bookings &&
     ride.bookings.some((b: any) => b.status === "CONFIRMED" || b.status === "COMPLETED");
+
+  const stopRequestsChronological = [...(ride.stopRequests ?? [])].sort(
+    (a: any, b: any) =>
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+
+  const myConfirmedBookingOnRide = ride.bookings?.find(
+    (b: any) =>
+      b.riderUserId === currentUserClerkId &&
+      (b.status === "CONFIRMED" || b.status === "COMPLETED")
+  );
 
   const handleBookRide = async () => {
     if (bookingInProgress || ride.seatsAvailable <= 0 || isOwner) return;
@@ -435,6 +467,106 @@ export function RideDetailClient({ ride, currentUserClerkId }: RideDetailClientP
               )}
             </div>
 
+            {!isOwner && (
+              <div className="bg-white rounded-3xl p-6 shadow-sm border border-zinc-100">
+                <h3 className="font-bold text-zinc-900 mb-4">Your stop request</h3>
+                {stopRequestsChronological.length === 0 ? (
+                  <p className="text-sm text-zinc-500">No stop request yet for this ride.</p>
+                ) : (
+                  <div className="space-y-4">
+                    {stopRequestsChronological.map((req: any) => {
+                      const busyAccept = acceptStopRequestId === req.id;
+                      return (
+                        <div key={req.id} className="border border-zinc-100 rounded-xl p-4 bg-zinc-50">
+                          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                            <p className="text-xs font-bold uppercase tracking-wide text-zinc-400">Status</p>
+                            <StopRequestStatusBadge state={req.state} />
+                          </div>
+                          <p className="text-xs text-zinc-600 mt-1">
+                            <span className="font-semibold text-zinc-800">Pickup:</span>{" "}
+                            {req.requestedPickupText}
+                          </p>
+                          <p className="text-xs text-zinc-600">
+                            <span className="font-semibold text-zinc-800">Dropoff:</span>{" "}
+                            {req.requestedDropoffText}
+                          </p>
+                          {req.riderNote ? (
+                            <p className="text-xs text-zinc-500 italic mt-2">&ldquo;{req.riderNote}&rdquo;</p>
+                          ) : null}
+
+                          {req.state === "QUOTED" && req.quotedPriceCents != null && (
+                            <div className="mt-4 space-y-2">
+                              <p className="text-sm font-semibold text-zinc-900">
+                                Quoted price:{" "}
+                                <span className="text-[#006837]">
+                                  ${(req.quotedPriceCents / 100).toFixed(2)}
+                                </span>
+                              </p>
+                              {acceptStopError && (
+                                <p className="text-xs text-red-600">{acceptStopError}</p>
+                              )}
+                              <button
+                                type="button"
+                                disabled={busyAccept}
+                                onClick={async () => {
+                                  setAcceptStopError(null);
+                                  setAcceptStopRequestId(req.id);
+                                  try {
+                                    const res = await fetch(`/api/stop-requests/${req.id}/accept`, {
+                                      method: "POST",
+                                    });
+                                    if (res.ok) {
+                                      setAcceptStopError(null);
+                                      router.refresh();
+                                    } else {
+                                      const d = await res.json().catch(() => ({}));
+                                      setAcceptStopError(
+                                        d.message || "Could not accept this quote."
+                                      );
+                                    }
+                                  } catch {
+                                    setAcceptStopError("Network error. Please try again.");
+                                  } finally {
+                                    setAcceptStopRequestId(null);
+                                  }
+                                }}
+                                className="w-full bg-[#006837] text-white text-sm font-bold py-2.5 rounded-xl disabled:opacity-50"
+                              >
+                                {busyAccept ? "Accepting…" : "Accept quote"}
+                              </button>
+                            </div>
+                          )}
+
+                          {req.state === "ACCEPTED" && (
+                            <div className="mt-4 space-y-1 text-sm text-zinc-700">
+                              <p className="font-medium text-emerald-800">Your stop is confirmed.</p>
+                              {myConfirmedBookingOnRide ? (
+                                <p className="text-xs text-zinc-600">
+                                  Confirmed booking{" "}
+                                  {myConfirmedBookingOnRide.priceCents != null
+                                    ? `at $${(myConfirmedBookingOnRide.priceCents / 100).toFixed(2)} per seat`
+                                    : ""}
+                                  .
+                                </p>
+                              ) : (
+                                <p className="text-xs text-zinc-500">
+                                  Your seat is booked. Refresh if details are still updating.
+                                </p>
+                              )}
+                            </div>
+                          )}
+
+                          {req.state === "REJECTED" && (
+                            <p className="mt-4 text-sm font-semibold text-zinc-700">Request declined</p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Owner Management Section */}
             {isOwner && (
               <div className="space-y-6">
@@ -502,91 +634,92 @@ export function RideDetailClient({ ride, currentUserClerkId }: RideDetailClientP
                 </div>
                 <div className="bg-white rounded-3xl p-6 shadow-sm border border-zinc-100">
                   <h3 className="font-bold text-zinc-900 mb-4">Stop Requests</h3>
-                  {(() => {
-                    const pendingStopRequests = ride.stopRequests?.filter((s: any) => s.state === "PENDING") ?? [];
-                    return pendingStopRequests.length > 0 ? (
-                      <div className="space-y-4">
-                        {pendingStopRequests.map((req: any) => (
+                  {stopRequestsChronological.length === 0 ? (
+                    <p className="text-sm text-zinc-500">No stop requests yet.</p>
+                  ) : (
+                    <div className="space-y-4">
+                      {stopRequestsChronological.map((req: any) => (
                         <div key={req.id} className="border border-zinc-100 rounded-xl p-4 bg-zinc-50">
-                          <p className="font-medium text-sm text-zinc-900 mb-1">{req.rider.name} requested a stop</p>
+                          <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
+                            <p className="font-medium text-sm text-zinc-900">{req.rider?.name ?? "Rider"}</p>
+                            <StopRequestStatusBadge state={req.state} />
+                          </div>
                           <p className="text-xs text-zinc-500">Pickup: {req.requestedPickupText}</p>
                           <p className="text-xs text-zinc-500">Dropoff: {req.requestedDropoffText}</p>
-                          {req.riderNote && <p className="text-xs text-zinc-500 italic mt-1">&ldquo;{req.riderNote}&rdquo;</p>}
-                          <div className="flex gap-2 mt-3">
-                            <button
-                              disabled={!!stopActionPending[req.id]}
-                              onClick={() => { setQuoteTargetId(req.id); setQuotePrice(""); setQuoteError(null); }}
-                              className="flex-1 bg-[#006837] text-white text-xs font-bold py-2 rounded-lg disabled:opacity-50"
-                            >
-                              Quote
-                            </button>
-                            <button
-                              disabled={!!stopActionPending[req.id]}
-                              onClick={async () => {
-                                if (!confirm("Reject this stop request?")) return;
-                                setStopActionPending(p => ({ ...p, [req.id]: true }));
-                                try {
-                                  const res = await fetch(`/api/stop-requests/${req.id}/reject`, { method: "POST" });
-                                  if (res.ok) { router.refresh(); }
-                                  else { const d = await res.json(); alert(d.message || "Failed to reject."); }
-                                } catch { alert("Error rejecting stop request."); }
-                                finally { setStopActionPending(p => { const n = {...p}; delete n[req.id]; return n; }); }
-                              }}
-                              className="flex-1 bg-zinc-200 text-zinc-700 text-xs font-bold py-2 rounded-lg disabled:opacity-50"
-                            >
-                              {stopActionPending[req.id] ? "..." : "Reject"}
-                            </button>
-                          </div>
+                          {req.riderNote && (
+                            <p className="text-xs text-zinc-500 italic mt-1">&ldquo;{req.riderNote}&rdquo;</p>
+                          )}
 
-                          {/* Inline Quote Form */}
-                          {quoteTargetId === req.id && (
-                            <div className="mt-3 border-t border-zinc-200 pt-3 space-y-2">
-                              <p className="text-xs font-semibold text-zinc-700">Enter a price for this stop</p>
-                              <div className="flex items-center gap-0 rounded-lg bg-zinc-100 ring-1 ring-inset ring-zinc-200 focus-within:ring-2 focus-within:ring-[#006837]/30">
-                                <span className="pl-3 text-sm text-zinc-500">$</span>
-                                <input
-                                  type="number" min="0.01" step="0.01"
-                                  placeholder="0.00"
-                                  value={quotePrice}
-                                  onChange={e => setQuotePrice(e.target.value)}
-                                  className="min-w-0 flex-1 border-0 bg-transparent py-2 pr-3 text-sm text-zinc-900 outline-none"
-                                />
-                              </div>
-                              {quoteError && <p className="text-xs text-red-600">{quoteError}</p>}
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={async () => {
-                                    const cents = Math.round(Number(quotePrice) * 100);
-                                    if (!cents || cents < 1) { setQuoteError("Enter a valid price."); return; }
-                                    setQuoteSubmitting(true); setQuoteError(null);
-                                    setStopActionPending(p => ({ ...p, [req.id]: true }));
-                                    try {
-                                      const res = await fetch(`/api/stop-requests/${req.id}/quote`, {
-                                        method: "POST",
-                                        headers: { "Content-Type": "application/json" },
-                                        body: JSON.stringify({ quotedPriceCents: cents }),
-                                      });
-                                      if (res.ok) { setQuoteTargetId(null); router.refresh(); }
-                                      else { const d = await res.json(); setQuoteError(d.message || "Failed to send quote."); }
-                                    } catch { setQuoteError("Error sending quote."); }
-                                    finally { setQuoteSubmitting(false); setStopActionPending(p => { const n = {...p}; delete n[req.id]; return n; }); }
-                                  }}
-                                  disabled={quoteSubmitting}
-                                  className="flex-1 bg-[#006837] text-white text-xs font-bold py-2 rounded-lg disabled:opacity-50"
-                                >
-                                  {quoteSubmitting ? "Sending..." : "Send Quote"}
-                                </button>
-                                <button onClick={() => setQuoteTargetId(null)} className="flex-1 bg-zinc-200 text-zinc-700 text-xs font-bold py-2 rounded-lg">Cancel</button>
-                              </div>
+                          {req.state === "PENDING" && (
+                            <div className="flex gap-2 mt-3">
+                              <button
+                                type="button"
+                                disabled={!!stopActionPending[req.id]}
+                                onClick={() => {
+                                  setQuoteModalForId(req.id);
+                                  setQuoteModalPrice("");
+                                  setQuoteModalError(null);
+                                }}
+                                className="flex-1 bg-[#006837] text-white text-xs font-bold py-2 rounded-lg disabled:opacity-50"
+                              >
+                                Quote price
+                              </button>
+                              <button
+                                type="button"
+                                disabled={!!stopActionPending[req.id]}
+                                onClick={async () => {
+                                  if (!confirm("Reject this stop request?")) return;
+                                  setStopActionPending((p) => ({ ...p, [req.id]: true }));
+                                  try {
+                                    const res = await fetch(`/api/stop-requests/${req.id}/reject`, {
+                                      method: "POST",
+                                    });
+                                    if (res.ok) {
+                                      router.refresh();
+                                    } else {
+                                      const d = await res.json();
+                                      alert(d.message || "Failed to reject.");
+                                    }
+                                  } catch {
+                                    alert("Error rejecting stop request.");
+                                  } finally {
+                                    setStopActionPending((p) => {
+                                      const n = { ...p };
+                                      delete n[req.id];
+                                      return n;
+                                    });
+                                  }
+                                }}
+                                className="flex-1 bg-zinc-200 text-zinc-700 text-xs font-bold py-2 rounded-lg disabled:opacity-50"
+                              >
+                                {stopActionPending[req.id] ? "…" : "Reject"}
+                              </button>
                             </div>
+                          )}
+
+                          {req.state === "QUOTED" && (
+                            <p className="mt-3 text-xs font-medium text-zinc-600">
+                              Waiting for rider response
+                              {req.quotedPriceCents != null && (
+                                <>
+                                  {" "}
+                                  · Quoted ${(req.quotedPriceCents / 100).toFixed(2)}
+                                </>
+                              )}
+                            </p>
+                          )}
+
+                          {req.state === "ACCEPTED" && (
+                            <p className="mt-3 text-xs font-medium text-emerald-800">Accepted — booking confirmed</p>
+                          )}
+
+                          {req.state === "REJECTED" && (
+                            <p className="mt-3 text-xs font-medium text-zinc-600">You declined this request</p>
                           )}
                         </div>
                       ))}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-zinc-500">No pending stop requests.</p>
-                    );
-                  })()}
+                    </div>
+                  )}
                 </div>
 
                 <div className="bg-white rounded-3xl p-6 shadow-sm border border-zinc-100">
@@ -690,6 +823,103 @@ export function RideDetailClient({ ride, currentUserClerkId }: RideDetailClientP
             <button onClick={handleSendOffer} disabled={submitting} className="w-full bg-[#006837] text-white font-bold py-3 rounded-xl">
               {submitting ? "Sending..." : "Send Offer"}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Driver: quote stop request (price only; backend has no message field) */}
+      {quoteModalForId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 relative">
+            <button
+              type="button"
+              onClick={() => {
+                if (!quoteModalSubmitting) {
+                  setQuoteModalForId(null);
+                  setQuoteModalPrice("");
+                  setQuoteModalError(null);
+                }
+              }}
+              className="absolute top-4 right-4 p-2 text-zinc-400 hover:text-zinc-600"
+            >
+              <X size={20} />
+            </button>
+            <h2 className="text-xl font-bold mb-2 text-zinc-900">Quote stop request</h2>
+            <p className="text-zinc-500 text-sm mb-4">Set a price for this custom stop. The rider will accept or decline.</p>
+            <div className="mb-4">
+              <label className="block text-sm font-semibold mb-1">Price ($)</label>
+              <div className="flex items-center gap-0 rounded-lg bg-zinc-100 ring-1 ring-inset ring-zinc-200 focus-within:ring-2 focus-within:ring-[#006837]/30">
+                <span className="pl-3 text-sm text-zinc-500">$</span>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={quoteModalPrice}
+                  onChange={(e) => setQuoteModalPrice(e.target.value)}
+                  className="min-w-0 flex-1 border-0 bg-transparent py-2 pr-3 text-sm text-zinc-900 outline-none"
+                />
+              </div>
+            </div>
+            {quoteModalError && <p className="text-sm text-red-600 mb-3">{quoteModalError}</p>}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!quoteModalSubmitting) {
+                    setQuoteModalForId(null);
+                    setQuoteModalPrice("");
+                    setQuoteModalError(null);
+                  }
+                }}
+                className="flex-1 bg-zinc-100 text-zinc-800 font-bold py-3 rounded-xl"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={quoteModalSubmitting}
+                onClick={async () => {
+                  const id = quoteModalForId;
+                  if (!id) return;
+                  const cents = Math.round(Number(quoteModalPrice) * 100);
+                  if (!cents || cents < 1) {
+                    setQuoteModalError("Enter a valid price (minimum $0.01).");
+                    return;
+                  }
+                  setQuoteModalSubmitting(true);
+                  setQuoteModalError(null);
+                  setStopActionPending((p) => ({ ...p, [id]: true }));
+                  try {
+                    const res = await fetch(`/api/stop-requests/${id}/quote`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ quotedPriceCents: cents }),
+                    });
+                    if (res.ok) {
+                      setQuoteModalForId(null);
+                      setQuoteModalPrice("");
+                      router.refresh();
+                    } else {
+                      const d = await res.json().catch(() => ({}));
+                      setQuoteModalError(d.message || "Failed to send quote.");
+                    }
+                  } catch {
+                    setQuoteModalError("Error sending quote.");
+                  } finally {
+                    setQuoteModalSubmitting(false);
+                    setStopActionPending((p) => {
+                      const n = { ...p };
+                      delete n[id];
+                      return n;
+                    });
+                  }
+                }}
+                className="flex-1 bg-[#006837] text-white font-bold py-3 rounded-xl disabled:opacity-50"
+              >
+                {quoteModalSubmitting ? "Sending…" : "Send quote"}
+              </button>
+            </div>
           </div>
         </div>
       )}

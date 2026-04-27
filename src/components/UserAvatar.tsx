@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { User } from "lucide-react";
 
 type AvatarSize = "sm" | "md" | "lg" | "xl";
 
@@ -21,7 +22,7 @@ function getInitial(name: string | null | undefined): string {
     if (source && source.length > 0) {
         return source.charAt(0).toUpperCase();
     }
-    return "D";
+    return "";
 }
 
 export function UserAvatar({ src, name, size = "md", className = "" }: UserAvatarProps) {
@@ -40,11 +41,16 @@ export function UserAvatar({ src, name, size = "md", className = "" }: UserAvata
         );
     }
 
+    const initial = getInitial(name);
     return (
         <div
             className={`${container} flex shrink-0 items-center justify-center rounded-full bg-emerald-800 font-bold text-white ${text} ${className}`}
         >
-            {getInitial(name)}
+            {initial ? (
+                initial
+            ) : (
+                <User className="h-[45%] w-[45%] text-white" strokeWidth={2.2} aria-hidden />
+            )}
         </div>
     );
 }

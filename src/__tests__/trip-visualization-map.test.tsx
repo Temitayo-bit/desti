@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { TripVisualizationMap } from "@/components/TripVisualizationMap";
 
 class MockMap {
@@ -17,6 +17,10 @@ class MockMap {
   }
 
   fitBounds() {
+    return undefined;
+  }
+
+  resize() {
     return undefined;
   }
 
@@ -41,6 +45,10 @@ class StalledMockMap {
   }
 
   fitBounds() {
+    return undefined;
+  }
+
+  resize() {
     return undefined;
   }
 
@@ -75,6 +83,7 @@ class MockBounds {
 
 describe("TripVisualizationMap", () => {
   afterEach(() => {
+    cleanup();
     vi.useRealTimers();
     vi.unstubAllEnvs();
     delete window.mapboxgl;
@@ -170,8 +179,8 @@ describe("TripVisualizationMap", () => {
       await vi.advanceTimersByTimeAsync(120);
     });
 
-    await waitFor(() => {
-      expect(screen.getByText(/Failed to load the trip map/i)).toBeDefined();
-    });
+    // Let RTL async queries use real timers after advancing fake ones
+    vi.useRealTimers();
+    expect(await screen.findByText(/Failed to load the trip map/i)).toBeDefined();
   });
 });

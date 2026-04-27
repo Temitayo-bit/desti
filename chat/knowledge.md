@@ -1,199 +1,155 @@
 # Desti Knowledge Pack
 
-> Loaded by the chat gateway. Use only this pack plus the user’s question to answer. Stay within Stetson / Desti campus transport topics.
+> Loaded by the chat gateway. Use only this pack and the in-app assistant rules. Do not invent features or UI that are not described here.
 
 ---
 
-## App overview
+## What Desti is
 
-Desti is a campus transport web app for **verified Stetson University students**. It helps **drivers** post rides with empty seats and **riders** find rides or post **trip requests** so drivers can respond with **offers**. After a **booking** is confirmed, riders and drivers can **message each other in-app** to coordinate pickup and details.
+Desti is a campus **ride-sharing marketplace** for **Stetson University** students.
 
----
+### Core users
 
-## Who can use Desti
-
-- You need a **verified email address** that ends in **`@stetson.edu`**.
-- If you are not verified or you use a non-Stetson email, you’ll see **Access Restricted** until you fix your account or verify the right address.
-
----
-
-## First-time setup: onboarding
-
-- After you sign in with a verified Stetson email, you may be sent to **Onboarding** before the rest of the app works.
-- You’ll provide: **name**, **age**, **year at Stetson** (Freshman–Senior), and **gender**.
-- **Onboarding is one-time.** Once it’s completed, you’re taken to the **Dashboard** and can use rides, trip requests, bookings, and messages.
+- **Drivers** post rides.
+- **Riders** browse rides and book seats.
+- **Riders** can create **Trip Requests** when they need a ride.
+- **Drivers** can send offers to Trip Requests.
+- **Riders** can send offers to posted rides.
+- **Riders** can create **Stop Requests** for custom pickup/dropoff flexibility.
 
 ---
 
-## Main navigation (sidebar)
+## Authentication and access
 
-After you’re in the app, the sidebar includes:
+- Desti is for **verified Stetson** users (verified **@stetson.edu** email).
+- Users must **complete onboarding / profile setup** before using core features.
+- Only **confirmed participants** can access **trip-specific live location** data.
 
-| Link | What it is |
-|------|------------|
-| **Dashboard** | Overview of your upcoming driving rides, confirmed trips, and pending offers. |
-| **Rides** | Browse and post **rides** (driver offers a route and seats). |
-| **Trip Requests** | Browse and post **trip requests** (rider asks for a ride; drivers send offers). |
-| **Messages** | **Direct message threads** tied to a **booking** or an **offer** (not a general campus inbox). |
-| **Profile** | Your Desti profile (name, email, year, age, gender). Links to **Clerk** account and **Sign out**. |
-
-**URLs (for “where do I go?”):** `/dashboard`, `/browse`, `/browse-trip-requests`, `/messages`, `/profile`.
+**Helpful routes (approximate “where to go”):** `/dashboard`, `/browse` (Rides), `/post-ride`, `/browse-trip-requests`, `/post-trip-request`, `/offers`, `/bookings`, `/messages`, `/profile`.
 
 ---
 
-## Rides (drivers and riders)
+## Main app areas
 
-### Post a ride (driver)
-
-1. Open **Rides** and use **Post a Ride** (or go to `/post-ride`).
-2. Enter **origin** and **destination** (short text locations).
-3. Set an **earliest** and **latest departure** time (your departure window).
-4. Choose **distance**: SHORT, MEDIUM, or LONG.
-5. Set **price** (in dollars in the form; the app stores it accurately for you).
-6. Set **how many seats** you’re offering (within the limits shown in the form).
-7. Optionally add **pickup** and **dropoff** instructions.
-8. Submit. You’ll typically be sent back to the **Dashboard** after success.
-
-**Rules you should know:**
-
-- The **departure window** (latest minus earliest) can’t be longer than **48 hours**.
-- Times can’t be far in the past (there is a small grace for clock skew).
-- Your ride stays **ACTIVE** until you cancel it or its departure window passes.
-
-### Browse and book a ride (rider)
-
-1. Open **Rides** (`/browse`).
-2. Use search and **quick filters** (e.g. soon, later, more seats, shorter trips) to narrow the list.
-3. Open a ride to see details, choose **how many seats** you need (if available), and **book**.
-4. You **cannot book your own ride**.
-5. You can only have **one confirmed booking per ride** as a rider.
-
-### Edit or cancel a ride (driver, owner only)
-
-- You can **edit** route, times, price, seats, and instructions **only while the ride has no confirmed bookings**—once someone has a **confirmed** booking, editing is blocked; cancel the ride or work with riders via **Messages** if needed.
-- You can **cancel** your ride **before** the latest departure time has passed. Cancelling sets the ride to cancelled and **cancels confirmed bookings** tied to that ride.
-
-**“My rides” view:** from **Rides**, switch to the **My rides** view (same area as browse; URL uses `?view=my`) to manage rides you’ve posted.
+- **Dashboard:** overview of the user’s rides, bookings, offers, and requests.
+- **Rides:** browse rides, view ride details, post rides, manage my rides.
+- **Requests:** browse trip requests, create trip requests, view my requests, manage offers.
+- **Messages:** communicate only when there is a **valid** ride, booking, offer, or request relationship.
+- **Profile:** manage profile details and **profile picture** (stored in Desti; not the same as a generic social profile).
 
 ---
 
-## Trip requests (riders and drivers)
+## Ride creation
 
-### Post a trip request (rider)
+- **Drivers** create rides with **origin**, **destination**, **departure window**, **seats**, **price**, **pickup/dropoff** instructions, and optional **ride attributes**.
+- **Optional ride attributes** may include **music preference**, **AC availability**, **trunk space availability**, and **vehicle type** — these are **ride-level**, not onboarding-only profile fields.
+- Origin and destination use **location autocomplete** in the app.
+- **Distance category** is **auto-calculated** from origin and destination.
 
-1. Open **Trip Requests** and **Post a Trip Request** (`/post-trip-request`).
-2. Enter **origin** and **destination**.
-3. Set **earliest** and **latest** desired departure (your time window).
-4. Choose **distance** and **how many seats** you need.
-5. Optionally add pickup/dropoff notes.
-6. Submit. The request is **ACTIVE** until it’s matched or closed.
+**Browse/post:** use **Rides** (`/browse`, `/post-ride`).
 
-**Rules:**
+---
 
-- Same kind of **48-hour window** and “not in the past” rules apply as for rides.
-- While **ACTIVE** and **without a confirmed booking**, you can **edit** your request.
-- If your request is **no longer active** (for example, closed after accepting an offer), you **cannot** edit it.
+## Trip requests
 
-### Browse trip requests and send an offer (driver)
+- **Riders** create trip requests with **origin**, **destination**, **time window**, **seats needed**, and **instructions**.
+- **Distance category** is auto-calculated.
+- **Drivers** can send **offers** to trip requests.
+- **Edit rules** in the app may limit edits once there are bookings or the request is no longer active; use in-app state as the source of truth if unsure.
 
-1. Open **Trip Requests** (`/browse-trip-requests`).
-2. Open a request and **send an offer**: number of **seats**, **price**, and an optional short **message** to the rider.
-3. You **cannot** send an offer on **your own** request.
-4. You can only have **one active offer** (pending or accepted) **per** trip request as a driver—if you already have one, send an update by cancelling the old offer first (when allowed).
+**Browse/post:** **Trip Requests** (`/browse-trip-requests`, `/post-trip-request`).
 
-### Accept or decline offers (rider)
+---
 
-- Go to **Pending Offers** (`/offers`) or use links from the **Dashboard**.
-- **Accept** an offer: this creates a **confirmed booking**, **closes** the trip request, and **declines/cancels** other pending offers on that request.
-- **Decline**: uses cancel on that offer so you can consider other drivers.
+## Offers
 
-### Cancel an offer (driver or rider)
+- **Driver-to-rider** offers happen on **Trip Requests**.
+- **Rider-to-driver** offers happen on posted **Rides**.
+- **Accepting** an offer creates a **confirmed booking** through the **backend** (the frontend should not “manually” invent bookings in chat).
+- Rejected or cancelled offers should not be described as if they are still active.
 
-- **Pending** offers can be cancelled by the **driver** (withdraw offer) or handled from the rider side via **Decline** on `/offers`.
-- If an offer was **already accepted**, cancellation behaves like undoing that match: the linked **booking** is cancelled and the **trip request** can become **active** again when the system allows (see in-app messages if something fails).
+**Pending offers:** `/offers` and links from the **Dashboard**.
 
-**“My trip requests”:** from **Trip Requests**, use the **My** view (`/browse-trip-requests?view=my`) for requests you posted.
+---
+
+## Stop requests
+
+- A **rider** can request a **custom pickup/dropoff** for a ride.
+- The **driver** may **quote a price**; the rider can **accept** the quote.
+- **No seat is reserved** until the **stop request quote** is **accepted** (per app rules).
 
 ---
 
 ## Bookings
 
-- A **booking** is **CONFIRMED** after:
-  - you **book seats on someone’s ride**, or
-  - you **accept a driver’s offer** on your trip request.
-- **Upcoming trips:** open **Your Upcoming Trips** (`/bookings`) to see confirmed trips where you’re the rider or driver, with times and route summary.
-- **Cancel as a rider (passenger):** you can cancel **your** booking; if it was for a **ride**, seats are **returned** to the driver’s ride so someone else can book.
+- A **confirmed booking** means the ride or trip is accepted/booked in the app.
+- **Seat enforcement** is handled by the **backend**; the assistant must not claim seat counts.
+- Users **cannot book their own** rides.
+- **Upcoming trips** are visible from flows such as **Your Upcoming Trips** / bookings views (`/bookings` and related entry points).
 
 ---
 
-## Messages (in-app coordination)
+## Live tracking
 
-**Where:** **Messages** in the sidebar (`/messages`).
+- **Drivers** can **start** a trip; during an **active** trip, the driver’s location may be **updated** for participants.
+- **Riders** obtain the latest location through **polling** (not a general-purpose “live map” product).
+- **Live location** is visible only to **confirmed participants**.
+- **No ETA, route optimization, or turn-by-turn navigation** is currently supported; do not claim otherwise.
 
-**What it is:**
-
-- **Conversation threads** between you and the **other student** on a trip (**driver ↔ rider**).
-- Each thread is linked to a **confirmed booking** and/or an **offer** record in the app. Your **Messages** list can include both types when they exist.
-- Threads show **trip context** (like destination and date) and **chat history**. New messages are limited to **1000 characters** each.
-
-**How to open a thread:**
-
-- The usual path is from **Dashboard** or **Your Upcoming Trips** (`/bookings`): use the **message** action on a **confirmed booking** to open or create that booking’s thread.
-- Threads tied to **pending or accepted offers** are also supported; they appear in **Messages** once that offer conversation exists (the same messaging system is used for both offers and bookings).
-
-**Not the same as:** the **Desti help chat** (this assistant). Help chat answers how-to questions; **Messages** is for coordinating real trips with other users.
+**Unsupported (do not claim as available):** websocket live tracking, ETA calculations, route optimization, turn-by-turn.
 
 ---
 
-## Dashboard
+## Completion and ratings
 
-The **Dashboard** summarizes what needs your attention:
-
-- **Rides you’re driving** that are still upcoming.
-- **Confirmed bookings** where you’re rider or driver (ride-based or trip-request-based), for trips still in the future.
-- **Pending offers you’ve sent** and **pending offers you’ve received** (for active trip requests).
-
-Counts may show totals; short lists may be **truncated**—use **Rides**, **Trip Requests**, **Offers**, or **Bookings** for full detail.
-
-**Related pages:**
-
-- **Pending Offers:** `/offers`
-- **Your Upcoming Trips:** `/bookings`
+- Trips can be **manually completed** in supported flows.
+- **Riders** can **rate drivers** after completion where the app allows it; ratings are described as part of the trust model; do not fabricate a user’s rating.
+- A driver can have an **average rating** and **rating count** in profile summaries.
 
 ---
 
-## Profile and account
+## Messages
 
-- **Profile** (`/profile`) shows the information Desti stores for you and links to **manage your Clerk account** and **sign out**.
-- You need **completed onboarding** to reach Profile from the normal flow.
+- **Messages** in Desti are **tied to valid** ride, booking, offer, or request relationships — **not** a general campus DM system.
+- **Message length** and availability follow what the in-app **Messages** area shows; do not claim arbitrary public chat.
+- The **in-app help chat** (this assistant) is **not** the same as **user-to-user Messages**.
 
 ---
 
-## FAQ
+## Safety
 
-**Q: Who can sign in?**  
-A: Students who can verify a **`@stetson.edu`** email in Clerk.
+- **Before entering a car,** confirm **driver identity and vehicle details**.
+- **When possible,** use **Desti messages to communicate** with your match.
+- **Avoid sharing** passwords, banking, or other **sensitive information** in chat.
+- Desti does **not** support **arbitrary direct messages**—messaging is tied to valid relationships in the app.
 
-**Q: Why am I stuck on onboarding or “access restricted”?**  
-A: You need a **verified Stetson email** and, for the main app, **finished onboarding**.
+---
 
-**Q: Where are my messages with another student?**  
-A: **Messages** in the sidebar (`/messages`). Threads are tied to a **booking** or **offer**, not a separate “mail” app.
+## Profile
 
-**Q: How do I book a seat?**  
-A: **Rides** → pick a listing → **Book** with the number of seats you need.
+- **Profile** holds Desti user fields (e.g. name, academic year, profile picture) used across the app.
+- **Clerk** is used for **authentication** (sign-in); in-app **profile display** for photos should follow **Desti’s stored profile picture URL** when the user asks about “why doesn’t my picture match…”—clarify that the app uses the **Desti profile photo** for in-app avatars, not a generic account avatar.
 
-**Q: How do I get a driver to pick me up?**  
-A: **Post a Trip Request**, then review **offers** on `/offers` or the **Dashboard** and **accept** one.
+---
 
-**Q: Can I edit my ride or request after someone books?**  
-A: **No**—once there is a **confirmed booking**, edits are locked. Cancel and recreate, or coordinate in **Messages** when appropriate.
+## Unsupported / out of scope (do not claim as available in Desti)
 
-**Q: How do I cancel?**  
-A: As a **rider**, cancel **your booking**. As a **driver**, cancel **your ride** (before departure) or cancel a **pending offer** you sent. Exact buttons appear on the relevant cards and detail views.
+- **Payment processing** inside the app (no in-app payment claims).
+- **Public knowledge** or **general** travel advice not tied to Desti flows.
+- **General-purpose assistant** behavior, tutoring, or unrelated Q&A.
+- In-app **guarantee** of matches, times, or outcomes—describe **how to use** Desti, not external promises.
 
-**Q: Why can’t I book my own ride?**  
-A: **Self-booking isn’t allowed**—bookings are for other passengers only.
+---
 
-**Q: Can I delete a trip request from the app?**  
-A: **Trip-request deletion isn’t available** as a finished feature in the current app; manage the request by **editing** while it’s active without bookings, or by **closing** it through offers/bookings as the flows allow.
+## FAQ (short)
+
+**Q: How do I get a ride?**  
+A: Use **Requests** to create a **Trip Request**, or **browse Rides** and book a seat on an open ride, depending on what drivers have posted.
+
+**Q: How do I offer to drive for someone?**  
+A: Use **Trip Requests** to find a request and send an offer; or post a **Ride** so riders can find you.
+
+**Q: Is messaging open to everyone?**  
+A: No—threads are for valid trip/offer/booking **relationships** in the app.
+
+If something is not in this pack, say you are not sure from the current Desti information.

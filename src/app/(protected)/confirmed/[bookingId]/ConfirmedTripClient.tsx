@@ -203,6 +203,8 @@ export function ConfirmedTripClient() {
 
   const showLiveDriverOnMap = detail?.booking.status === "CONFIRMED";
 
+  // Depend on route scalars, not `detail` identity — otherwise every silent poll creates new
+  // marker object references and trips Mapbox re-init in TripVisualizationMap.
   const staticMarkers = useMemo(() => {
     if (!detail) return null;
     return deriveStaticTripMapMarkers({
@@ -213,7 +215,14 @@ export function ConfirmedTripClient() {
       destinationLatitude: detail.route.destinationLatitude,
       destinationLongitude: detail.route.destinationLongitude,
     });
-  }, [detail]);
+  }, [
+    detail?.route.destinationLatitude,
+    detail?.route.destinationLongitude,
+    detail?.route.destinationText,
+    detail?.route.originLatitude,
+    detail?.route.originLongitude,
+    detail?.route.originText,
+  ]);
 
   const driverMarker = useMemo(() => {
     if (!showLiveDriverOnMap) {
