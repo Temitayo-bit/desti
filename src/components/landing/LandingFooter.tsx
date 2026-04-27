@@ -10,7 +10,7 @@ export function LandingFooter() {
                 <div>
                     <p className="text-lg font-bold tracking-tight text-zinc-950">Destination</p>
                     <p className="mt-2 text-sm text-zinc-500 md:mt-3">
-                        © 2024 Destination Stetson University. All rights reserved.
+                        © {new Date().getFullYear()} Destination · Stetson University. All rights reserved.
                     </p>
                 </div>
 
