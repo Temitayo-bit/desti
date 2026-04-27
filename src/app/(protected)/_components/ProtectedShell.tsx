@@ -4,7 +4,9 @@ import { useState } from "react";
 import Link from "next/link";
 import { UserButton } from "@clerk/nextjs";
 import {
+  CalendarCheck,
   CarFront,
+  Home,
   LayoutDashboard,
   Menu,
   MessagesSquare,
@@ -18,6 +20,7 @@ type ProtectedNavKey =
   | "dashboard"
   | "browse"
   | "browseTripRequests"
+  | "bookings"
   | "messages"
   | "profile";
 
@@ -205,6 +208,15 @@ export function ProtectedShell({
 
           <nav className="flex-1 space-y-2">
             <Link
+              href="/?home"
+              className={`${navLinkClass(false)} group`}
+            >
+              <span className={navIconWrapClass(false)}>
+                <Home size={20} strokeWidth={2.1} />
+              </span>
+              Home
+            </Link>
+            <Link
               href="/dashboard"
               className={`${navLinkClass(activeNav === "dashboard")} group`}
             >
@@ -230,6 +242,15 @@ export function ProtectedShell({
                 <Route size={20} strokeWidth={2.1} />
               </span>
               Requests
+            </Link>
+            <Link
+              href="/bookings"
+              className={`${navLinkClass(activeNav === "bookings")} group`}
+            >
+              <span className={navIconWrapClass(activeNav === "bookings")}>
+                <CalendarCheck size={20} strokeWidth={2.1} />
+              </span>
+              My Trips
             </Link>
             <Link
               href="/messages"
