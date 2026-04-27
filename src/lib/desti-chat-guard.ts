@@ -14,6 +14,7 @@ const BANNED_ANSWER_PATTERNS: RegExp[] = [
     /\bblablacar\b/i,
     /\bkangaride\b/i,
     /\bpoparide\b/i,
+    /\buber\b/i,
     /\blyft\b/i,
     /\bcraigslist\b/i,
     /\bkijiji\b/i,
@@ -22,10 +23,6 @@ const BANNED_ANSWER_PATTERNS: RegExp[] = [
     /ride-hailing/i,
     /\bdedicated ridesharing\b/i,
     /\bcarpooling apps?\b/i,
-    /\buber driver\b/i,
-    /\buber\s+or\s+lyft\b/i,
-    /\buber\b[\s\S]*\blyft\b/i,
-    /\blyft\b[\s\S]*\buber\b/i,
     /* Common opening for generic web copy the model should never produce */
     /posting a ride typically means/i,
     /###\s*where to post your ride/i,
@@ -45,6 +42,18 @@ export function answerContainsBannedGenericContent(text: string): boolean {
 }
 
 /**
+ * Redacted short preview of the *user* message for server logs (never log model text).
+ */
+export function previewForDestiChatLog(s: string, maxLen = 100): string {
+    const t = s
+        .replace(/\S+@\S+\.\S+/g, "[redacted-email]")
+        .replace(/\b\+?\d[\d\s().-]{8,}\b/g, "[redacted-digits]");
+    const u = t.trim();
+    if (u.length <= maxLen) return u;
+    return `${u.slice(0, maxLen)}…`;
+}
+
+/**
  * Returns a short-circuit answer so we never call the model for common in-app FAQs.
  */
 export function tryCanonicalDestiAnswer(userMessage: string): string | null {
@@ -57,13 +66,27 @@ export function tryCanonicalDestiAnswer(userMessage: string): string | null {
     return null;
 }
 
+/**
+ * "post a ride" but not "post a ride request" (trip request wording).
+ */
 export function matchesPostRideFaq(message: string): boolean {
     const m = message.trim();
     if (!m) return false;
-    return /how\s+(do\s+i|to|can\s+i)\s+post(\s+a)?\s*ride\??/i.test(m) ||
+    return (
+        /how\s+(do\s+i|to|can\s+i)\s+post(\s+a)?\s*ride(?!\s*request)\b\??/i.test(m) ||
         /^post(\s+a)?\s*ride\??$/i.test(m) ||
-        /^how\s+to\s+post(\s+a)?\s*ride\??$/i.test(m);
+        /^how\s+to\s+post(\s+a)?\s*ride(?!\s*request)\b\??/i.test(m)
+    );
 }
+
+export type DestiChatGuardBranch = "pass" | "canonical" | "refusal";
+
+export type DestiChatGuardResult = {
+    text: string;
+    branch: DestiChatGuardBranch;
+    originalLength: number;
+    guardedLength: number;
+};
 
 /**
  * If the model returned generic web junk, replace with a safe Desti-only reply.
@@ -71,14 +94,31 @@ export function matchesPostRideFaq(message: string): boolean {
 export function guardDestiChatOutput(
     modelAnswer: string,
     userMessage: string
-): string {
+): DestiChatGuardResult {
+    const originalLength = modelAnswer.length;
+
     if (!answerContainsBannedGenericContent(modelAnswer)) {
-        return modelAnswer;
+        return {
+            text: modelAnswer,
+            branch: "pass",
+            originalLength,
+            guardedLength: originalLength,
+        };
     }
 
     if (matchesPostRideFaq(userMessage)) {
-        return CANONICAL_POST_RIDE_ANSWER;
+        return {
+            text: CANONICAL_POST_RIDE_ANSWER,
+            branch: "canonical",
+            originalLength,
+            guardedLength: CANONICAL_POST_RIDE_ANSWER.length,
+        };
     }
 
-    return REFUSAL_OUT_OF_SCOPE;
+    return {
+        text: REFUSAL_OUT_OF_SCOPE,
+        branch: "refusal",
+        originalLength,
+        guardedLength: REFUSAL_OUT_OF_SCOPE.length,
+    };
 }

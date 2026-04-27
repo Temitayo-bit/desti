@@ -4,6 +4,7 @@ import { join } from "path";
 import { GoogleGenAI } from "@google/genai";
 import {
     guardDestiChatOutput,
+    previewForDestiChatLog,
     tryCanonicalDestiAnswer,
 } from "@/lib/desti-chat-guard";
 
@@ -12,6 +13,8 @@ import {
 const GEMINI_MODEL = process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
 const GEMINI_TIMEOUT_MS = 30_000;
 const MAX_HISTORY = 10;
+/** Enough for multi-step Desti how-tos while staying bounded; truncation is logged. */
+const CHAT_MAX_OUTPUT_TOKENS = 768;
 
 // Kept short: request bodies are also passed through `sanitizeContent` (INJECTION_PATTERNS).
 const SYSTEM_PROMPT = `You are Desti Assistant.
@@ -344,7 +347,7 @@ export async function POST(request: NextRequest) {
                 systemInstruction,
                 temperature: 0.25,
                 topP: 0.9,
-                maxOutputTokens: 512,
+                maxOutputTokens: CHAT_MAX_OUTPUT_TOKENS,
             },
             history: geminiHistory,
         });
@@ -362,14 +365,25 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const guarded = guardDestiChatOutput(answer, message);
-        if (guarded !== answer) {
+        const finishReason = result.candidates?.[0]?.finishReason;
+        if (finishReason === "MAX_TOKENS") {
             console.warn(
-                "[POST /api/chat] Replaced model output that violated Desti-only scope."
+                "[POST /api/chat] Response truncated at maxOutputTokens (finishReason=MAX_TOKENS).",
+                { maxOutputTokens: CHAT_MAX_OUTPUT_TOKENS, userMessagePreview: previewForDestiChatLog(message) }
             );
         }
 
-        return NextResponse.json({ answer: guarded });
+        const guardResult = guardDestiChatOutput(answer, message);
+        if (guardResult.branch !== "pass") {
+            console.warn("[POST /api/chat] Replaced model output (Desti scope)", {
+                branch: guardResult.branch,
+                userMessagePreview: previewForDestiChatLog(message),
+                originalOutputLength: guardResult.originalLength,
+                guardedOutputLength: guardResult.guardedLength,
+            });
+        }
+
+        return NextResponse.json({ answer: guardResult.text });
     } catch (err: unknown) {
         // Timeout (AbortController fires AbortError with name "AbortError")
         const isAbort =
