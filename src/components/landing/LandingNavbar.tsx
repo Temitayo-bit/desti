@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { DestiLogo } from "@/components/DestiLogo";
 
 const navLinkClass =
     "text-sm font-medium text-zinc-600 transition-colors hover:text-zinc-900 md:text-base";
@@ -9,9 +10,9 @@ export function LandingNavbar() {
             <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4 md:px-6 lg:max-w-7xl lg:px-8">
                 <Link
                     href="/"
-                    className="shrink-0 text-lg font-bold tracking-tight text-zinc-950 md:text-xl"
+                    className="shrink-0"
                 >
-                    Destination
+                    <DestiLogo size="md" />
                 </Link>
 
                 <nav
