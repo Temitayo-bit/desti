@@ -11,7 +11,11 @@ export interface ManagedRideSummary {
   id: string;
   driverUserId: string;
   originText: string;
+  originLatitude: number | null;
+  originLongitude: number | null;
   destinationText: string;
+  destinationLatitude: number | null;
+  destinationLongitude: number | null;
   earliestDepartAt: string;
   latestDepartAt: string;
   distanceCategory: DistanceCategory;

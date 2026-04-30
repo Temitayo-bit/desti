@@ -23,6 +23,7 @@ import {
 import {
   type DistanceCategoryOption,
   distanceCategoryFromLocationFields,
+  formatDistanceMiles,
   formatPostRideDistanceCategory,
 } from "@/lib/distance-category";
 import {
@@ -167,15 +168,31 @@ function formatRequestTimeWindow(m: SuggestedTripRequestMatch): string {
 
 function DistanceCategoryField({
   category,
+  originLat,
+  originLng,
+  destLat,
+  destLng,
   error,
 }: {
   category: DistanceCategoryOption | null;
+  originLat?: number | null;
+  originLng?: number | null;
+  destLat?: number | null;
+  destLng?: number | null;
   error?: string;
 }) {
+  const milesLabel = formatDistanceMiles(originLat, originLng, destLat, destLng);
+  let displayValue = "Select origin and destination first";
+  if (category && milesLabel) {
+    displayValue = `${milesLabel} — ${formatPostRideDistanceCategory(category)}`;
+  } else if (category) {
+    displayValue = formatPostRideDistanceCategory(category);
+  }
+
   return (
     <div>
       <label htmlFor="distanceCategoryDisplay" className={labelClass}>
-        Distance Category
+        Distance
       </label>
       <div className="relative">
         <input
@@ -183,11 +200,7 @@ function DistanceCategoryField({
           type="text"
           readOnly
           disabled
-          value={
-            category
-              ? formatPostRideDistanceCategory(category)
-              : "Select origin and destination first"
-          }
+          value={displayValue}
           className="w-full cursor-not-allowed rounded-lg bg-zinc-100 py-2.5 pl-3 pr-3 text-sm text-zinc-800 ring-1 ring-inset ring-zinc-200/80"
         />
       </div>
@@ -777,6 +790,10 @@ export default function PostRidePage() {
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-3 md:gap-4">
                     <DistanceCategoryField
                       category={computedDistanceCategory}
+                      originLat={formValues.origin.latitude}
+                      originLng={formValues.origin.longitude}
+                      destLat={formValues.destination.latitude}
+                      destLng={formValues.destination.longitude}
                       error={fieldErrors.distanceCategory}
                     />
                     <div>

@@ -4,6 +4,7 @@ import { hasValidLocationFieldSelection } from "@/lib/location-field";
 export type DistanceCategoryOption = "SHORT" | "MEDIUM" | "LONG";
 
 const KM_EARTH_RADIUS = 6371;
+const KM_TO_MILES = 0.621371;
 
 /**
  * Product bands for Post Ride (straight-line distance). The API stores enum
@@ -88,3 +89,38 @@ export function formatPostRideDistanceCategory(
       return "Long";
   }
 }
+
+/**
+ * Compute the straight-line distance in miles between two coordinate pairs and
+ * return a human-readable label like "12.4 mi" or "87 mi".
+ *
+ * Returns `null` when any coordinate is missing so callers can fall back to the
+ * category label.
+ */
+export function formatDistanceMiles(
+  originLat: number | null | undefined,
+  originLng: number | null | undefined,
+  destLat: number | null | undefined,
+  destLng: number | null | undefined,
+): string | null {
+  if (
+    originLat == null ||
+    originLng == null ||
+    destLat == null ||
+    destLng == null
+  ) {
+    return null;
+  }
+
+  const km = haversineDistanceKm(originLat, originLng, destLat, destLng);
+  const miles = km * KM_TO_MILES;
+
+  if (miles < 1) {
+    return `${miles.toFixed(1)} mi`;
+  }
+  if (miles < 10) {
+    return `${miles.toFixed(1)} mi`;
+  }
+  return `${Math.round(miles)} mi`;
+}
+
