@@ -183,8 +183,8 @@ function DistanceCategoryField({
 }) {
   const milesLabel = formatDistanceMiles(originLat, originLng, destLat, destLng);
   let displayValue = "Select origin and destination first";
-  if (category && milesLabel) {
-    displayValue = `${milesLabel} — ${formatPostRideDistanceCategory(category)}`;
+  if (milesLabel) {
+    displayValue = milesLabel;
   } else if (category) {
     displayValue = formatPostRideDistanceCategory(category);
   }

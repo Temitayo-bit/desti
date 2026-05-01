@@ -27,6 +27,7 @@ import {
 import {
   type DistanceCategoryOption,
   distanceCategoryFromLocationFields,
+  formatDistanceMiles,
   formatPostRideDistanceCategory,
 } from "@/lib/distance-category";
 import {
@@ -133,48 +134,42 @@ function formatRideTimeWindow(m: ActiveTripRequestMatch): string {
 
 function DistanceCategoryField({
   category,
+  originLat,
+  originLng,
+  destLat,
+  destLng,
   error,
 }: {
   category: DistanceCategoryOption | null;
+  originLat?: number | null;
+  originLng?: number | null;
+  destLat?: number | null;
+  destLng?: number | null;
   error?: string;
 }) {
+  const milesLabel = formatDistanceMiles(originLat, originLng, destLat, destLng);
+  let displayValue = "Select origin and destination first";
+  if (milesLabel) {
+    displayValue = milesLabel;
+  } else if (category) {
+    displayValue = formatPostRideDistanceCategory(category);
+  }
+
   return (
     <div>
       <label htmlFor="distanceCategoryDisplay" className={labelClass}>
-        Distance Category
+        Distance
       </label>
-      <div className="flex flex-wrap gap-2 pointer-events-none opacity-90">
-        <div
-          className={`px-3 py-1.5 rounded-full text-xs font-semibold ${
-            category === "SHORT"
-              ? "bg-[#0d3d2e] text-white"
-              : "bg-zinc-200/60 text-zinc-600"
-          }`}
-        >
-          Local (&lt;10 mi)
-        </div>
-        <div
-          className={`px-3 py-1.5 rounded-full text-xs font-semibold ${
-            category === "MEDIUM"
-              ? "bg-[#0d3d2e] text-white"
-              : "bg-zinc-200/60 text-zinc-600"
-          }`}
-        >
-          Mid-Range (10-50 mi)
-        </div>
-        <div
-          className={`px-3 py-1.5 rounded-full text-xs font-semibold ${
-            category === "LONG"
-              ? "bg-[#0d3d2e] text-white"
-              : "bg-zinc-200/60 text-zinc-600"
-          }`}
-        >
-          Long Distance (50+ mi)
-        </div>
+      <div className="relative">
+        <input
+          id="distanceCategoryDisplay"
+          type="text"
+          readOnly
+          disabled
+          value={displayValue}
+          className="w-full cursor-not-allowed rounded-lg bg-zinc-100 py-2.5 pl-3 pr-3 text-sm text-zinc-800 ring-1 ring-inset ring-zinc-200/80"
+        />
       </div>
-      {!category && !error && (
-        <p className="mt-2 text-[11px] text-zinc-400 font-medium">Select origin and destination to calculate</p>
-      )}
       {error ? <p className="mt-1 text-sm text-red-600">{error}</p> : null}
     </div>
   );
@@ -590,6 +585,10 @@ export default function PostTripRequestPage() {
                     
                     <DistanceCategoryField
                       category={computedDistanceCategory}
+                      originLat={formValues.origin.latitude}
+                      originLng={formValues.origin.longitude}
+                      destLat={formValues.destination.latitude}
+                      destLng={formValues.destination.longitude}
                       error={fieldErrors.distanceCategory}
                     />
                   </section>
