@@ -48,6 +48,16 @@ Desti is a campus **ride-sharing marketplace** for **Stetson University** studen
 
 **Browse/post:** use **Rides** (`/browse`, `/post-ride`).
 
+### Post a ride in Desti (assistant must use this for “how do I post a ride?”)
+
+1. Go to **Post a ride** (route: `/post-ride`). From most screens, use the top bar **Create Ride** action — it opens this page.
+2. Enter **origin** and **destination** using the app’s **location suggestions / autocomplete** (not free-text only).
+3. Set your **departure window** (earliest and latest leave time), **seats** you’re offering, and **price**.
+4. Add optional **pickup/dropoff notes** and any **ride attributes** (e.g. vehicle type, AC, trunk) the form offers.
+5. Press the primary **Create Ride** button to **submit** and publish the ride in Desti.
+
+Do **not** tell users to use external ride-share apps, social carpool groups, or non-Desti websites — all posting happens only inside Desti as above.
+
 ---
 
 ## Trip requests
