@@ -114,7 +114,7 @@ export function ProtectedShell({
                 type="button"
                 onClick={() => setMobileMenuOpen((o) => !o)}
                 aria-label="Menu"
-                className="p-2 text-zinc-600 md:hidden"
+                className="flex items-center justify-center min-h-[44px] min-w-[44px] text-zinc-600 md:hidden rounded-lg hover:bg-zinc-100 transition-colors"
               >
                 {mobileMenuOpen ? <X size={22} /> : <Menu size={22} />}
               </button>
@@ -184,7 +184,7 @@ export function ProtectedShell({
           aria-label={mobileMenuOpen ? "Close mobile menu" : "Open mobile menu"}
           aria-expanded={mobileMenuOpen}
           aria-controls="mobile-navigation-menu"
-          className="p-2 -mr-2 text-zinc-600 hover:text-zinc-900"
+          className="flex items-center justify-center min-h-[44px] min-w-[44px] -mr-2 text-zinc-600 hover:text-zinc-900 rounded-lg hover:bg-zinc-100 transition-colors"
         >
           {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
         </button>

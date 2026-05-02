@@ -641,7 +641,7 @@ export function MyRidesView({
                     onChange={(e) =>
                       setSortBy(e.target.value as "earliest" | "price")
                     }
-                    className="rounded-xl border border-zinc-200 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800"
+                    className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-800"
                   >
                     <option value="earliest">Earliest Departure</option>
                     <option value="price">Lowest price (loaded results)</option>

@@ -42,7 +42,7 @@ export function BrowseTripRequestsFilterSidebar({
             ] as const
           ).map((row) => (
             <li key={row.key}>
-              <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm shadow-sm">
+              <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm shadow-sm">
                 <input
                   type="checkbox"
                   className="mt-0.5 h-4 w-4 rounded border-zinc-300 text-[#006837] focus:ring-[#006837]"
@@ -90,7 +90,7 @@ export function BrowseTripRequestsFilterSidebar({
               type="button"
               aria-pressed={timeWindow === tw.id}
               onClick={() => setTimeWindow((t) => (t === tw.id ? null : tw.id))}
-              className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+              className={`rounded-full px-3.5 py-2 text-xs font-semibold transition ${
                 timeWindow === tw.id
                   ? "bg-[#006837] text-white"
                   : "border border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300"

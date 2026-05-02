@@ -618,7 +618,7 @@ export default function DashboardPage() {
               <div className="space-y-8 min-w-0">
                 <section>
                   <div className="mb-4 flex items-center justify-between gap-3">
-                    <h2 className="flex items-center gap-2 text-lg font-bold tracking-tight text-zinc-900 md:text-xl">
+                    <h2 className="flex items-center gap-2 text-base font-bold tracking-tight text-zinc-900 sm:text-lg md:text-xl min-w-0">
                       <span
                         className="h-2 w-1.5 rounded-full bg-[#0d3d2e] shadow-sm shadow-[#0d3d2e]/30"
                         aria-hidden
@@ -839,7 +839,7 @@ export default function DashboardPage() {
                                   type="button"
                                   onClick={() => void openBookingMessages(booking.id)}
                                   disabled={openingConversation}
-                                  className="pointer-events-auto relative z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-zinc-200 bg-white text-[#0d3d2e] hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                  className="pointer-events-auto relative z-20 inline-flex h-10 w-10 items-center justify-center rounded-full border border-zinc-200 bg-white text-[#0d3d2e] hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
                                   aria-label="Message"
                                 >
                                   {openingConversation ? "…" : <MessageCircle size={16} />}
@@ -907,7 +907,7 @@ export default function DashboardPage() {
                                     "Offer accepted."
                                   )
                                 }
-                                className="flex-1 rounded-lg bg-[#0d3d2e] py-2 text-sm font-semibold text-white hover:bg-[#0a2f24] disabled:cursor-not-allowed disabled:opacity-60"
+                                className="flex-1 rounded-lg bg-[#0d3d2e] py-2.5 text-sm font-semibold text-white hover:bg-[#0a2f24] disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 {busy === "accept" ? "Accepting…" : "Accept"}
                               </button>
@@ -922,7 +922,7 @@ export default function DashboardPage() {
                                     "Offer declined."
                                   )
                                 }
-                                className="flex-1 rounded-lg border border-zinc-200 bg-white py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                className="flex-1 rounded-lg border border-zinc-200 bg-white py-2.5 text-sm font-semibold text-zinc-800 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 {busy === "decline" ? "Declining…" : "Decline"}
                               </button>
