@@ -50,7 +50,7 @@ export function ProfilePictureUpload({ currentUrl }: ProfilePictureUploadProps) 
             <input
                 ref={inputRef}
                 type="file"
-                accept="image/*"
+                accept="image/jpeg,image/png,image/webp"
                 capture="environment"
                 onChange={handleFileChange}
                 className="hidden"
