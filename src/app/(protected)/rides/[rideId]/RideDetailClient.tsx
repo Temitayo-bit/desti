@@ -7,7 +7,6 @@ import { User, MapPin, Calendar, Check, X, CarFront, Flag } from "lucide-react";
 import { ProtectedShell } from "../../_components/ProtectedShell";
 import { StaticRouteMap } from "@/components/StaticRouteMap";
 import { UserAvatar } from "@/components/UserAvatar";
-import { distanceCategoryLabel, formatDistanceMilesLabel } from "@/lib/browse-ride-filters";
 import type { DistanceCategory, MusicPreference, VehicleType } from "@prisma/client";
 import { LocationAutocompleteInput } from "@/components/LocationAutocompleteInput";
 import {

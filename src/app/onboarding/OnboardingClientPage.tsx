@@ -469,13 +469,14 @@ export function OnboardingClientPage({
                                         Profile photo — required
                                     </span>
                                     <span className="mt-1 max-w-[260px] text-center text-[0.7rem] leading-snug text-zinc-500">
-                                        Other students see this on rides and messages. Use a clear,
-                                        recent photo.
+                                        Take a clear, recent photo of yourself. Other students see
+                                        this on rides and messages.
                                     </span>
                                     <input
                                         ref={fileInputRef}
                                         type="file"
                                         accept="image/jpeg,image/png,image/webp"
+                                        capture="environment"
                                         onChange={handleFileSelect}
                                         className="hidden"
                                     />

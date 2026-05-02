@@ -15,13 +15,12 @@ import {
   type BrowseTimeWindow,
   type SidebarApiFilters,
   buildActiveDistanceSet,
-  distanceCategoryLabel,
   EMPTY_SIDEBAR_API,
-  formatDistanceMilesLabel,
   matchesLocalDepartDate,
   myRideMatchesMvp2Sidebar,
   rideDepartureTimeMatchesWindow,
 } from "@/lib/browse-ride-filters";
+import { formatDistanceMiles } from "@/lib/distance-category";
 
 type ActionNotice =
   | { type: "success"; text: string }
@@ -867,8 +866,7 @@ export function MyRidesView({
                                 strokeWidth={2}
                                 aria-hidden
                               />
-                              {distanceCategoryLabel(ride.distanceCategory)} ·{" "}
-                              {formatDistanceMilesLabel(ride.distanceCategory)}
+                              {formatDistanceMiles(ride.originLatitude, ride.originLongitude, ride.destinationLatitude, ride.destinationLongitude) ?? ride.distanceCategory.toLowerCase()}
                             </span>
                           </div>
                           <Link
@@ -904,7 +902,7 @@ export function MyRidesView({
                     <div className="p-4 pl-5 sm:p-5 sm:pl-6">
                       <div className="absolute right-4 top-4 flex flex-col items-end gap-1 sm:right-5 sm:top-5">
                         <span className="rounded-full border border-amber-200 bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-800 shadow-sm">
-                          {toTitleCase(ride.distanceCategory)}
+                          {formatDistanceMiles(ride.originLatitude, ride.originLongitude, ride.destinationLatitude, ride.destinationLongitude) ?? toTitleCase(ride.distanceCategory)}
                         </span>
                         <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-zinc-600">
                           {ride.status}

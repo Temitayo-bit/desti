@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Camera } from "lucide-react";
 import { invalidateDestiProfileCache } from "@/hooks/use-desti-profile";
 
 interface ProfilePictureUploadProps {
@@ -45,10 +46,12 @@ export function ProfilePictureUpload({ currentUrl }: ProfilePictureUploadProps) 
 
     return (
         <div className="mt-1">
+            {/* Camera-only capture: accept image/*, capture forces device camera */}
             <input
                 ref={inputRef}
                 type="file"
                 accept="image/jpeg,image/png,image/webp"
+                capture="environment"
                 onChange={handleFileChange}
                 className="hidden"
             />
@@ -56,10 +59,12 @@ export function ProfilePictureUpload({ currentUrl }: ProfilePictureUploadProps) 
                 type="button"
                 onClick={() => inputRef.current?.click()}
                 disabled={uploading}
-                className="text-sm font-medium text-emerald-700 transition-colors hover:text-emerald-900 disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-700 transition-colors hover:text-emerald-900 disabled:opacity-50"
             >
-                {uploading ? "Uploading..." : currentUrl ? "Change photo" : "Upload photo"}
+                <Camera className="h-4 w-4" strokeWidth={2} />
+                {uploading ? "Uploading..." : currentUrl ? "Retake photo" : "Take photo"}
             </button>
         </div>
     );
 }
+

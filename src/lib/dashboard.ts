@@ -242,9 +242,9 @@ export function formatRelativeTime(
 
 export function toDistanceLabel(value: DistanceCategory): string {
   const labels: Record<DistanceCategory, string> = {
-    SHORT: "Short Distance",
-    MEDIUM: "Medium Distance",
-    LONG: "Long Distance",
+    SHORT: "< 20 mi",
+    MEDIUM: "20–100 mi",
+    LONG: "> 100 mi",
   };
 
   return labels[value];

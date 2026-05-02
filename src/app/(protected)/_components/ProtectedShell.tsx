@@ -128,10 +128,10 @@ export function ProtectedShell({
                   STETSON VERIFIED
                 </span>
               </div>
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-1">
                 {topNavPrimaryAction ? (
                   <Link
-                    className="py-2 text-center text-sm font-semibold rounded-xl bg-[#0d3d2e] text-white"
+                    className="py-3 text-center text-sm font-semibold rounded-xl bg-[#0d3d2e] text-white"
                     href={topNavPrimaryAction.href}
                     onClick={() => setMobileMenuOpen(false)}
                   >
@@ -139,33 +139,33 @@ export function ProtectedShell({
                   </Link>
                 ) : null}
                 <Link
-                  className="py-1 text-sm font-medium"
+                  className="py-3 px-2 text-sm font-medium rounded-lg hover:bg-zinc-100 transition-colors"
                   href="/dashboard"
                   onClick={() => setMobileMenuOpen(false)}
                 >
                   Dashboard
                 </Link>
-                <Link className="py-1 text-sm font-medium" href="/browse" onClick={() => setMobileMenuOpen(false)}>
+                <Link className="py-3 px-2 text-sm font-medium rounded-lg hover:bg-zinc-100 transition-colors" href="/browse" onClick={() => setMobileMenuOpen(false)}>
                   Rides
                 </Link>
                 <Link
-                  className="py-1 text-sm font-medium"
+                  className="py-3 px-2 text-sm font-medium rounded-lg hover:bg-zinc-100 transition-colors"
                   href="/browse-trip-requests"
                   onClick={() => setMobileMenuOpen(false)}
                 >
                   Requests
                 </Link>
-                <Link className="py-1 text-sm font-medium" href="/messages" onClick={() => setMobileMenuOpen(false)}>
+                <Link className="py-3 px-2 text-sm font-medium rounded-lg hover:bg-zinc-100 transition-colors" href="/messages" onClick={() => setMobileMenuOpen(false)}>
                   Messages
                 </Link>
-                <Link className="py-1 text-sm font-medium" href="/profile" onClick={() => setMobileMenuOpen(false)}>
+                <Link className="py-3 px-2 text-sm font-medium rounded-lg hover:bg-zinc-100 transition-colors" href="/profile" onClick={() => setMobileMenuOpen(false)}>
                   Profile
                 </Link>
               </div>
             </div>
           ) : null}
         </header>
-        <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 md:px-6 md:py-8 min-w-0">
+        <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-5 md:px-6 md:py-8 min-w-0">
           {children}
         </main>
       </div>

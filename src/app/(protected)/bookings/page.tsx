@@ -7,7 +7,7 @@ import { format } from "date-fns";
 import { ChevronLeft, Clock, MapPin, MessageCircle, Users } from "lucide-react";
 import { ProtectedShell } from "../_components/ProtectedShell";
 import { openBookingConversationThread } from "@/lib/booking-conversation";
-import { distanceCategoryLabel, formatDistanceMilesLabel } from "@/lib/browse-ride-filters";
+import { formatDistanceMiles } from "@/lib/distance-category";
 import {
   type DashboardBookingItem,
   getSeatDisplayText,
@@ -223,8 +223,7 @@ export default function BookingsPage() {
               const bookingPrice = formatPrice(booking.priceCents);
               const openingConversation = openingConversationBookingId === booking.id;
               const timeLabel = formatTripWindow(booking.startsAt, booking.endsAt);
-              const distLabel = distanceCategoryLabel(booking.distanceCategory);
-              const distMiles = formatDistanceMilesLabel(booking.distanceCategory);
+              const distLabel = formatDistanceMiles(booking.originLatitude, booking.originLongitude, booking.destinationLatitude, booking.destinationLongitude) ?? booking.distanceCategory.toLowerCase();
 
               return (
                 <article
@@ -299,7 +298,7 @@ export default function BookingsPage() {
                             className="h-3.5 w-3.5 shrink-0 text-zinc-500"
                             strokeWidth={2}
                           />
-                          {distLabel} · {distMiles}
+                          {distLabel}
                         </span>
                       </div>
                       <div className="flex w-full justify-end sm:w-auto">

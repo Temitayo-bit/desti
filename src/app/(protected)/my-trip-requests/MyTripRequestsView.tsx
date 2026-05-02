@@ -21,11 +21,10 @@ import { openBookingConversationThread } from "@/lib/booking-conversation";
 import {
   type BrowseTimeWindow,
   buildActiveDistanceSet,
-  distanceCategoryLabel,
-  formatDistanceMilesLabel,
   matchesLocalDepartDate,
   rideDepartureTimeMatchesWindow,
 } from "@/lib/browse-ride-filters";
+import { formatDistanceMiles } from "@/lib/distance-category";
 
 type TripRequestStatus = "ACTIVE" | "CLOSED";
 
@@ -33,7 +32,11 @@ interface TripRequestSummary {
   id: string;
   riderUserId: string;
   originText: string;
+  originLatitude: number | null;
+  originLongitude: number | null;
   destinationText: string;
+  destinationLatitude: number | null;
+  destinationLongitude: number | null;
   earliestDesiredAt: string;
   latestDesiredAt: string;
   distanceCategory: DistanceCategory;
@@ -1236,8 +1239,7 @@ export function MyTripRequestsView({
                                 strokeWidth={2}
                                 aria-hidden
                               />
-                              {distanceCategoryLabel(tripRequest.distanceCategory)} ·{" "}
-                              {formatDistanceMilesLabel(tripRequest.distanceCategory)}
+                              {formatDistanceMiles(tripRequest.originLatitude, tripRequest.originLongitude, tripRequest.destinationLatitude, tripRequest.destinationLongitude) ?? tripRequest.distanceCategory.toLowerCase()}
                             </span>
                           </div>
                         </div>
@@ -1334,7 +1336,7 @@ export function MyTripRequestsView({
                           </span>
                         )}
                         <span className="bg-amber-100 text-amber-800 text-xs font-bold px-2.5 py-1 rounded-full border border-amber-200 shadow-sm">
-                          {toTitleCase(tripRequest.distanceCategory)}
+                          {formatDistanceMiles(tripRequest.originLatitude, tripRequest.originLongitude, tripRequest.destinationLatitude, tripRequest.destinationLongitude) ?? toTitleCase(tripRequest.distanceCategory)}
                         </span>
                       </div>
 
@@ -1871,10 +1873,10 @@ export function MyTripRequestsView({
                         </div>
                         <div>
                           <div className="block text-sm font-semibold text-emerald-800 mb-2">
-                            Distance Category
+                            Distance
                           </div>
                           <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-4 text-zinc-800 font-medium text-lg">
-                            {toTitleCase(selectedTripRequest.distanceCategory)}
+                            {formatDistanceMiles(selectedTripRequest.originLatitude, selectedTripRequest.originLongitude, selectedTripRequest.destinationLatitude, selectedTripRequest.destinationLongitude) ?? toTitleCase(selectedTripRequest.distanceCategory)}
                           </div>
                         </div>
                       </div>
